@@ -34,9 +34,12 @@ object MacroToolExample extends ZIOAppDefault:
     object WeatherData:
       given JsonEncoder[WeatherData] = DeriveJsonEncoder.gen[WeatherData]
 
-    // Scala 3 enum for temperature units - type-safe!
+    // Scala 3 enums for type-safe tool parameters!
     enum TempUnit:
       case Celsius, Fahrenheit
+
+    enum Operation:
+      case Add, Subtract, Multiply, Divide
 
     @Tool("get_weather", "Get the current weather for a location")
     def getWeather(
@@ -50,25 +53,23 @@ object MacroToolExample extends ZIOAppDefault:
       // Return structured JSON - Claude can parse and use the fields!
       ZIO.succeed(ToolResult.json(WeatherData(location, temp, u.toString, "Sunny")))
 
-    // Simple string-based calculator for testing
+    // Type-safe calculator using Scala 3 enum for operations
     @Tool("calculator", "Perform basic arithmetic operations")
     def calculate(
-        @Param("Operation: add, subtract, multiply, divide") operation: String,
+        @Param("Arithmetic operation") operation: Operation,
         @Param("First number") a: Double,
         @Param("Second number") b: Double
     ): Task[ToolResult] =
-      operation.toLowerCase match
-        case "add" =>
+      operation match
+        case Operation.Add =>
           ZIO.succeed(ToolResult.text(s"$a + $b = ${a + b}"))
-        case "subtract" =>
+        case Operation.Subtract =>
           ZIO.succeed(ToolResult.text(s"$a - $b = ${a - b}"))
-        case "multiply" =>
+        case Operation.Multiply =>
           ZIO.succeed(ToolResult.text(s"$a * $b = ${a * b}"))
-        case "divide" =>
+        case Operation.Divide =>
           if b == 0 then ZIO.succeed(ToolResult.error("Division by zero"))
           else ZIO.succeed(ToolResult.text(s"$a / $b = ${a / b}"))
-        case _ =>
-          ZIO.succeed(ToolResult.error(s"Unknown operation: $operation"))
 
     @Tool("knowledge_lookup", "Look up information from a knowledge base")
     def lookup(
