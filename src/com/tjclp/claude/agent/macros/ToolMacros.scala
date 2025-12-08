@@ -134,7 +134,8 @@ object ToolMacros:
         case _ =>
           (Nil, Nil)
 
-    val paramInfos: List[(String, TypeRepr, String, Boolean)] =
+    // ParamInfo: (name, type, description, isOptional, enumCases: Option[List[String]])
+    val paramInfos: List[(String, TypeRepr, String, Boolean, Option[List[String]])] =
       extractedParamNames.zip(extractedParamTypes).zipWithIndex.map { case ((name, tpe), idx) =>
         // Get @Param annotation from corresponding parameter symbol
         val paramDesc = if idx < paramSyms.length then
@@ -149,17 +150,35 @@ object ToolMacros:
           case AppliedType(base, _) if base.typeSymbol.fullName == "scala.Option" => true
           case _                                                                  => false
 
-        (name, tpe, paramDesc, isOptional)
+        // Detect Scala 3 enums and extract case names
+        val enumCases: Option[List[String]] =
+          val actualTpe = tpe match
+            case AppliedType(base, List(inner)) if base.typeSymbol.fullName == "scala.Option" =>
+              inner // Unwrap Option[EnumType]
+            case t => t
+
+          if actualTpe.typeSymbol.flags.is(Flags.Enum) then
+            val cases = actualTpe.typeSymbol.children.map(_.name)
+            Some(cases)
+          else None
+
+        (name, tpe, paramDesc, isOptional, enumCases)
       }
 
     // 3. Generate JSON schema (inline to avoid quotes context issues)
     val propsExpr: List[Expr[(String, JsonSchema)]] = paramInfos.map {
-      case (name, tpe, desc, _) =>
-        val schemaExpr = typeToSchemaInline(tpe)
+      case (name, tpe, desc, isOptional, enumCases) =>
+        val schemaExpr = enumCases match
+          case Some(cases) =>
+            // Generate enum schema with case names
+            val casesExpr = Expr(cases)
+            '{ JsonSchema.enumOf($casesExpr*) }
+          case None =>
+            typeToSchemaInline(tpe)
         '{ (${ Expr(name) }, $schemaExpr) }
     }
 
-    val requiredNames = paramInfos.filterNot(_._4).map(_._1)
+    val requiredNames = paramInfos.filterNot(_._4).map(_._1) // _._4 is isOptional
 
     val schemaExpr: Expr[JsonSchema] = '{
       val props = ${ Expr.ofList(propsExpr) }
@@ -183,19 +202,71 @@ object ToolMacros:
           s"Expected singleton type for tool container, got ${ownerType.show}"
         )
 
-    // 5. Build parameter names for runtime extraction
-    val handlerParamNames: List[String] = paramInfos.map(_._1)
-    val paramNamesExpr = Expr(handlerParamNames)
+    // 5. Build parameter extraction expressions with enum conversion
+    // For each parameter, generate code that extracts from map and converts enums
+    val argExtractorExprs: List[Expr[scala.collection.immutable.Map[String, Any] => Any]] =
+      paramInfos.map { case (name, tpe, _, isOptional, enumCases) =>
+        val nameExpr = Expr(name)
 
-    // 6. Generate handler that extracts args at RUNTIME
+        // Check if this is an enum type (including Option[Enum])
+        val actualTpe = tpe match
+          case AppliedType(base, List(inner)) if base.typeSymbol.fullName == "scala.Option" =>
+            inner
+          case t => t
+
+        if actualTpe.typeSymbol.flags.is(Flags.Enum) then
+          // Generate enum conversion code - call valueOf on the enum companion
+          // We generate a reference to EnumType.valueOf(string) at macro time
+          val enumCompanion = Ref(actualTpe.typeSymbol.companionModule)
+          val valueOfMethod = actualTpe.typeSymbol.companionModule.methodMember("valueOf").head
+
+          actualTpe.asType match
+            case '[e] =>
+              if isOptional then
+                '{ (args: scala.collection.immutable.Map[String, Any]) =>
+                  args.get($nameExpr) match
+                    case Some(s: String) =>
+                      // Call valueOf at runtime - generated at macro time
+                      Some(${
+                        Apply(
+                          Select(enumCompanion, valueOfMethod),
+                          List('{ s }.asTerm)
+                        ).asExprOf[e]
+                      })
+                    case Some(null) | None => None
+                    case Some(other) => Some(other.asInstanceOf[e])
+                }
+              else
+                '{ (args: scala.collection.immutable.Map[String, Any]) =>
+                  args.get($nameExpr) match
+                    case Some(s: String) =>
+                      ${
+                        Apply(
+                          Select(enumCompanion, valueOfMethod),
+                          List('{ s }.asTerm)
+                        ).asExprOf[e]
+                      }
+                    case Some(other) => other.asInstanceOf[e]
+                    case None => null.asInstanceOf[e]
+                }
+        else
+          // Non-enum: just extract from map
+          if isOptional then
+            '{ (args: scala.collection.immutable.Map[String, Any]) => args.get($nameExpr) }
+          else
+            '{ (args: scala.collection.immutable.Map[String, Any]) => args.getOrElse($nameExpr, null) }
+      }
+
+    val argExtractorsExpr = Expr.ofList(argExtractorExprs)
+
+    // 6. Generate handler that extracts args at RUNTIME with enum conversion
     val handlerExpr: Expr[scala.collection.immutable.Map[String, Any] => Task[ToolResult]] = '{
       (args: scala.collection.immutable.Map[String, Any]) =>
         ZIO
           .attempt {
-            // Convert args map to list in parameter order
-            val argsList: List[Any] = $paramNamesExpr.map { name =>
-              args.getOrElse(name, null)
-            }
+            // Extract and convert each argument
+            val extractors = $argExtractorsExpr
+            val argsList: List[Any] = extractors.map(extractor => extractor(args))
             // Invoke the method at runtime
             RuntimeInvoker.invoke($methodRefExpr, argsList)
           }

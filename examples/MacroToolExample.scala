@@ -34,34 +34,42 @@ object MacroToolExample extends ZIOAppDefault:
     object WeatherData:
       given JsonEncoder[WeatherData] = DeriveJsonEncoder.gen[WeatherData]
 
+    // Scala 3 enum for temperature units - type-safe!
+    enum TempUnit:
+      case Celsius, Fahrenheit
+
     @Tool("get_weather", "Get the current weather for a location")
     def getWeather(
         @Param("City or location name") location: String,
-        @Param("Temperature unit: celsius or fahrenheit") unit: Option[String] = None
+        @Param("Temperature unit") unit: Option[TempUnit] = None
     ): Task[ToolResult] =
-      val u = unit.getOrElse("celsius")
-      val (temp, symbol) = if u == "fahrenheit" then (72, "F") else (22, "C")
+      val u = unit.getOrElse(TempUnit.Celsius)
+      val (temp, symbol) = u match
+        case TempUnit.Fahrenheit => (72, "F")
+        case TempUnit.Celsius    => (22, "C")
       // Return structured JSON - Claude can parse and use the fields!
-      ZIO.succeed(ToolResult.json(WeatherData(location, temp, u, "Sunny")))
+      ZIO.succeed(ToolResult.json(WeatherData(location, temp, u.toString, "Sunny")))
+
+    // Scala 3 enum for arithmetic operations - maximum type safety!
+    enum Operation:
+      case Add, Subtract, Multiply, Divide
 
     @Tool("calculator", "Perform basic arithmetic operations")
     def calculate(
-        @Param("Operation: add, subtract, multiply, divide") operation: String,
+        @Param("Arithmetic operation to perform") operation: Operation,
         @Param("First number") a: Double,
         @Param("Second number") b: Double
     ): Task[ToolResult] =
       operation match
-        case "add" =>
+        case Operation.Add =>
           ZIO.succeed(ToolResult.text(s"$a + $b = ${a + b}"))
-        case "subtract" =>
+        case Operation.Subtract =>
           ZIO.succeed(ToolResult.text(s"$a - $b = ${a - b}"))
-        case "multiply" =>
+        case Operation.Multiply =>
           ZIO.succeed(ToolResult.text(s"$a * $b = ${a * b}"))
-        case "divide" =>
+        case Operation.Divide =>
           if b == 0 then ZIO.succeed(ToolResult.error("Division by zero"))
           else ZIO.succeed(ToolResult.text(s"$a / $b = ${a / b}"))
-        case _ =>
-          ZIO.succeed(ToolResult.error(s"Unknown operation: $operation"))
 
     @Tool("knowledge_lookup", "Look up information from a knowledge base")
     def lookup(
