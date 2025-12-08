@@ -1,0 +1,47 @@
+package build
+
+import mill.*, scalalib.*, scalajslib.*
+import mill.scalajslib.api.*
+
+// Main library module - sources in /src
+object agent extends ScalaJSModule {
+  def scalaVersion = "3.3.4"
+  def scalaJSVersion = "1.17.0"
+
+  // Scala.js linker configuration
+  override def moduleKind = ModuleKind.ESModule
+
+  // Dependencies
+  def mvnDeps = Seq(
+    mvn"dev.zio::zio::2.1.14",
+    mvn"dev.zio::zio-streams::2.1.14",
+    mvn"dev.zio::zio-json::0.7.3"
+  )
+
+  // Source at project root /src
+  override def moduleDir = build.moduleDir
+  override def sources = Task.Sources(moduleDir / "src")
+
+  // Test module
+  object test extends ScalaJSTests with TestModule.Munit {
+    def munitVersion = "1.0.3"
+  }
+}
+
+// Example application module
+object examples extends ScalaJSModule {
+  def scalaVersion = agent.scalaVersion
+  def scalaJSVersion = agent.scalaJSVersion
+
+  override def moduleKind = ModuleKind.ESModule
+  override def moduleDeps = Seq(agent)
+
+  def mvnDeps = Seq(
+    mvn"dev.zio::zio::2.1.14",
+    mvn"dev.zio::zio-streams::2.1.14"
+  )
+
+  // Sources in examples/
+  override def moduleDir = build.moduleDir
+  override def sources = Task.Sources(moduleDir / "examples")
+}

@@ -1,0 +1,37 @@
+# Mill build output
+out/
+.mill-version
+
+# Scala
+*.class
+*.log
+.bsp/
+.metals/
+.bloop/
+.scala-build/
+target/
+
+# Node.js
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ScalablyTyped generated facades
+# (these are regenerated on build)
+.scalablytyped/
+
+# Environment
+.env
+.env.local
