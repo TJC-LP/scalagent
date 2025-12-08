@@ -94,44 +94,80 @@ final case class ToolDef[A](
 
   /** Convert a ToolResult to the SDK's expected format */
   private def resultToJs(result: ToolResult): js.Object =
-    result match
-      case ToolResult.Success(content) =>
-        js.Dynamic
-          .literal(
-            content = js.Array(
-              js.Dynamic.literal(
-                `type` = "text",
-                text = content
-              )
-            )
-          )
-          .asInstanceOf[js.Object]
+    result.toRaw
 
-      case ToolResult.Error(message) =>
-        js.Dynamic
-          .literal(
-            content = js.Array(
-              js.Dynamic.literal(
-                `type` = "text",
-                text = message
-              )
-            ),
-            isError = true
-          )
-          .asInstanceOf[js.Object]
+/** Content block types for tool results - supports multimodal output */
+sealed trait ToolContent:
+  def toRaw: js.Dynamic
 
-/** Result of tool execution */
-sealed trait ToolResult
+object ToolContent:
+  /** Plain text content */
+  final case class Text(text: String) extends ToolContent:
+    def toRaw: js.Dynamic = js.Dynamic.literal(`type` = "text", text = text)
+
+  /** Image content (base64 encoded) */
+  final case class Image(data: String, mimeType: String = "image/png") extends ToolContent:
+    def toRaw: js.Dynamic = js.Dynamic.literal(
+      `type` = "image",
+      data = data,
+      mimeType = mimeType
+    )
+
+  /** Resource reference */
+  final case class Resource(uri: String, mimeType: Option[String] = None) extends ToolContent:
+    def toRaw: js.Dynamic =
+      val obj = js.Dynamic.literal(`type` = "resource", uri = uri)
+      mimeType.foreach(m => obj.mimeType = m)
+      obj
+
+/** Result of tool execution - supports structured output and multimodal content */
+sealed trait ToolResult:
+  /** Convert to SDK's expected format */
+  def toRaw: js.Object
 
 object ToolResult:
-  /** Successful tool execution */
-  final case class Success(content: String) extends ToolResult
+  /** Single text success */
+  final case class Success(content: String) extends ToolResult:
+    def toRaw: js.Object = js.Dynamic.literal(
+      content = js.Array(js.Dynamic.literal(`type` = "text", text = content))
+    ).asInstanceOf[js.Object]
 
-  /** Tool execution failed */
-  final case class Error(message: String) extends ToolResult
+  /** Structured JSON success - type-safe serialization */
+  final case class Structured[A](data: A)(using encoder: JsonEncoder[A]) extends ToolResult:
+    def toRaw: js.Object = js.Dynamic.literal(
+      content = js.Array(js.Dynamic.literal(`type` = "text", text = encoder.encodeJson(data, None).toString))
+    ).asInstanceOf[js.Object]
 
-  given JsonEncoder[ToolResult] = DeriveJsonEncoder.gen[ToolResult]
-  given JsonDecoder[ToolResult] = DeriveJsonDecoder.gen[ToolResult]
+  /** Multiple content blocks (multimodal) */
+  final case class Multi(contents: List[ToolContent]) extends ToolResult:
+    def toRaw: js.Object = js.Dynamic.literal(
+      content = js.Array(contents.map(_.toRaw)*)
+    ).asInstanceOf[js.Object]
+
+  /** Error result */
+  final case class Error(message: String) extends ToolResult:
+    def toRaw: js.Object = js.Dynamic.literal(
+      content = js.Array(js.Dynamic.literal(`type` = "text", text = message)),
+      isError = true
+    ).asInstanceOf[js.Object]
+
+  // Convenience constructors
+  def text(s: String): ToolResult = Success(s)
+  def json[A: JsonEncoder](a: A): ToolResult = Structured(a)
+  def image(base64: String, mime: String = "image/png"): ToolResult =
+    Multi(List(ToolContent.Image(base64, mime)))
+  def error(msg: String): ToolResult = Error(msg)
+
+  // Multimodal builder for fluent construction
+  def multi: MultiBuilder = MultiBuilder(Nil)
+
+  final case class MultiBuilder(contents: List[ToolContent]):
+    def text(s: String): MultiBuilder = copy(contents = contents :+ ToolContent.Text(s))
+    def image(base64: String, mime: String = "image/png"): MultiBuilder =
+      copy(contents = contents :+ ToolContent.Image(base64, mime))
+    def resource(uri: String, mime: Option[String] = None): MultiBuilder =
+      copy(contents = contents :+ ToolContent.Resource(uri, mime))
+    def build: ToolResult = Multi(contents)
 
 /** JSON Schema representation for tool input validation.
   *

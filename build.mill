@@ -15,7 +15,11 @@ object agent extends ScalaJSModule {
   def mvnDeps = Seq(
     mvn"dev.zio::zio::2.1.14",
     mvn"dev.zio::zio-streams::2.1.14",
-    mvn"dev.zio::zio-json::0.7.3"
+    mvn"dev.zio::zio-json::0.7.3",
+    // zio-schema for JSON Schema derivation from case classes
+    mvn"dev.zio::zio-schema::1.5.0",
+    mvn"dev.zio::zio-schema-json::1.5.0",
+    mvn"dev.zio::zio-schema-derivation::1.5.0"
   )
 
   // Source at project root /src
