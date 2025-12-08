@@ -44,17 +44,22 @@ final case class ToolDef[A](
     * This captures the JsonDecoder at construction time, allowing tools to be collected in List[ToolDef[?]] and still
     * retain their parsing capability.
     *
+    * The SDK expects Zod schemas for inputSchema, not JSON Schema objects.
+    * We convert our JsonSchema to a Zod raw shape.
+    *
     * @param runtime
     *   ZIO runtime for executing the handler
     * @return
     *   JavaScript object in SDK tool format
     */
   def toSdkTool(runtime: Runtime[Any]): js.Object =
+    // Convert JsonSchema to Zod raw shape - SDK expects Zod, not JSON Schema
+    val zodSchema = ZodConverter.toZodRawShape(inputSchema)
     js.Dynamic
       .literal(
         name = name,
         description = description,
-        inputSchema = inputSchema.toRaw,
+        inputSchema = zodSchema,
         handler = createSdkHandler(runtime)
       )
       .asInstanceOf[js.Object]
@@ -82,8 +87,10 @@ final case class ToolDef[A](
 
       // Handle errors gracefully
       val safeEffect = effect.catchAll { err =>
+        val errMsg = Option(err.getMessage).getOrElse(err.getClass.getName)
+        val fullError = s"Tool execution failed: $errMsg"
         ZIO.succeed(
-          resultToJs(ToolResult.Error(s"Tool execution failed: ${err.getMessage}"))
+          resultToJs(ToolResult.Error(fullError))
         )
       }
 

@@ -217,9 +217,21 @@ object MessageConverter:
             input = jsToJson(block.input)
           )
         case "tool_result" =>
+          // Content can be either a string or an array of content blocks
+          val contentValue = block.content
+          val contentStr = if js.typeOf(contentValue) == "string" then
+            contentValue.asInstanceOf[String]
+          else if js.Array.isArray(contentValue) then
+            // Extract text from array of content blocks
+            contentValue.asInstanceOf[js.Array[js.Dynamic]].toList.collect {
+              case c if c.`type`.asInstanceOf[String] == "text" =>
+                c.text.asInstanceOf[String]
+            }.mkString("\n")
+          else
+            js.JSON.stringify(contentValue)
           ContentBlock.ToolResult(
             toolUseId = block.tool_use_id.asInstanceOf[String],
-            content = block.content.asInstanceOf[String],
+            content = contentStr,
             isError = block.is_error.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
           )
         case "thinking" =>

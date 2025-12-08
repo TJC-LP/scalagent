@@ -50,26 +50,25 @@ object MacroToolExample extends ZIOAppDefault:
       // Return structured JSON - Claude can parse and use the fields!
       ZIO.succeed(ToolResult.json(WeatherData(location, temp, u.toString, "Sunny")))
 
-    // Scala 3 enum for arithmetic operations - maximum type safety!
-    enum Operation:
-      case Add, Subtract, Multiply, Divide
-
+    // Simple string-based calculator for testing
     @Tool("calculator", "Perform basic arithmetic operations")
     def calculate(
-        @Param("Arithmetic operation to perform") operation: Operation,
+        @Param("Operation: add, subtract, multiply, divide") operation: String,
         @Param("First number") a: Double,
         @Param("Second number") b: Double
     ): Task[ToolResult] =
-      operation match
-        case Operation.Add =>
+      operation.toLowerCase match
+        case "add" =>
           ZIO.succeed(ToolResult.text(s"$a + $b = ${a + b}"))
-        case Operation.Subtract =>
+        case "subtract" =>
           ZIO.succeed(ToolResult.text(s"$a - $b = ${a - b}"))
-        case Operation.Multiply =>
+        case "multiply" =>
           ZIO.succeed(ToolResult.text(s"$a * $b = ${a * b}"))
-        case Operation.Divide =>
+        case "divide" =>
           if b == 0 then ZIO.succeed(ToolResult.error("Division by zero"))
           else ZIO.succeed(ToolResult.text(s"$a / $b = ${a / b}"))
+        case _ =>
+          ZIO.succeed(ToolResult.error(s"Unknown operation: $operation"))
 
     @Tool("knowledge_lookup", "Look up information from a knowledge base")
     def lookup(
@@ -99,7 +98,7 @@ object MacroToolExample extends ZIOAppDefault:
 
       options = AgentOptions.default
         .withModel("claude-sonnet-4-20250514")
-        .withPermissionMode(PermissionMode.DontAsk)
+        .withPermissionMode(PermissionMode.BypassPermissions)
         .withMaxTurns(10)
         .withMcpServer("tools", server)
 

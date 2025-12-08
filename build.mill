@@ -40,6 +40,9 @@ object examples extends ScalaJSModule {
   override def moduleKind = ModuleKind.ESModule
   override def moduleDeps = Seq(agent)
 
+  // Set main class for running examples
+  override def mainClass = Some("com.tjclp.claude.agent.examples.MacroToolExample")
+
   def mvnDeps = Seq(
     mvn"dev.zio::zio::2.1.14",
     mvn"dev.zio::zio-streams::2.1.14"
