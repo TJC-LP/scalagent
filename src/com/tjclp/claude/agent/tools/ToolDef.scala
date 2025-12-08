@@ -2,6 +2,7 @@ package com.tjclp.claude.agent.tools
 
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters._
+import scala.concurrent.ExecutionContext.Implicits.global
 import zio._
 import zio.json._
 
@@ -21,12 +22,12 @@ import zio.json._
   * @param handler
   *   The function that executes the tool
   */
-final case class ToolDef[A: JsonDecoder](
+final case class ToolDef[A](
     name: String,
     description: String,
     inputSchema: JsonSchema,
     handler: A => Task[ToolResult]
-):
+)(using decoder: JsonDecoder[A]):
 
   /** Convert to raw JavaScript tool definition for SDK */
   def toRaw: js.Object =
@@ -37,6 +38,87 @@ final case class ToolDef[A: JsonDecoder](
         inputSchema = inputSchema.toRaw
       )
       .asInstanceOf[js.Object]
+
+  /** Convert to SDK MCP tool format with handler.
+    *
+    * This captures the JsonDecoder at construction time, allowing tools to be collected in List[ToolDef[?]] and still
+    * retain their parsing capability.
+    *
+    * @param runtime
+    *   ZIO runtime for executing the handler
+    * @return
+    *   JavaScript object in SDK tool format
+    */
+  def toSdkTool(runtime: Runtime[Any]): js.Object =
+    js.Dynamic
+      .literal(
+        name = name,
+        description = description,
+        inputSchema = inputSchema.toRaw,
+        handler = createSdkHandler(runtime)
+      )
+      .asInstanceOf[js.Object]
+
+  /** Create a JavaScript handler function from the ZIO-based handler.
+    *
+    * The SDK expects: (args: object, extra: unknown) => Promise<CallToolResult>
+    *
+    * CallToolResult format: { content: [{ type: "text", text: string }], isError?: boolean }
+    */
+  private def createSdkHandler(
+      runtime: Runtime[Any]
+  ): js.Function2[js.Any, js.Any, js.Promise[js.Object]] =
+    (args: js.Any, extra: js.Any) => {
+      val effect = for
+        // Parse input JSON to Scala type
+        inputJson <- ZIO.attempt(js.JSON.stringify(args))
+        input <- ZIO
+          .fromEither(inputJson.fromJson[A])
+          .mapError(err => new RuntimeException(s"Failed to parse tool input: $err"))
+
+        // Execute the handler
+        result <- handler(input)
+      yield resultToJs(result)
+
+      // Handle errors gracefully
+      val safeEffect = effect.catchAll { err =>
+        ZIO.succeed(
+          resultToJs(ToolResult.Error(s"Tool execution failed: ${err.getMessage}"))
+        )
+      }
+
+      Unsafe.unsafe { implicit unsafe =>
+        runtime.unsafe.runToFuture(safeEffect).toJSPromise
+      }
+    }
+
+  /** Convert a ToolResult to the SDK's expected format */
+  private def resultToJs(result: ToolResult): js.Object =
+    result match
+      case ToolResult.Success(content) =>
+        js.Dynamic
+          .literal(
+            content = js.Array(
+              js.Dynamic.literal(
+                `type` = "text",
+                text = content
+              )
+            )
+          )
+          .asInstanceOf[js.Object]
+
+      case ToolResult.Error(message) =>
+        js.Dynamic
+          .literal(
+            content = js.Array(
+              js.Dynamic.literal(
+                `type` = "text",
+                text = message
+              )
+            ),
+            isError = true
+          )
+          .asInstanceOf[js.Object]
 
 /** Result of tool execution */
 sealed trait ToolResult

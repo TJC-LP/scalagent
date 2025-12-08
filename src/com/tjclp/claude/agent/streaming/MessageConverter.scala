@@ -116,17 +116,55 @@ object MessageConverter:
     )
 
   private def parseStreamEvent(obj: js.Dynamic): AgentMessage.StreamEvent =
+    val event = obj.event.asInstanceOf[js.Dynamic]
     AgentMessage.StreamEvent(
       event = RawStreamEvent(
-        eventType = obj.event.`type`.asInstanceOf[String],
-        index = obj.event.index.asInstanceOf[js.UndefOr[Int]].toOption,
-        contentBlock = None, // Simplified for MVP
-        delta = None         // Simplified for MVP
+        eventType = event.`type`.asInstanceOf[String],
+        index = event.index.asInstanceOf[js.UndefOr[Int]].toOption,
+        contentBlock = parseOptionalContentBlock(event.content_block),
+        delta = parseOptionalDelta(event.delta)
       ),
       parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption,
       uuid = obj.uuid.asInstanceOf[String],
       sessionId = obj.session_id.asInstanceOf[String]
     )
+
+  private def parseOptionalContentBlock(raw: js.Dynamic): Option[ContentBlock] =
+    if js.isUndefined(raw) || raw == null then None
+    else
+      val blockType = raw.`type`.asInstanceOf[String]
+      Some(blockType match
+        case "text" =>
+          ContentBlock.Text(raw.text.asInstanceOf[js.UndefOr[String]].getOrElse(""))
+        case "tool_use" =>
+          ContentBlock.ToolUse(
+            id = raw.id.asInstanceOf[String],
+            name = raw.name.asInstanceOf[String],
+            input = jsToJson(raw.input)
+          )
+        case "thinking" =>
+          ContentBlock.Thinking(
+            thinking = raw.thinking.asInstanceOf[js.UndefOr[String]].getOrElse(""),
+            signature = raw.signature.asInstanceOf[js.UndefOr[String]].toOption
+          )
+        case _ =>
+          ContentBlock.Text(s"[Unknown content block: $blockType]")
+      )
+
+  private def parseOptionalDelta(raw: js.Dynamic): Option[StreamDelta] =
+    if js.isUndefined(raw) || raw == null then None
+    else
+      val deltaType = raw.`type`.asInstanceOf[String]
+      Some(deltaType match
+        case "text_delta" =>
+          StreamDelta.TextDelta(raw.text.asInstanceOf[String])
+        case "input_json_delta" =>
+          StreamDelta.InputJsonDelta(raw.partial_json.asInstanceOf[String])
+        case "thinking_delta" =>
+          StreamDelta.ThinkingDelta(raw.thinking.asInstanceOf[String])
+        case _ =>
+          StreamDelta.TextDelta(s"[Unknown delta: $deltaType]")
+      )
 
   private def parseToolProgress(obj: js.Dynamic): AgentMessage.ToolProgress =
     AgentMessage.ToolProgress(

@@ -2,7 +2,10 @@ package com.tjclp.claude.agent.config
 
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters._
+import zio._
 import zio.json._
+import com.tjclp.claude.agent.hooks._
+import com.tjclp.claude.agent.permissions._
 
 /** Configuration options for Claude Agent queries.
   *
@@ -41,7 +44,13 @@ final case class AgentOptions(
 
     // Advanced
     additionalDirectories: List[String] = Nil,
-    env: Map[String, String] = Map.empty
+    env: Map[String, String] = Map.empty,
+
+    // Hooks (Phase 2)
+    hooks: Map[HookEvent, List[HookCallback]] = Map.empty,
+
+    // Permission callback (Phase 2)
+    canUseTool: Option[CanUseTool] = None
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -76,14 +85,39 @@ final case class AgentOptions(
     if env.nonEmpty then
       obj.env = js.Dictionary(env.toSeq*)
 
+    // Note: Hooks are converted separately in ClaudeAgent when calling query()
+    // because they require a ZIO Runtime to bridge Scala→JS callbacks
+
     obj.asInstanceOf[js.Object]
+
+  /** Convert hooks to raw JavaScript format.
+    *
+    * This requires a Runtime to bridge ZIO callbacks to JS functions.
+    */
+  def hooksToRaw(runtime: Runtime[Any]): js.Dictionary[js.Array[js.Function1[js.Dynamic, js.Promise[js.Object]]]] =
+    if hooks.isEmpty then js.Dictionary()
+    else
+      js.Dictionary(
+        hooks.toSeq.map { case (event, callbacks) =>
+          event.toRaw -> callbacks.map(cb => HookCallback.toRawJs(cb, runtime)).toJSArray
+        }*
+      )
+
+  /** Convert canUseTool to raw JavaScript format.
+    *
+    * This requires a Runtime to bridge ZIO callbacks to JS functions.
+    */
+  def canUseToolToRaw(
+      runtime: Runtime[Any]
+  ): js.UndefOr[js.Function3[String, js.Any, js.Dynamic, js.Promise[js.Object]]] =
+    canUseTool.map(handler => CanUseTool.toRawJs(handler, runtime)).orUndefined
 
 object AgentOptions:
   /** Default options (empty configuration) */
   val default: AgentOptions = AgentOptions()
 
-  given JsonDecoder[AgentOptions] = DeriveJsonDecoder.gen[AgentOptions]
-  given JsonEncoder[AgentOptions] = DeriveJsonEncoder.gen[AgentOptions]
+  // Note: JSON codecs excluded because hooks contain functions that can't be serialized.
+  // Use toRaw for SDK serialization instead.
 
   // Extension methods for fluent builder pattern
   extension (opts: AgentOptions)
@@ -131,6 +165,36 @@ object AgentOptions:
 
     def withAdditionalDirectories(dirs: String*): AgentOptions =
       opts.copy(additionalDirectories = dirs.toList)
+
+    /** Add a hook callback for the specified event */
+    def withHook(event: HookEvent, callback: HookCallback): AgentOptions =
+      val existing = opts.hooks.getOrElse(event, Nil)
+      opts.copy(hooks = opts.hooks + (event -> (existing :+ callback)))
+
+    /** Add multiple hooks for the specified event */
+    def withHooks(event: HookEvent, callbacks: HookCallback*): AgentOptions =
+      val existing = opts.hooks.getOrElse(event, Nil)
+      opts.copy(hooks = opts.hooks + (event -> (existing ++ callbacks)))
+
+    /** Block specific tools via PreToolUse hook */
+    def withBlockedTools(toolNames: String*): AgentOptions =
+      opts.withHook(HookEvent.PreToolUse, HookCallback.blockTools(toolNames*))
+
+    /** Auto-approve specific tools via PermissionRequest hook */
+    def withAutoApprovedTools(toolNames: String*): AgentOptions =
+      opts.withHook(HookEvent.PermissionRequest, HookCallback.autoApprove(toolNames*))
+
+    /** Set a custom permission handler for tool execution */
+    def withCanUseTool(handler: CanUseTool): AgentOptions =
+      opts.copy(canUseTool = Some(handler))
+
+    /** Allow only specific tools via canUseTool */
+    def withOnlyAllowedTools(toolNames: String*): AgentOptions =
+      opts.copy(canUseTool = Some(CanUseTool.allowOnly(toolNames*)))
+
+    /** Deny specific tools via canUseTool */
+    def withDeniedTools(toolNames: String*): AgentOptions =
+      opts.copy(canUseTool = Some(CanUseTool.denyTools(toolNames*)))
 
 /** System prompt configuration */
 enum SystemPromptConfig:

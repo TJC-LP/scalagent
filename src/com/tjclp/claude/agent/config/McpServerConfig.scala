@@ -28,6 +28,13 @@ enum McpServerConfig:
       headers: Map[String, String] = Map.empty
   )
 
+  /** In-process SDK MCP server (created via McpServer.create) */
+  case Sdk(
+      name: String,
+      version: String = "1.0.0",
+      rawServerConfig: js.Object
+  )
+
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object = this match
     case Stdio(cmd, args, env) =>
@@ -46,9 +53,20 @@ enum McpServerConfig:
       if headers.nonEmpty then obj.headers = js.Dictionary(headers.toSeq*)
       obj.asInstanceOf[js.Object]
 
+    case Sdk(_, _, rawConfig) =>
+      // SDK server config is already in raw format
+      rawConfig
+
 object McpServerConfig:
-  given JsonDecoder[McpServerConfig] = DeriveJsonDecoder.gen[McpServerConfig]
-  given JsonEncoder[McpServerConfig] = DeriveJsonEncoder.gen[McpServerConfig]
+  // Note: Sdk variant cannot be serialized to/from JSON because it contains js.Object
+  // JSON codecs are provided only for Stdio, SSE, and HTTP variants
+
+  given stdioDecoder: JsonDecoder[McpServerConfig.Stdio] = DeriveJsonDecoder.gen[McpServerConfig.Stdio]
+  given stdioEncoder: JsonEncoder[McpServerConfig.Stdio] = DeriveJsonEncoder.gen[McpServerConfig.Stdio]
+  given sseDecoder: JsonDecoder[McpServerConfig.SSE] = DeriveJsonDecoder.gen[McpServerConfig.SSE]
+  given sseEncoder: JsonEncoder[McpServerConfig.SSE] = DeriveJsonEncoder.gen[McpServerConfig.SSE]
+  given httpDecoder: JsonDecoder[McpServerConfig.HTTP] = DeriveJsonDecoder.gen[McpServerConfig.HTTP]
+  given httpEncoder: JsonEncoder[McpServerConfig.HTTP] = DeriveJsonEncoder.gen[McpServerConfig.HTTP]
 
   /** Create a stdio MCP server config */
   def stdio(command: String, args: String*): McpServerConfig =

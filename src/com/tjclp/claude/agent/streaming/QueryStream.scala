@@ -22,11 +22,23 @@ trait RawQuery extends AsyncGenerator[js.Any, Unit, Unit]:
   /** Change the model for subsequent responses */
   def setModel(model: js.UndefOr[String]): js.Promise[Unit] = js.native
 
+  /** Set maximum thinking tokens */
+  def setMaxThinkingTokens(tokens: js.Any): js.Promise[Unit] = js.native
+
   /** Get supported slash commands */
   def supportedCommands(): js.Promise[js.Array[js.Dynamic]] = js.native
 
   /** Get supported models */
   def supportedModels(): js.Promise[js.Array[js.Dynamic]] = js.native
+
+  /** Get MCP server status */
+  def mcpServerStatus(): js.Promise[js.Array[js.Dynamic]] = js.native
+
+  /** Get account information */
+  def accountInfo(): js.Promise[js.Dynamic] = js.native
+
+  /** Stream additional input for multi-turn conversations */
+  def streamInput(input: js.Any): js.Promise[Unit] = js.native
 
 /** Wrapper for SDK Query that provides ZIO/ZStream interface.
   *
@@ -92,6 +104,49 @@ final class QueryStream private (rawQuery: RawQuery):
       .fromPromiseJS(rawQuery.supportedModels())
       .map(_.toList.map(ModelInfo.fromRaw))
 
+  /** Set maximum thinking tokens for extended thinking.
+    *
+    * @param tokens
+    *   Maximum tokens, or None to disable limit
+    */
+  def setMaxThinkingTokens(tokens: Option[Int]): Task[Unit] =
+    val jsTokens: js.Any = tokens.map(_.asInstanceOf[js.Any]).getOrElse(null)
+    ZIO.fromPromiseJS(rawQuery.setMaxThinkingTokens(jsTokens))
+
+  /** Get MCP server connection status.
+    *
+    * @return
+    *   List of MCP server status objects
+    */
+  def mcpServerStatus: Task[List[McpServerStatusInfo]] =
+    ZIO
+      .fromPromiseJS(rawQuery.mcpServerStatus())
+      .map(_.toList.map(McpServerStatusInfo.fromRaw))
+
+  /** Get account information.
+    *
+    * @return
+    *   Account info including email, organization, etc.
+    */
+  def accountInfo: Task[AccountInfo] =
+    ZIO
+      .fromPromiseJS(rawQuery.accountInfo())
+      .map(AccountInfo.fromRaw)
+
+  /** Stream additional user input for multi-turn conversations.
+    *
+    * This allows adding more messages to an ongoing conversation.
+    *
+    * @param message
+    *   The user message to add
+    */
+  def streamUserMessage(message: String): Task[Unit] =
+    val userMsg = js.Dynamic.literal(
+      role = "user",
+      content = message
+    )
+    ZIO.fromPromiseJS(rawQuery.streamInput(userMsg))
+
 object QueryStream:
 
   /** Create a QueryStream from a raw SDK Query object.
@@ -132,4 +187,45 @@ object ModelInfo:
       id = obj.id.asInstanceOf[String],
       name = obj.name.asInstanceOf[String],
       provider = obj.provider.asInstanceOf[String]
+    )
+
+/** MCP server connection status */
+final case class McpServerStatusInfo(
+    name: String,
+    status: String,
+    serverName: Option[String],
+    serverVersion: Option[String]
+)
+
+object McpServerStatusInfo:
+  def fromRaw(obj: js.Dynamic): McpServerStatusInfo =
+    val serverInfo = obj.serverInfo.asInstanceOf[js.UndefOr[js.Dynamic]]
+    McpServerStatusInfo(
+      name = obj.name.asInstanceOf[String],
+      status = obj.status.asInstanceOf[String],
+      serverName = serverInfo.toOption.flatMap(si =>
+        si.name.asInstanceOf[js.UndefOr[String]].toOption
+      ),
+      serverVersion = serverInfo.toOption.flatMap(si =>
+        si.version.asInstanceOf[js.UndefOr[String]].toOption
+      )
+    )
+
+/** Account information from the SDK */
+final case class AccountInfo(
+    email: Option[String],
+    organization: Option[String],
+    subscriptionType: Option[String],
+    tokenSource: Option[String],
+    apiKeySource: Option[String]
+)
+
+object AccountInfo:
+  def fromRaw(obj: js.Dynamic): AccountInfo =
+    AccountInfo(
+      email = obj.email.asInstanceOf[js.UndefOr[String]].toOption,
+      organization = obj.organization.asInstanceOf[js.UndefOr[String]].toOption,
+      subscriptionType = obj.subscriptionType.asInstanceOf[js.UndefOr[String]].toOption,
+      tokenSource = obj.tokenSource.asInstanceOf[js.UndefOr[String]].toOption,
+      apiKeySource = obj.apiKeySource.asInstanceOf[js.UndefOr[String]].toOption
     )
