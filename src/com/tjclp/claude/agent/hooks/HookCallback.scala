@@ -162,7 +162,8 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          reason = SessionEndReason.Success // Simplified
+          reason = parseSessionEndReason(raw.reason.asInstanceOf[js.UndefOr[String]].toOption),
+          totalCostUsd = raw.total_cost_usd.asInstanceOf[js.UndefOr[Double]].toOption
         )
 
       case "Stop" =>
@@ -216,3 +217,12 @@ object HookCallback:
     import zio.json._
     val jsonStr = js.JSON.stringify(value)
     jsonStr.fromJson[Json].getOrElse(Json.Null)
+
+  private def parseSessionEndReason(raw: Option[String]): SessionEndReason =
+    raw match
+      case Some("success")     => SessionEndReason.Success
+      case Some("error")       => SessionEndReason.Error
+      case Some("interrupted") => SessionEndReason.Interrupted
+      case Some("max_turns")   => SessionEndReason.MaxTurns
+      case Some("max_budget")  => SessionEndReason.MaxBudget
+      case _                   => SessionEndReason.Success

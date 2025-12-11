@@ -135,15 +135,29 @@ private final class ClaudeAgentLive extends ClaudeAgent:
       prompt: String,
       options: AgentOptions
   ): Task[QueryStream] =
-    ZIO.attempt {
-      val rawOptions = options.toRaw
-      val params = js.Dynamic.literal(
-        prompt = prompt,
-        options = rawOptions
-      )
-      val rawQuery = SdkModule.query(params).asInstanceOf[RawQuery]
-      QueryStream(rawQuery)
-    }
+    for
+      runtime <- ZIO.runtime[Any]
+      stream <- ZIO.attempt {
+        // Convert options to raw JS object
+        val rawOptions = options.toRaw.asInstanceOf[js.Dynamic]
+
+        // Wire up hooks if any are configured
+        if options.hooks.nonEmpty then
+          rawOptions.hooks = options.hooksToRaw(runtime)
+
+        // Wire up canUseTool permission handler if configured
+        options.canUseToolToRaw(runtime).foreach { handler =>
+          rawOptions.canUseTool = handler
+        }
+
+        val params = js.Dynamic.literal(
+          prompt = prompt,
+          options = rawOptions
+        )
+        val rawQuery = SdkModule.query(params).asInstanceOf[RawQuery]
+        QueryStream(rawQuery)
+      }
+    yield stream
 
 /** JavaScript module binding for the SDK.
   *

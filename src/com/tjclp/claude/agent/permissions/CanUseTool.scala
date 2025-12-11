@@ -5,7 +5,7 @@ import scala.scalajs.js.JSConverters._
 import zio._
 import zio.json._
 import zio.json.ast.Json
-import com.tjclp.claude.agent.hooks.PermissionSuggestion
+import com.tjclp.claude.agent.hooks.{PermissionSuggestion, PermissionBehavior}
 
 /** Type alias for the canUseTool permission handler.
   *
@@ -92,9 +92,28 @@ object CanUseTool:
 
   private def parseContext(options: js.Dynamic): PermissionContext =
     PermissionContext(
-      suggestions = Nil, // TODO: Parse suggestions array
+      suggestions = parseSuggestions(options.suggestions),
       blockedPath = options.blockedPath.asInstanceOf[js.UndefOr[String]].toOption,
       decisionReason = options.decisionReason.asInstanceOf[js.UndefOr[String]].toOption,
       toolUseId = options.toolUseID.asInstanceOf[String],
       agentId = options.agentID.asInstanceOf[js.UndefOr[String]].toOption
     )
+
+  private def parseSuggestions(raw: js.Any): List[PermissionSuggestion] =
+    if js.isUndefined(raw) || raw == null then Nil
+    else
+      val arr = raw.asInstanceOf[js.Array[js.Dynamic]]
+      arr.toList.map { s =>
+        PermissionSuggestion(
+          toolName = s.toolName.asInstanceOf[String],
+          behavior = parseBehavior(s.behavior.asInstanceOf[String]),
+          prefix = s.prefix.asInstanceOf[js.UndefOr[String]].toOption
+        )
+      }
+
+  private def parseBehavior(raw: String): PermissionBehavior =
+    raw match
+      case "allow" => PermissionBehavior.Allow
+      case "deny"  => PermissionBehavior.Deny
+      case "ask"   => PermissionBehavior.Ask
+      case _       => PermissionBehavior.Ask

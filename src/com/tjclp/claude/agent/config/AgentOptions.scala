@@ -46,10 +46,16 @@ final case class AgentOptions(
     additionalDirectories: List[String] = Nil,
     env: Map[String, String] = Map.empty,
 
-    // Hooks (Phase 2)
+    // Beta features (e.g., "context-1m-2025-08-07")
+    betaFeatures: List[String] = Nil,
+
+    // Sandbox settings
+    sandboxSettings: Option[SandboxSettings] = None,
+
+    // Hooks
     hooks: Map[HookEvent, List[HookCallback]] = Map.empty,
 
-    // Permission callback (Phase 2)
+    // Permission callback
     canUseTool: Option[CanUseTool] = None
 ):
   /** Convert to raw JavaScript object for SDK */
@@ -84,6 +90,11 @@ final case class AgentOptions(
 
     if env.nonEmpty then
       obj.env = js.Dictionary(env.toSeq*)
+
+    if betaFeatures.nonEmpty then
+      obj.betaFeatures = betaFeatures.toJSArray
+
+    sandboxSettings.foreach(ss => obj.sandbox = ss.toRaw)
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks
@@ -165,6 +176,12 @@ object AgentOptions:
 
     def withAdditionalDirectories(dirs: String*): AgentOptions =
       opts.copy(additionalDirectories = dirs.toList)
+
+    def withBetaFeatures(features: String*): AgentOptions =
+      opts.copy(betaFeatures = features.toList)
+
+    def withSandbox(settings: SandboxSettings): AgentOptions =
+      opts.copy(sandboxSettings = Some(settings))
 
     /** Add a hook callback for the specified event */
     def withHook(event: HookEvent, callback: HookCallback): AgentOptions =
