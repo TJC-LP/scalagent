@@ -6,6 +6,7 @@ import zio._
 import zio.json._
 import zio.json.ast.Json
 import com.tjclp.claude.agent.hooks.{PermissionSuggestion, PermissionBehavior}
+import com.tjclp.claude.agent.tools.ToolName
 
 /** Type alias for the canUseTool permission handler.
   *
@@ -14,13 +15,13 @@ import com.tjclp.claude.agent.hooks.{PermissionSuggestion, PermissionBehavior}
   * Example usage:
   * {{{
   * val handler: CanUseTool = (toolName, input, ctx) =>
-  *   if toolName == "Bash" then
+  *   if toolName == ToolName.Bash then
   *     ZIO.succeed(PermissionResult.deny("Bash is disabled"))
   *   else
   *     ZIO.succeed(PermissionResult.allow)
   * }}}
   */
-type CanUseTool = (String, Json, PermissionContext) => Task[PermissionResult]
+type CanUseTool = (ToolName, Json, PermissionContext) => Task[PermissionResult]
 
 /** Context provided to canUseTool handler.
   *
@@ -57,15 +58,27 @@ object CanUseTool:
   def denyAll(reason: String): CanUseTool = (_, _, _) =>
     ZIO.succeed(PermissionResult.deny(reason))
 
-  /** Allow specific tools, deny others */
-  def allowOnly(allowedTools: String*): CanUseTool = (toolName, _, _) =>
+  /** Allow specific tools, deny others.
+    *
+    * Example:
+    * {{{
+    * CanUseTool.allowOnly(ToolName.Read, ToolName.Glob, ToolName.Grep)
+    * }}}
+    */
+  def allowOnly(allowedTools: ToolName*): CanUseTool = (toolName, _, _) =>
     if allowedTools.contains(toolName) then ZIO.succeed(PermissionResult.allow)
-    else ZIO.succeed(PermissionResult.deny(s"Tool $toolName is not allowed"))
+    else ZIO.succeed(PermissionResult.deny(s"Tool ${toolName.raw} is not allowed"))
 
-  /** Deny specific tools, allow others */
-  def denyTools(deniedTools: String*): CanUseTool = (toolName, _, _) =>
+  /** Deny specific tools, allow others.
+    *
+    * Example:
+    * {{{
+    * CanUseTool.denyTools(ToolName.Bash, ToolName.Write)
+    * }}}
+    */
+  def denyTools(deniedTools: ToolName*): CanUseTool = (toolName, _, _) =>
     if deniedTools.contains(toolName) then
-      ZIO.succeed(PermissionResult.deny(s"Tool $toolName is blocked"))
+      ZIO.succeed(PermissionResult.deny(s"Tool ${toolName.raw} is blocked"))
     else ZIO.succeed(PermissionResult.allow)
 
   /** Convert a Scala CanUseTool handler to JavaScript function for SDK.
@@ -76,7 +89,8 @@ object CanUseTool:
       handler: CanUseTool,
       runtime: Runtime[Any]
   ): js.Function3[String, js.Any, js.Dynamic, js.Promise[js.Object]] =
-    (toolName: String, input: js.Any, options: js.Dynamic) => {
+    (rawToolName: String, input: js.Any, options: js.Dynamic) => {
+      val toolName = ToolName(rawToolName)
       val inputJson = parseJson(input)
       val context = parseContext(options)
       val effect = handler(toolName, inputJson, context).map(_.toRaw)
@@ -105,7 +119,7 @@ object CanUseTool:
       val arr = raw.asInstanceOf[js.Array[js.Dynamic]]
       arr.toList.map { s =>
         PermissionSuggestion(
-          toolName = s.toolName.asInstanceOf[String],
+          toolName = ToolName(s.toolName.asInstanceOf[String]),
           behavior = parseBehavior(s.behavior.asInstanceOf[String]),
           prefix = s.prefix.asInstanceOf[js.UndefOr[String]].toOption
         )

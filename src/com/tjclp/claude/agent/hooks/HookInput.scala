@@ -2,6 +2,7 @@ package com.tjclp.claude.agent.hooks
 
 import zio.json._
 import zio.json.ast.Json
+import com.tjclp.claude.agent.tools.ToolName
 
 /** Input payloads for different hook event types.
   *
@@ -24,7 +25,7 @@ object HookInput:
       sessionId: String,
       cwd: String,
       transcriptPath: String,
-      toolName: String,
+      toolName: ToolName,
       toolInput: Json,
       toolUseId: String,
       agentId: Option[String] = None
@@ -35,7 +36,7 @@ object HookInput:
       sessionId: String,
       cwd: String,
       transcriptPath: String,
-      toolName: String,
+      toolName: ToolName,
       toolInput: Json,
       toolUseId: String,
       toolResponse: String,
@@ -47,7 +48,7 @@ object HookInput:
       sessionId: String,
       cwd: String,
       transcriptPath: String,
-      toolName: String,
+      toolName: ToolName,
       toolInput: Json,
       toolUseId: String,
       error: String,
@@ -59,7 +60,7 @@ object HookInput:
       sessionId: String,
       cwd: String,
       transcriptPath: String,
-      toolName: String,
+      toolName: ToolName,
       toolInput: Json,
       toolUseId: String,
       suggestions: List[PermissionSuggestion] = Nil,
@@ -143,7 +144,7 @@ object HookInput:
 
 /** Permission suggestion from the SDK */
 final case class PermissionSuggestion(
-    toolName: String,
+    toolName: ToolName,
     behavior: PermissionBehavior,
     prefix: Option[String] = None
 )

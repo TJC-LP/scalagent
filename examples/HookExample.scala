@@ -6,6 +6,7 @@ import com.tjclp.claude.agent._
 import com.tjclp.claude.agent.config._
 import com.tjclp.claude.agent.messages._
 import com.tjclp.claude.agent.hooks._
+import com.tjclp.claude.agent.tools.ToolName
 
 /** Example demonstrating the hook system for tool interception.
   *
@@ -30,16 +31,16 @@ object HookExample extends ZIOAppDefault:
     // Hook that logs all tool calls before execution
     val loggingHook: HookCallback = {
       case input: HookInput.PreToolUse =>
-        Console.printLine(s"[Hook] About to call tool: ${input.toolName}").as(HookOutput.Continue())
+        Console.printLine(s"[Hook] About to call tool: ${input.toolName.raw}").as(HookOutput.Continue())
       case input: HookInput.PostToolUse =>
-        Console.printLine(s"[Hook] Tool completed: ${input.toolName}").as(HookOutput.Continue())
+        Console.printLine(s"[Hook] Tool completed: ${input.toolName.raw}").as(HookOutput.Continue())
       case _ =>
         ZIO.succeed(HookOutput.Continue())
     }
 
     // Hook that blocks dangerous Bash commands
     val securityHook: HookCallback = {
-      case input: HookInput.PreToolUse if input.toolName == "Bash" =>
+      case input: HookInput.PreToolUse if input.toolName == ToolName.Bash =>
         val inputStr = input.toolInput.toString
         if inputStr.contains("rm ") || inputStr.contains("sudo") then
           Console.printLine(s"[Security] Blocked dangerous command: $inputStr") *>
@@ -52,15 +53,16 @@ object HookExample extends ZIOAppDefault:
     // Hook for permission requests - auto-approve Read, deny Write
     val permissionHook: HookCallback = {
       case input: HookInput.PermissionRequest =>
-        if input.toolName == "Read" then
-          Console.printLine(s"[Permission] Auto-approving Read tool") *>
-            ZIO.succeed(HookOutput.Decision(approve = true, reason = Some("Read is safe")))
-        else if input.toolName == "Write" then
-          Console.printLine(s"[Permission] Denying Write tool") *>
-            ZIO.succeed(HookOutput.Decision(approve = false, reason = Some("Write not allowed")))
-        else
-          Console.printLine(s"[Permission] Asking user for ${input.toolName}") *>
-            ZIO.succeed(HookOutput.Continue())
+        input.toolName match
+          case ToolName.Read =>
+            Console.printLine(s"[Permission] Auto-approving Read tool") *>
+              ZIO.succeed(HookOutput.Decision(approve = true, reason = Some("Read is safe")))
+          case ToolName.Write =>
+            Console.printLine(s"[Permission] Denying Write tool") *>
+              ZIO.succeed(HookOutput.Decision(approve = false, reason = Some("Write not allowed")))
+          case other =>
+            Console.printLine(s"[Permission] Asking user for ${other.raw}") *>
+              ZIO.succeed(HookOutput.Continue())
       case _ =>
         ZIO.succeed(HookOutput.Continue())
     }

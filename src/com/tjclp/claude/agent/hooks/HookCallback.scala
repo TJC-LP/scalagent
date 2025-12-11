@@ -5,6 +5,7 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters._
 import zio._
 import zio.json.ast.Json
+import com.tjclp.claude.agent.tools.ToolName
 
 /** Type alias for hook callback functions.
   *
@@ -14,7 +15,7 @@ import zio.json.ast.Json
   * Example usage:
   * {{{
   * val myHook: HookCallback = {
-  *   case input: HookInput.PreToolUse if input.toolName == "Bash" =>
+  *   case input: HookInput.PreToolUse if input.toolName == ToolName.Bash =>
   *     ZIO.succeed(HookOutput.deny("Bash commands are not allowed"))
   *   case _ =>
   *     ZIO.succeed(HookOutput.continue)
@@ -28,18 +29,30 @@ object HookCallback:
   /** Create a simple hook that always continues */
   val alwaysContinue: HookCallback = _ => ZIO.succeed(HookOutput.continue)
 
-  /** Create a hook that blocks specific tools */
-  def blockTools(toolNames: String*): HookCallback = {
+  /** Create a hook that blocks specific tools.
+    *
+    * Example:
+    * {{{
+    * val hook = HookCallback.blockTools(ToolName.Bash, ToolName.Write)
+    * }}}
+    */
+  def blockTools(toolNames: ToolName*): HookCallback = {
     case input: HookInput.PreToolUse if toolNames.contains(input.toolName) =>
-      ZIO.succeed(HookOutput.block(s"Tool ${input.toolName} is blocked"))
+      ZIO.succeed(HookOutput.block(s"Tool ${input.toolName.raw} is blocked"))
     case input: HookInput.PermissionRequest if toolNames.contains(input.toolName) =>
-      ZIO.succeed(HookOutput.deny(s"Tool ${input.toolName} is blocked"))
+      ZIO.succeed(HookOutput.deny(s"Tool ${input.toolName.raw} is blocked"))
     case _ =>
       ZIO.succeed(HookOutput.continue)
   }
 
-  /** Create a hook that auto-approves specific tools */
-  def autoApprove(toolNames: String*): HookCallback = {
+  /** Create a hook that auto-approves specific tools.
+    *
+    * Example:
+    * {{{
+    * val hook = HookCallback.autoApprove(ToolName.Read, ToolName.Glob)
+    * }}}
+    */
+  def autoApprove(toolNames: ToolName*): HookCallback = {
     case input: HookInput.PermissionRequest if toolNames.contains(input.toolName) =>
       ZIO.succeed(HookOutput.approve)
     case _ =>
@@ -92,7 +105,7 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          toolName = raw.tool_name.asInstanceOf[String],
+          toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
           toolUseId = raw.tool_use_id.asInstanceOf[String],
           agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption
@@ -103,7 +116,7 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          toolName = raw.tool_name.asInstanceOf[String],
+          toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
           toolUseId = raw.tool_use_id.asInstanceOf[String],
           toolResponse = raw.tool_response.asInstanceOf[String],
@@ -115,7 +128,7 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          toolName = raw.tool_name.asInstanceOf[String],
+          toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
           toolUseId = raw.tool_use_id.asInstanceOf[String],
           error = raw.error.asInstanceOf[String],
@@ -127,7 +140,7 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          toolName = raw.tool_name.asInstanceOf[String],
+          toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
           toolUseId = raw.tool_use_id.asInstanceOf[String],
           agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption

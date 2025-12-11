@@ -7,10 +7,12 @@ import com.tjclp.claude.agent.config._
 import com.tjclp.claude.agent.errors._
 import com.tjclp.claude.agent.messages._
 
-/** Simple example demonstrating basic Claude Agent SDK usage.
+/** Simple example demonstrating the simplified Claude entry point.
   *
-  * This example shows both the verbose pattern-matching approach and
-  * the new ergonomic extension methods for comparison.
+  * This example shows the most ergonomic patterns for using the SDK:
+  * - Claude.ask() for one-shot questions
+  * - Claude.query() for streaming responses
+  * - Claude.conversation() for multi-turn chats
   *
   * Run with: mill examples.run
   *
@@ -24,41 +26,27 @@ object SimpleQuery extends ZIOAppDefault:
       .withPermissionMode(PermissionMode.DontAsk)
       .withMaxTurns(5)
 
-    val program = for
-      _ <- Console.printLine("=== Using new ergonomic APIs ===").orDie
+    for
+      _ <- Console.printLine("=== One-shot question with Claude.ask ===").orDie
+      answer <- Claude.ask("What is 2 + 2? Reply with just the number.", options)
+      _ <- Console.printLine(s"Answer: $answer").orDie
 
-      // New: Use collectResult to get QueryResult with all messages
-      result <- ClaudeAgent
-        .query("What is 2 + 2? Reply with just the number.", options)
-        .tap(handleMessageErgonomic)
-        .collectResult
+      _ <- Console.printLine("\n=== Streaming with Claude.query ===").orDie
+      result <- Claude.query("Count from 1 to 5, one number per line.", options)
+        .textOnly
+        .tap(text => Console.printLine(s"  >> $text").orDie)
+        .runCollect
+        .map(_.mkString)
+      _ <- Console.printLine(s"Collected: $result").orDie
 
-      // New: Use QueryResult combinators
-      _ <- Console.printLine(s"\n--- QueryResult ---").orDie
-      _ <- Console.printLine(s"Success: ${result.isSuccess}").orDie
-      _ <- Console.printLine(s"Cost: $$${result.cost}").orDie
-      _ <- Console.printLine(s"Turns: ${result.turns}").orDie
-      _ <- Console.printLine(s"All text: ${result.allText}").orDie
-
-      // New: Get typed result or fail
-      text <- result.textOrFail
-      _ <- Console.printLine(s"Final answer: $text").orDie
+      _ <- Console.printLine("\n=== Multi-turn conversation ===").orDie
+      finalAnswer <- Claude.conversation(options) { session =>
+        for
+          first <- session.ask("What is 10 + 5? Just the number.")
+          _ <- Console.printLine(s"First answer: $first").orDie
+          second <- session.ask(s"Now double that number ($first). Just the number.")
+          _ <- Console.printLine(s"Second answer: $second").orDie
+        yield second
+      }
+      _ <- Console.printLine(s"Final: $finalAnswer").orDie
     yield ()
-
-    program.provide(ClaudeAgent.live)
-
-  /** Handle messages using new ergonomic extension methods */
-  private def handleMessageErgonomic(msg: AgentMessage): IO[AgentError, Unit] =
-    // Use extension methods instead of verbose pattern matching
-    val effect = msg.text match
-      case Some(text) if msg.isAssistant =>
-        Console.printLine(s"Claude: $text")
-      case _ =>
-        // For Result messages, use the outcome extension methods
-        msg.asResult match
-          case Some(outcome) =>
-            val status = if outcome.isSuccess then "Success" else "Error"
-            Console.printLine(s"[$status] Cost: $$${outcome.totalCostUsd}, Turns: ${outcome.numTurns}")
-          case None =>
-            ZIO.unit
-    effect.mapError(e => AgentError.Unknown(e.getMessage, Some(e)))

@@ -7,6 +7,7 @@ import com.tjclp.claude.agent._
 import com.tjclp.claude.agent.config._
 import com.tjclp.claude.agent.messages._
 import com.tjclp.claude.agent.permissions._
+import com.tjclp.claude.agent.tools.ToolName
 
 /** Example demonstrating the permission callback system.
   *
@@ -31,16 +32,16 @@ object PermissionExample extends ZIOAppDefault:
     // Custom permission handler with logging
     val customPermissionHandler: CanUseTool = (toolName, input, context) =>
       for
-        _ <- Console.printLine(s"[Permission] Tool request: $toolName")
+        _ <- Console.printLine(s"[Permission] Tool request: ${toolName.raw}")
         _ <- Console.printLine(s"[Permission] Input: ${input.toString.take(100)}...")
         result <- toolName match
           // Always allow read operations
-          case "Read" | "Glob" | "Grep" =>
-            Console.printLine(s"[Permission] Allowing read tool: $toolName") *>
+          case ToolName.Read | ToolName.Glob | ToolName.Grep =>
+            Console.printLine(s"[Permission] Allowing read tool: ${toolName.raw}") *>
               ZIO.succeed(PermissionResult.Allow())
 
           // Allow Bash only for safe commands
-          case "Bash" =>
+          case ToolName.Bash =>
             val inputStr = input.toString
             if inputStr.contains("ls") || inputStr.contains("pwd") || inputStr.contains("echo") then
               Console.printLine(s"[Permission] Allowing safe Bash command") *>
@@ -55,8 +56,8 @@ object PermissionExample extends ZIOAppDefault:
                 )
 
           // Deny write operations
-          case "Write" | "Edit" =>
-            Console.printLine(s"[Permission] Denying write tool: $toolName") *>
+          case ToolName.Write | ToolName.Edit =>
+            Console.printLine(s"[Permission] Denying write tool: ${toolName.raw}") *>
               ZIO.succeed(
                 PermissionResult.Deny(
                   message = "Write operations are not allowed in this session",
@@ -66,7 +67,7 @@ object PermissionExample extends ZIOAppDefault:
 
           // Allow everything else with a warning
           case other =>
-            Console.printLine(s"[Permission] Allowing other tool: $other") *>
+            Console.printLine(s"[Permission] Allowing other tool: ${other.raw}") *>
               ZIO.succeed(PermissionResult.Allow())
       yield result
 

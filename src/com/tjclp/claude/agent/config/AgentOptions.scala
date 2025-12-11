@@ -6,6 +6,7 @@ import zio._
 import zio.json._
 import com.tjclp.claude.agent.hooks._
 import com.tjclp.claude.agent.permissions._
+import com.tjclp.claude.agent.tools.ToolName
 
 /** Configuration options for Claude Agent queries.
   *
@@ -193,24 +194,48 @@ object AgentOptions:
       val existing = opts.hooks.getOrElse(event, Nil)
       opts.copy(hooks = opts.hooks + (event -> (existing ++ callbacks)))
 
-    /** Block specific tools via PreToolUse hook */
-    def withBlockedTools(toolNames: String*): AgentOptions =
+    /** Block specific tools via PreToolUse hook.
+      *
+      * Example:
+      * {{{
+      * options.withBlockedTools(ToolName.Bash, ToolName.Write)
+      * }}}
+      */
+    def withBlockedTools(toolNames: ToolName*): AgentOptions =
       opts.withHook(HookEvent.PreToolUse, HookCallback.blockTools(toolNames*))
 
-    /** Auto-approve specific tools via PermissionRequest hook */
-    def withAutoApprovedTools(toolNames: String*): AgentOptions =
+    /** Auto-approve specific tools via PermissionRequest hook.
+      *
+      * Example:
+      * {{{
+      * options.withAutoApprovedTools(ToolName.Read, ToolName.Glob)
+      * }}}
+      */
+    def withAutoApprovedTools(toolNames: ToolName*): AgentOptions =
       opts.withHook(HookEvent.PermissionRequest, HookCallback.autoApprove(toolNames*))
 
     /** Set a custom permission handler for tool execution */
     def withCanUseTool(handler: CanUseTool): AgentOptions =
       opts.copy(canUseTool = Some(handler))
 
-    /** Allow only specific tools via canUseTool */
-    def withOnlyAllowedTools(toolNames: String*): AgentOptions =
+    /** Allow only specific tools via canUseTool.
+      *
+      * Example:
+      * {{{
+      * options.withOnlyAllowedTools(ToolName.Read, ToolName.Glob, ToolName.Grep)
+      * }}}
+      */
+    def withOnlyAllowedTools(toolNames: ToolName*): AgentOptions =
       opts.copy(canUseTool = Some(CanUseTool.allowOnly(toolNames*)))
 
-    /** Deny specific tools via canUseTool */
-    def withDeniedTools(toolNames: String*): AgentOptions =
+    /** Deny specific tools via canUseTool.
+      *
+      * Example:
+      * {{{
+      * options.withDeniedTools(ToolName.Bash, ToolName.Write)
+      * }}}
+      */
+    def withDeniedTools(toolNames: ToolName*): AgentOptions =
       opts.copy(canUseTool = Some(CanUseTool.denyTools(toolNames*)))
 
 /** System prompt configuration */
