@@ -239,3 +239,89 @@ object HookCallback:
       case Some("max_turns")   => SessionEndReason.MaxTurns
       case Some("max_budget")  => SessionEndReason.MaxBudget
       case _                   => SessionEndReason.Success
+
+  // ============================================================================
+  // Hook Combinator Extension Methods
+  // ============================================================================
+
+  extension (hook: HookCallback)
+
+    /** Only run this hook when the predicate matches, otherwise continue.
+      *
+      * Example:
+      * {{{
+      * val logOnlyBash = HookCallback.logging(println)
+      *   .when(_.isInstanceOf[HookInput.PreToolUse])
+      * }}}
+      */
+    def when(predicate: HookInput => Boolean): HookCallback = { input =>
+      if predicate(input) then hook(input)
+      else ZIO.succeed(HookOutput.continue)
+    }
+
+    /** Skip this hook when the predicate matches (inverse of when).
+      *
+      * Example:
+      * {{{
+      * val blockNonRead = HookCallback.blockTools(ToolName.Bash)
+      *   .unless(input => input.toolName == ToolName.Read)
+      * }}}
+      */
+    def unless(predicate: HookInput => Boolean): HookCallback =
+      hook.when(input => !predicate(input))
+
+    /** Chain: run this hook first, if it continues then run the other hook.
+      *
+      * Example:
+      * {{{
+      * val pipeline = loggingHook.andThen(securityHook).andThen(rateLimitHook)
+      * }}}
+      */
+    def andThen(other: HookCallback): HookCallback = { input =>
+      hook(input).flatMap {
+        case c: HookOutput.Continue => other(input)
+        case nonContinue            => ZIO.succeed(nonContinue)
+      }
+    }
+
+    /** Fallback: run this hook, if it blocks/denies then try the other hook.
+      *
+      * Example:
+      * {{{
+      * val lenientSecurity = strictHook.orElse(permissiveHook)
+      * }}}
+      */
+    def orElse(fallback: HookCallback): HookCallback = { input =>
+      hook(input).flatMap {
+        case _: HookOutput.Block    => fallback(input)
+        case d: HookOutput.Decision if !d.approve => fallback(input)
+        case other                  => ZIO.succeed(other)
+      }
+    }
+
+    /** Apply a transformation to the hook output.
+      *
+      * Example:
+      * {{{
+      * val withMessage = hook.mapOutput {
+      *   case c: HookOutput.Continue => c.copy(systemMessage = Some("Processed"))
+      *   case other => other
+      * }
+      * }}}
+      */
+    def mapOutput(f: HookOutput => HookOutput): HookCallback = { input =>
+      hook(input).map(f)
+    }
+
+    /** Filter inputs before passing to this hook.
+      *
+      * Example:
+      * {{{
+      * val onlyToolEvents = hook.filter {
+      *   case _: HookInput.PreToolUse | _: HookInput.PostToolUse => true
+      *   case _ => false
+      * }
+      * }}}
+      */
+    def filter(predicate: HookInput => Boolean): HookCallback =
+      hook.when(predicate)
