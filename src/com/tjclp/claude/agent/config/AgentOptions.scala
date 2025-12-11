@@ -142,9 +142,27 @@ object AgentOptions:
     def withModelId(id: String): AgentOptions = opts.copy(model = Some(Model.fromId(id)))
 
     def withCwd(c: String): AgentOptions = opts.copy(cwd = Some(c))
-    def withMaxTurns(n: Int): AgentOptions = opts.copy(maxTurns = Some(n))
-    def withMaxBudgetUsd(b: Double): AgentOptions = opts.copy(maxBudgetUsd = Some(b))
-    def withMaxThinkingTokens(t: Int): AgentOptions = opts.copy(maxThinkingTokens = Some(t))
+
+    /** Set maximum turns (must be positive).
+      * @throws IllegalArgumentException if n <= 0
+      */
+    def withMaxTurns(n: Int): AgentOptions =
+      require(n > 0, s"maxTurns must be positive, got: $n")
+      opts.copy(maxTurns = Some(n))
+
+    /** Set maximum budget in USD (must be positive).
+      * @throws IllegalArgumentException if b <= 0
+      */
+    def withMaxBudgetUsd(b: Double): AgentOptions =
+      require(b > 0, s"maxBudgetUsd must be positive, got: $b")
+      opts.copy(maxBudgetUsd = Some(b))
+
+    /** Set maximum thinking tokens (must be positive).
+      * @throws IllegalArgumentException if t <= 0
+      */
+    def withMaxThinkingTokens(t: Int): AgentOptions =
+      require(t > 0, s"maxThinkingTokens must be positive, got: $t")
+      opts.copy(maxThinkingTokens = Some(t))
 
     def withPermissionMode(pm: PermissionMode): AgentOptions =
       opts.copy(permissionMode = Some(pm))
