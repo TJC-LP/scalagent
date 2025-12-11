@@ -79,6 +79,90 @@ object AgentMessage:
   given JsonDecoder[AgentMessage] = DeriveJsonDecoder.gen[AgentMessage]
   given JsonEncoder[AgentMessage] = DeriveJsonEncoder.gen[AgentMessage]
 
+  // Extension methods for ergonomic message extraction
+  extension (msg: AgentMessage)
+    /** Extract all text content from this message */
+    def text: Option[String] = msg match
+      case Assistant(message, _, _, _, _) =>
+        val texts = message.content.collect { case ContentBlock.Text(t) => t }
+        if texts.isEmpty then None else Some(texts.mkString)
+      case User(message, _, _, _, _, _) =>
+        val texts = message.content.collect { case ContentBlock.Text(t) => t }
+        if texts.isEmpty then None else Some(texts.mkString)
+      case UserReplay(message, _, _, _) =>
+        val texts = message.content.collect { case ContentBlock.Text(t) => t }
+        if texts.isEmpty then None else Some(texts.mkString)
+      case StreamEvent(event, _, _, _) =>
+        event.delta.collect { case StreamDelta.TextDelta(t) => t }
+      case _ => None
+
+    /** Extract all tool use requests from this message */
+    def toolCalls: List[ContentBlock.ToolUse] = msg match
+      case Assistant(message, _, _, _, _) =>
+        message.content.collect { case tu: ContentBlock.ToolUse => tu }
+      case _ => Nil
+
+    /** Extract all tool results from this message */
+    def toolResults: List[ContentBlock.ToolResult] = msg match
+      case User(message, _, _, _, _, _) =>
+        message.content.collect { case tr: ContentBlock.ToolResult => tr }
+      case _ => Nil
+
+    /** Check if this is a final result message */
+    def isResult: Boolean = msg match
+      case _: Result => true
+      case _         => false
+
+    /** Check if this message indicates completion */
+    def isComplete: Boolean = msg match
+      case Result(ResultOutcome.Success(_, _, _, _, _, _, _, _, _), _, _) => true
+      case Result(ResultOutcome.Error(_, _, _, _, _, _, _, _, _), _, _)   => true
+      case _                                                              => false
+
+    /** Get the result outcome if this is a Result message */
+    def asResult: Option[ResultOutcome] = msg match
+      case Result(outcome, _, _) => Some(outcome)
+      case _                     => None
+
+    /** Check if this is an assistant message */
+    def isAssistant: Boolean = msg match
+      case _: Assistant => true
+      case _            => false
+
+    /** Check if this is a user message */
+    def isUser: Boolean = msg match
+      case _: User | _: UserReplay => true
+      case _                       => false
+
+  // Extension methods for message lists
+  extension (messages: List[AgentMessage])
+    /** Extract all text from all messages */
+    def allText: String =
+      messages.flatMap(_.text).mkString("\n")
+
+    /** Get the final result if present */
+    def finalResult: Option[ResultOutcome] =
+      messages.collectFirst { case Result(outcome, _, _) => outcome }
+
+    /** Extract all tool calls from all messages */
+    def allToolCalls: List[ContentBlock.ToolUse] =
+      messages.flatMap(_.toolCalls)
+
+    /** Extract all tool results from all messages */
+    def allToolResults: List[ContentBlock.ToolResult] =
+      messages.flatMap(_.toolResults)
+
+    /** Get only assistant messages */
+    def assistantMessages: List[AgentMessage.Assistant] =
+      messages.collect { case a: AgentMessage.Assistant => a }
+
+    /** Check if the conversation completed successfully */
+    def isSuccess: Boolean =
+      finalResult.exists {
+        case _: ResultOutcome.Success => true
+        case _                        => false
+      }
+
 /** API assistant message structure */
 final case class ApiAssistantMessage(
     id: String,

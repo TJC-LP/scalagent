@@ -34,6 +34,66 @@ object ResultOutcome:
   given JsonDecoder[ResultOutcome] = DeriveJsonDecoder.gen[ResultOutcome]
   given JsonEncoder[ResultOutcome] = DeriveJsonEncoder.gen[ResultOutcome]
 
+  // Extension methods for common field access across Success/Error cases
+  extension (outcome: ResultOutcome)
+    /** Get permission denials from either Success or Error */
+    def permissionDenials: List[PermissionDenial] = outcome match
+      case Success(_, _, _, _, _, _, _, denials, _) => denials
+      case Error(_, _, _, _, _, _, _, denials, _)   => denials
+
+    /** Get total cost in USD from either Success or Error */
+    def totalCostUsd: Double = outcome match
+      case Success(_, _, _, _, cost, _, _, _, _) => cost
+      case Error(_, _, _, _, cost, _, _, _, _)   => cost
+
+    /** Get number of turns from either Success or Error */
+    def numTurns: Int = outcome match
+      case Success(_, _, turns, _, _, _, _, _, _) => turns
+      case Error(_, _, _, turns, _, _, _, _, _)   => turns
+
+    /** Get duration in milliseconds from either Success or Error */
+    def durationMs: Long = outcome match
+      case Success(duration, _, _, _, _, _, _, _, _) => duration
+      case Error(_, duration, _, _, _, _, _, _, _)   => duration
+
+    /** Get API duration in milliseconds from either Success or Error */
+    def durationApiMs: Long = outcome match
+      case Success(_, apiDuration, _, _, _, _, _, _, _) => apiDuration
+      case Error(_, _, apiDuration, _, _, _, _, _, _)   => apiDuration
+
+    /** Get token usage from either Success or Error */
+    def usage: ModelUsage = outcome match
+      case Success(_, _, _, _, _, u, _, _, _) => u
+      case Error(_, _, _, _, _, u, _, _, _)   => u
+
+    /** Get per-model usage from either Success or Error */
+    def modelUsage: Map[String, PerModelUsage] = outcome match
+      case Success(_, _, _, _, _, _, mu, _, _) => mu
+      case Error(_, _, _, _, _, _, mu, _, _)   => mu
+
+    /** Check if this is a successful outcome */
+    def isSuccess: Boolean = outcome match
+      case _: Success => true
+      case _: Error   => false
+
+    /** Check if this is an error outcome */
+    def isError: Boolean = !isSuccess
+
+    /** Get the result text if successful */
+    def resultText: Option[String] = outcome match
+      case Success(_, _, _, result, _, _, _, _, _) => Some(result)
+      case _: Error                                => None
+
+    /** Get error details if this is an error outcome */
+    def errors: List[String] = outcome match
+      case Error(_, _, _, _, _, _, _, _, errs) => errs
+      case _: Success                          => Nil
+
+    /** Get the error reason if this is an error outcome */
+    def errorReason: Option[ErrorReason] = outcome match
+      case Error(reason, _, _, _, _, _, _, _, _) => Some(reason)
+      case _: Success                            => None
+
 /** Reason for query error termination */
 enum ErrorReason:
   case DuringExecution

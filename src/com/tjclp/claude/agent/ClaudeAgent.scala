@@ -5,6 +5,7 @@ import scala.scalajs.js.annotation._
 import zio._
 import zio.stream._
 import com.tjclp.claude.agent.config._
+import com.tjclp.claude.agent.errors._
 import com.tjclp.claude.agent.messages._
 import com.tjclp.claude.agent.streaming._
 
@@ -30,7 +31,7 @@ trait ClaudeAgent:
   def query(
       prompt: String,
       options: AgentOptions = AgentOptions.default
-  ): ZStream[Any, Throwable, AgentMessage]
+  ): ZStream[Any, AgentError, AgentMessage]
 
   /** Execute a query and collect all messages, returning the final result.
     *
@@ -47,7 +48,7 @@ trait ClaudeAgent:
   def queryComplete(
       prompt: String,
       options: AgentOptions = AgentOptions.default
-  ): Task[QueryResult]
+  ): IO[AgentError, QueryResult]
 
   /** Execute a query and return the raw QueryStream for advanced control.
     *
@@ -63,13 +64,39 @@ trait ClaudeAgent:
   def queryRaw(
       prompt: String,
       options: AgentOptions = AgentOptions.default
-  ): Task[QueryStream]
+  ): IO[AgentError, QueryStream]
 
 /** Result of a completed query */
 final case class QueryResult(
     messages: List[AgentMessage],
     outcome: ResultOutcome
-)
+):
+  /** Get the final text result, or fail with AgentError if not successful */
+  def text: Either[AgentError, String] = outcome match
+    case ResultOutcome.Success(_, _, _, result, _, _, _, _, _) => Right(result)
+    case ResultOutcome.Error(reason, _, _, _, _, _, _, denials, errors) =>
+      Left(AgentError.ApiError(500, reason.toString, Some(errors.mkString("; "))))
+
+  /** Get the final text result as a ZIO effect */
+  def textOrFail: IO[AgentError, String] = ZIO.fromEither(text)
+
+  /** Check if the query completed successfully */
+  def isSuccess: Boolean = outcome match
+    case _: ResultOutcome.Success => true
+    case _: ResultOutcome.Error   => false
+
+  /** Check if there were any permission denials */
+  def hasPermissionDenials: Boolean = outcome.permissionDenials.nonEmpty
+
+  /** Get the total cost in USD */
+  def cost: Double = outcome.totalCostUsd
+
+  /** Get the number of turns used */
+  def turns: Int = outcome.numTurns
+
+  /** Extract all text content from all messages */
+  def allText: String =
+    messages.flatMap(_.text).mkString("\n")
 
 object ClaudeAgent:
 
@@ -80,21 +107,21 @@ object ClaudeAgent:
   def query(
       prompt: String,
       options: AgentOptions = AgentOptions.default
-  ): ZStream[ClaudeAgent, Throwable, AgentMessage] =
+  ): ZStream[ClaudeAgent, AgentError, AgentMessage] =
     ZStream.serviceWithStream[ClaudeAgent](_.query(prompt, options))
 
   /** Accessor for the queryComplete method */
   def queryComplete(
       prompt: String,
       options: AgentOptions = AgentOptions.default
-  ): ZIO[ClaudeAgent, Throwable, QueryResult] =
+  ): ZIO[ClaudeAgent, AgentError, QueryResult] =
     ZIO.serviceWithZIO[ClaudeAgent](_.queryComplete(prompt, options))
 
   /** Accessor for the queryRaw method */
   def queryRaw(
       prompt: String,
       options: AgentOptions = AgentOptions.default
-  ): ZIO[ClaudeAgent, Throwable, QueryStream] =
+  ): ZIO[ClaudeAgent, AgentError, QueryStream] =
     ZIO.serviceWithZIO[ClaudeAgent](_.queryRaw(prompt, options))
 
 /** Live implementation of ClaudeAgent */
@@ -103,13 +130,13 @@ private final class ClaudeAgentLive extends ClaudeAgent:
   override def query(
       prompt: String,
       options: AgentOptions
-  ): ZStream[Any, Throwable, AgentMessage] =
+  ): ZStream[Any, AgentError, AgentMessage] =
     ZStream.fromZIO(queryRaw(prompt, options)).flatMap(_.messages)
 
   override def queryComplete(
       prompt: String,
       options: AgentOptions
-  ): Task[QueryResult] =
+  ): IO[AgentError, QueryResult] =
     query(prompt, options).runCollect.map { chunk =>
       val messages = chunk.toList
       val outcome = messages.collectFirst { case AgentMessage.Result(o, _, _) => o }
@@ -134,8 +161,8 @@ private final class ClaudeAgentLive extends ClaudeAgent:
   override def queryRaw(
       prompt: String,
       options: AgentOptions
-  ): Task[QueryStream] =
-    for
+  ): IO[AgentError, QueryStream] =
+    (for
       runtime <- ZIO.runtime[Any]
       stream <- ZIO.attempt {
         // Convert options to raw JS object
@@ -157,7 +184,7 @@ private final class ClaudeAgentLive extends ClaudeAgent:
         val rawQuery = SdkModule.query(params).asInstanceOf[RawQuery]
         QueryStream(rawQuery)
       }
-    yield stream
+    yield stream).mapError(AgentError.fromThrowable)
 
 /** JavaScript module binding for the SDK.
   *

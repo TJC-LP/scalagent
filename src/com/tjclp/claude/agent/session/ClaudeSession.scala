@@ -7,6 +7,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import zio._
 import zio.stream._
 import com.tjclp.claude.agent.config._
+import com.tjclp.claude.agent.errors._
 import com.tjclp.claude.agent.messages._
 import com.tjclp.claude.agent.streaming.{AsyncIterator, AsyncIteratorOps, MessageConverter}
 
@@ -29,7 +30,7 @@ trait ClaudeSession:
     * @return
     *   A stream of agent messages in response
     */
-  def send(message: String): ZStream[Any, Throwable, AgentMessage]
+  def send(message: String): ZStream[Any, AgentError, AgentMessage]
 
   /** Send a message and collect all responses.
     *
@@ -38,13 +39,19 @@ trait ClaudeSession:
     * @return
     *   All response messages as a list
     */
-  def sendComplete(message: String): Task[List[AgentMessage]]
+  def sendComplete(message: String): IO[AgentError, List[AgentMessage]]
+
+  /** Send a message and get just the text response.
+    *
+    * Convenience method that extracts and concatenates all text content.
+    */
+  def ask(message: String): IO[AgentError, String]
 
   /** Close the session and release resources. */
-  def close: Task[Unit]
+  def close: IO[AgentError, Unit]
 
   /** Interrupt the current operation. */
-  def interrupt: Task[Unit]
+  def interrupt: IO[AgentError, Unit]
 
 object ClaudeSession:
 
@@ -55,8 +62,8 @@ object ClaudeSession:
     * @return
     *   A new ClaudeSession instance
     */
-  def create(options: AgentOptions = AgentOptions.default): Task[ClaudeSession] =
-    for
+  def create(options: AgentOptions = AgentOptions.default): IO[AgentError, ClaudeSession] =
+    (for
       runtime <- ZIO.runtime[Any]
       session <- ZIO.fromPromiseJS {
         val rawOptions = options.toRaw.asInstanceOf[js.Dynamic]
@@ -72,7 +79,7 @@ object ClaudeSession:
 
         SdkSessionModule.unstable_v2_createSession(rawOptions)
       }
-    yield ClaudeSessionLive(session.asInstanceOf[RawSession], runtime)
+    yield ClaudeSessionLive(session.asInstanceOf[RawSession], runtime)).mapError(AgentError.fromThrowable)
 
   /** Resume an existing session by ID.
     *
@@ -83,8 +90,8 @@ object ClaudeSession:
     * @return
     *   The resumed ClaudeSession instance
     */
-  def resume(sessionId: String, options: AgentOptions = AgentOptions.default): Task[ClaudeSession] =
-    for
+  def resume(sessionId: String, options: AgentOptions = AgentOptions.default): IO[AgentError, ClaudeSession] =
+    (for
       runtime <- ZIO.runtime[Any]
       session <- ZIO.fromPromiseJS {
         val rawOptions = options.toRaw.asInstanceOf[js.Dynamic]
@@ -101,7 +108,7 @@ object ClaudeSession:
 
         SdkSessionModule.unstable_v2_resumeSession(rawOptions)
       }
-    yield ClaudeSessionLive(session.asInstanceOf[RawSession], runtime)
+    yield ClaudeSessionLive(session.asInstanceOf[RawSession], runtime)).mapError(AgentError.fromThrowable)
 
 /** Live implementation of ClaudeSession wrapping the JS session. */
 private final class ClaudeSessionLive(
@@ -111,22 +118,30 @@ private final class ClaudeSessionLive(
 
   override val sessionId: String = raw.session_id
 
-  override def send(message: String): ZStream[Any, Throwable, AgentMessage] =
+  override def send(message: String): ZStream[Any, AgentError, AgentMessage] =
     ZStream.unwrap {
       ZIO.attempt {
         val asyncIter = raw.send(message).asInstanceOf[AsyncIterator[js.Dynamic]]
-        AsyncIteratorOps.toZStream(asyncIter).map(MessageConverter.fromRaw)
-      }
+        AsyncIteratorOps
+          .toZStream(asyncIter)
+          .map(MessageConverter.fromRaw)
+          .mapError(AgentError.fromThrowable)
+      }.mapError(AgentError.fromThrowable)
     }
 
-  override def sendComplete(message: String): Task[List[AgentMessage]] =
+  override def sendComplete(message: String): IO[AgentError, List[AgentMessage]] =
     send(message).runCollect.map(_.toList)
 
-  override def close: Task[Unit] =
-    ZIO.fromPromiseJS(raw.close())
+  override def ask(message: String): IO[AgentError, String] =
+    sendComplete(message).map { messages =>
+      messages.flatMap(_.text).mkString("\n")
+    }
 
-  override def interrupt: Task[Unit] =
-    ZIO.attempt(raw.interrupt())
+  override def close: IO[AgentError, Unit] =
+    ZIO.fromPromiseJS(raw.close()).mapError(AgentError.fromThrowable)
+
+  override def interrupt: IO[AgentError, Unit] =
+    ZIO.attempt(raw.interrupt()).mapError(AgentError.fromThrowable)
 
 /** Raw JavaScript session type */
 @js.native

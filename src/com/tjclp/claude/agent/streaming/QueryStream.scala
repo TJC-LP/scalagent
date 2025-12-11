@@ -5,6 +5,7 @@ import scala.scalajs.js.JSConverters._
 import zio._
 import zio.stream._
 import com.tjclp.claude.agent.config.PermissionMode
+import com.tjclp.claude.agent.errors.AgentError
 import com.tjclp.claude.agent.messages.AgentMessage
 
 /** Raw Query interface from the SDK.
@@ -56,10 +57,11 @@ final class QueryStream private (rawQuery: RawQuery):
     * This stream will emit messages as they arrive from the SDK, converting each raw JavaScript message to the Scala
     * ADT representation.
     */
-  val messages: ZStream[Any, Throwable, AgentMessage] =
+  val messages: ZStream[Any, AgentError, AgentMessage] =
     AsyncIteratorOps
       .toZStream(rawQuery)
       .map(MessageConverter.fromRaw)
+      .mapError(AgentError.fromThrowable)
 
   /** Interrupt the current query execution.
     *
