@@ -3,7 +3,7 @@ package com.tjclp.claude.agent.examples
 import zio._
 import zio.json._
 import com.tjclp.claude.agent._
-import com.tjclp.claude.agent.config._
+import com.tjclp.claude.agent.config.{AgentOptions, Model, PermissionMode}
 import com.tjclp.claude.agent.messages._
 import com.tjclp.claude.agent.tools._
 import com.tjclp.claude.agent.macros._
@@ -98,7 +98,7 @@ object MacroToolExample extends ZIOAppDefault:
       server = ToolMacros.createServer[MyTools.type]("macro-tools", runtime)
 
       options = AgentOptions.default
-        .withModel("claude-sonnet-4-20250514")
+        .withModel(Model.Sonnet4)
         .withPermissionMode(PermissionMode.BypassPermissions)
         .withMaxTurns(10)
         .withMcpServer("tools", server)

@@ -4,7 +4,7 @@ import zio._
 import zio.stream._
 import zio.json.ast.Json
 import com.tjclp.claude.agent._
-import com.tjclp.claude.agent.config._
+import com.tjclp.claude.agent.config.{AgentOptions, Model, PermissionMode}
 import com.tjclp.claude.agent.messages._
 import com.tjclp.claude.agent.permissions._
 import com.tjclp.claude.agent.tools.ToolName
@@ -72,7 +72,7 @@ object PermissionExample extends ZIOAppDefault:
       yield result
 
     val options = AgentOptions.default
-      .withModel("claude-sonnet-4-20250514")
+      .withModel(Model.Sonnet4)
       .withPermissionMode(PermissionMode.Default)
       .withMaxTurns(5)
       .withCanUseTool(customPermissionHandler)

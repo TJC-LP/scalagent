@@ -3,7 +3,7 @@ package com.tjclp.claude.agent.examples
 import zio._
 import zio.stream._
 import com.tjclp.claude.agent._
-import com.tjclp.claude.agent.config._
+import com.tjclp.claude.agent.config.{AgentOptions, Model, PermissionMode}
 import com.tjclp.claude.agent.errors._
 import com.tjclp.claude.agent.messages._
 
@@ -22,7 +22,7 @@ object SimpleQuery extends ZIOAppDefault:
 
   val run: ZIO[Any, AgentError, Unit] =
     val options = AgentOptions.default
-      .withModel("claude-sonnet-4-20250514")
+      .withModel(Model.Sonnet4)
       .withPermissionMode(PermissionMode.DontAsk)
       .withMaxTurns(5)
 

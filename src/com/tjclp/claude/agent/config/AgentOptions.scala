@@ -10,18 +10,18 @@ import com.tjclp.claude.agent.tools.ToolName
 
 /** Configuration options for Claude Agent queries.
   *
-  * This mirrors the TypeScript SDK's `Options` interface.
+  * This mirrors the TypeScript SDK's `Options` interface with type-safe improvements.
   */
 final case class AgentOptions(
     // Core options
-    model: Option[String] = None,
+    model: Option[Model] = None,
     cwd: Option[String] = None,
     systemPrompt: Option[SystemPromptConfig] = None,
 
     // Tool configuration
     tools: Option[ToolsConfig] = None,
-    allowedTools: Option[List[String]] = None,
-    disallowedTools: Option[List[String]] = None,
+    allowedTools: Option[List[ToolName]] = None,
+    disallowedTools: Option[List[ToolName]] = None,
 
     // Limits
     maxTurns: Option[Int] = None,
@@ -36,8 +36,7 @@ final case class AgentOptions(
     mcpServers: Map[String, McpServerConfig] = Map.empty,
 
     // Session management
-    continueSession: Boolean = false,
-    resume: Option[String] = None,
+    sessionMode: SessionMode = SessionMode.New,
 
     // Output
     outputFormat: Option[OutputFormat] = None,
@@ -63,12 +62,12 @@ final case class AgentOptions(
   def toRaw: js.Object =
     val obj = js.Dynamic.literal()
 
-    model.foreach(m => obj.model = m)
+    model.foreach(m => obj.model = m.id)
     cwd.foreach(c => obj.cwd = c)
     systemPrompt.foreach(sp => obj.systemPrompt = sp.toRaw)
     tools.foreach(t => obj.tools = t.toRaw)
-    allowedTools.foreach(at => obj.allowedTools = at.toJSArray)
-    disallowedTools.foreach(dt => obj.disallowedTools = dt.toJSArray)
+    allowedTools.foreach(at => obj.allowedTools = at.map(_.raw).toJSArray)
+    disallowedTools.foreach(dt => obj.disallowedTools = dt.map(_.raw).toJSArray)
     maxTurns.foreach(mt => obj.maxTurns = mt)
     maxBudgetUsd.foreach(mb => obj.maxBudgetUsd = mb)
     maxThinkingTokens.foreach(mtt => obj.maxThinkingTokens = mtt)
@@ -80,8 +79,11 @@ final case class AgentOptions(
     if mcpServers.nonEmpty then
       obj.mcpServers = js.Dictionary(mcpServers.view.mapValues(_.toRaw).toSeq*)
 
-    if continueSession then obj.continue = true
-    resume.foreach(r => obj.resume = r)
+    // Session mode handling
+    sessionMode match
+      case SessionMode.New      => () // Default, no flag needed
+      case SessionMode.Continue => obj.continue = true
+      case SessionMode.Resume(id) => obj.resume = id
 
     outputFormat.foreach(of => obj.outputFormat = of.toRaw)
     if includePartialMessages then obj.includePartialMessages = true
@@ -133,7 +135,12 @@ object AgentOptions:
 
   // Extension methods for fluent builder pattern
   extension (opts: AgentOptions)
-    def withModel(m: String): AgentOptions = opts.copy(model = Some(m))
+    /** Set the model using type-safe Model enum */
+    def withModel(m: Model): AgentOptions = opts.copy(model = Some(m))
+
+    /** Set the model using a string ID (for custom/new models) */
+    def withModelId(id: String): AgentOptions = opts.copy(model = Some(Model.fromId(id)))
+
     def withCwd(c: String): AgentOptions = opts.copy(cwd = Some(c))
     def withMaxTurns(n: Int): AgentOptions = opts.copy(maxTurns = Some(n))
     def withMaxBudgetUsd(b: Double): AgentOptions = opts.copy(maxBudgetUsd = Some(b))
@@ -154,11 +161,17 @@ object AgentOptions:
     def withIncludePartialMessages: AgentOptions =
       opts.copy(includePartialMessages = true)
 
-    def withContinueSession: AgentOptions =
-      opts.copy(continueSession = true)
+    /** Set the session mode */
+    def withSessionMode(mode: SessionMode): AgentOptions =
+      opts.copy(sessionMode = mode)
 
+    /** Continue the current session */
+    def withContinueSession: AgentOptions =
+      opts.copy(sessionMode = SessionMode.Continue)
+
+    /** Resume a specific session by ID */
     def withResume(sessionId: String): AgentOptions =
-      opts.copy(resume = Some(sessionId))
+      opts.copy(sessionMode = SessionMode.Resume(sessionId))
 
     def withSystemPrompt(prompt: SystemPromptConfig): AgentOptions =
       opts.copy(systemPrompt = Some(prompt))
@@ -166,10 +179,12 @@ object AgentOptions:
     def withTools(config: ToolsConfig): AgentOptions =
       opts.copy(tools = Some(config))
 
-    def withAllowedTools(tools: String*): AgentOptions =
+    /** Set allowed tools using type-safe ToolName enum */
+    def withAllowedTools(tools: ToolName*): AgentOptions =
       opts.copy(allowedTools = Some(tools.toList))
 
-    def withDisallowedTools(tools: String*): AgentOptions =
+    /** Set disallowed tools using type-safe ToolName enum */
+    def withDisallowedTools(tools: ToolName*): AgentOptions =
       opts.copy(disallowedTools = Some(tools.toList))
 
     def withEnv(env: Map[String, String]): AgentOptions =

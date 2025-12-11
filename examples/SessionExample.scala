@@ -3,7 +3,7 @@ package com.tjclp.claude.agent.examples
 import zio._
 import zio.stream._
 import com.tjclp.claude.agent._
-import com.tjclp.claude.agent.config._
+import com.tjclp.claude.agent.config.{AgentOptions, Model, PermissionMode}
 import com.tjclp.claude.agent.errors._
 import com.tjclp.claude.agent.messages._
 import com.tjclp.claude.agent.session._
@@ -35,13 +35,11 @@ object SessionExample extends ZIOAppDefault:
         _ <- Console.printLine("Starting V2 Session API example...").orDie
         _ <- Console.printLine("---").orDie
 
-        // Configure options
+        // Configure options and create session
         options = AgentOptions.default
-          .withModel("claude-sonnet-4-20250514")
+          .withModel(Model.Sonnet4)
           .withPermissionMode(PermissionMode.BypassPermissions)
           .withMaxTurns(5)
-
-        // Create a session (automatically cleaned up by scoped)
         session <- ClaudeSession.create(options).withFinalizer(s =>
           s.close.ignoreLogged
         )
