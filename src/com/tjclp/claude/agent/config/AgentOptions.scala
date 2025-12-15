@@ -57,7 +57,10 @@ final case class AgentOptions(
     hooks: Map[HookEvent, List[HookCallback]] = Map.empty,
 
     // Permission callback
-    canUseTool: Option[CanUseTool] = None
+    canUseTool: Option[CanUseTool] = None,
+
+    // Setting sources for filesystem-based configuration (Skills, plugins, slash commands)
+    settingSources: List[SettingSource] = List.empty
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -99,6 +102,9 @@ final case class AgentOptions(
       obj.betaFeatures = betaFeatures.toJSArray
 
     sandboxSettings.foreach(ss => obj.sandbox = ss.toRaw)
+
+    if settingSources.nonEmpty then
+      obj.settingSources = settingSources.map(_.raw).toJSArray
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks
@@ -271,6 +277,49 @@ object AgentOptions:
       */
     def withDeniedTools(toolNames: ToolName*): AgentOptions =
       opts.copy(canUseTool = Some(CanUseTool.denyTools(toolNames*)))
+
+    /** Configure setting sources for filesystem-based features like Skills.
+      *
+      * Controls loading of Skills, plugins, and slash commands from filesystem.
+      * When empty (default), SDK runs in isolation mode with no filesystem settings.
+      *
+      * Example:
+      * {{{
+      * AgentOptions.default
+      *   .withSettingSources(SettingSource.User, SettingSource.Project)
+      * }}}
+      */
+    def withSettingSources(sources: SettingSource*): AgentOptions =
+      opts.copy(settingSources = sources.toList)
+
+    /** Enable Skills from user and project directories.
+      *
+      * Convenience method that sets settingSources to user+project and adds Skill to allowed tools.
+      *
+      * Example:
+      * {{{
+      * AgentOptions.default.withSkillsEnabled
+      * }}}
+      */
+    def withSkillsEnabled: AgentOptions =
+      opts.copy(
+        settingSources = SettingSource.userAndProject,
+        allowedTools = opts.allowedTools match
+          case Some(tools) if !tools.contains(ToolName.Skill) =>
+            Some(tools :+ ToolName.Skill)
+          case Some(tools) => Some(tools)
+          case None => Some(List(ToolName.Skill))
+      )
+
+    /** Add Skill to allowed tools (requires settingSources to be configured separately). */
+    def withSkillTool: AgentOptions =
+      opts.copy(
+        allowedTools = opts.allowedTools match
+          case Some(tools) if !tools.contains(ToolName.Skill) =>
+            Some(tools :+ ToolName.Skill)
+          case Some(tools) => Some(tools)
+          case None => Some(List(ToolName.Skill))
+      )
 
 /** System prompt configuration */
 enum SystemPromptConfig:

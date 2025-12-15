@@ -1,7 +1,7 @@
 package com.tjclp.claude.agent.messages
 
 import zio.json._
-import com.tjclp.claude.agent.config.{Model, OutputStyle, PermissionMode}
+import com.tjclp.claude.agent.config.{Model, OutputStyle, PermissionMode, SkillName}
 import com.tjclp.claude.agent.tools.ToolName
 
 /** System-level events emitted during agent execution */
@@ -17,7 +17,7 @@ enum SystemEvent:
       permissionMode: PermissionMode,
       slashCommands: List[String],
       outputStyle: OutputStyle,
-      skills: List[String],
+      skills: List[SkillName],
       plugins: List[PluginInfo],
       agents: Option[List[String]],
       betas: Option[List[String]]
