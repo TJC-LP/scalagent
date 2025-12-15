@@ -4,7 +4,7 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters._
 import zio.json._
 import zio.json.ast.Json
-import com.tjclp.claude.agent.config.{Model, OutputStyle, PermissionMode, SkillName}
+import com.tjclp.claude.agent.config.{CommandName, Model, OutputStyle, PermissionMode, SkillName}
 import com.tjclp.claude.agent.messages._
 import com.tjclp.claude.agent.tools.ToolName
 import com.tjclp.claude.agent.types.{ApiMessageId, MessageUuid, SessionId, ToolUseId}
@@ -295,7 +295,7 @@ object MessageConverter:
       mcpServers = parseMcpServers(obj.mcp_servers),
       model = Model.fromId(obj.model.asInstanceOf[String]),
       permissionMode = PermissionMode.fromString(obj.permissionMode.asInstanceOf[String]),
-      slashCommands = obj.slash_commands.asInstanceOf[js.Array[String]].toList,
+      slashCommands = obj.slash_commands.asInstanceOf[js.Array[String]].toList.map(CommandName(_)),
       outputStyle = OutputStyle.fromString(obj.output_style.asInstanceOf[String]),
       skills = obj.skills.asInstanceOf[js.Array[String]].toList.map(SkillName.apply),
       plugins = parsePlugins(obj.plugins),
