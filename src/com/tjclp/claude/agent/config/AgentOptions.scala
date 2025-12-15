@@ -60,7 +60,10 @@ final case class AgentOptions(
     canUseTool: Option[CanUseTool] = None,
 
     // Setting sources for filesystem-based configuration (Skills, plugins, slash commands)
-    settingSources: List[SettingSource] = List.empty
+    settingSources: List[SettingSource] = List.empty,
+
+    // Plugins to load
+    plugins: List[PluginConfig] = List.empty
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -105,6 +108,9 @@ final case class AgentOptions(
 
     if settingSources.nonEmpty then
       obj.settingSources = settingSources.map(_.raw).toJSArray
+
+    if plugins.nonEmpty then
+      obj.plugins = plugins.map(_.toRaw).toJSArray
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks
@@ -320,6 +326,39 @@ object AgentOptions:
           case Some(tools) => Some(tools)
           case None => Some(List(ToolName.Skill))
       )
+
+    /** Add a single plugin configuration.
+      *
+      * Example:
+      * {{{
+      * options.withPlugin(PluginConfig.local("./my-plugin"))
+      * }}}
+      */
+    def withPlugin(plugin: PluginConfig): AgentOptions =
+      opts.copy(plugins = opts.plugins :+ plugin)
+
+    /** Add multiple plugin configurations.
+      *
+      * Example:
+      * {{{
+      * options.withPlugins(
+      *   PluginConfig.local("./plugin-a"),
+      *   PluginConfig.local("./plugin-b")
+      * )
+      * }}}
+      */
+    def withPlugins(newPlugins: PluginConfig*): AgentOptions =
+      opts.copy(plugins = opts.plugins ++ newPlugins)
+
+    /** Add local plugins by path (convenience method).
+      *
+      * Example:
+      * {{{
+      * options.withLocalPlugins("./plugin-a", "/path/to/plugin-b")
+      * }}}
+      */
+    def withLocalPlugins(paths: String*): AgentOptions =
+      opts.copy(plugins = opts.plugins ++ paths.map(PluginConfig.Local(_)))
 
 /** System prompt configuration */
 enum SystemPromptConfig:
