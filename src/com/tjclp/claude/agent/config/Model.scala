@@ -56,6 +56,11 @@ enum Model(val id: String):
   case Custom(override val id: String) extends Model(id)
 
 object Model:
+  import zio.json._
+
+  // JSON codecs for serialization
+  given JsonEncoder[Model] = JsonEncoder[String].contramap(_.id)
+  given JsonDecoder[Model] = JsonDecoder[String].map(fromId)
 
   /** Parse a model ID string to the corresponding enum value.
     *

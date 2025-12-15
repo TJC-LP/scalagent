@@ -1,6 +1,8 @@
 package com.tjclp.claude.agent.messages
 
 import zio.json._
+import com.tjclp.claude.agent.tools.ToolName
+import com.tjclp.claude.agent.types.{ApiMessageId, MessageUuid, SessionId, ToolUseId}
 
 /** All message types emitted by the Claude Agent SDK.
   *
@@ -10,60 +12,60 @@ enum AgentMessage:
   /** Assistant response message */
   case Assistant(
       message: ApiAssistantMessage,
-      parentToolUseId: Option[String],
+      parentToolUseId: Option[ToolUseId],
       error: Option[AssistantMessageError],
-      uuid: String,
-      sessionId: String
+      uuid: MessageUuid,
+      sessionId: SessionId
   )
 
   /** User message (including synthetic tool results) */
   case User(
       message: ApiUserMessage,
-      parentToolUseId: Option[String],
+      parentToolUseId: Option[ToolUseId],
       isSynthetic: Boolean,
       toolUseResult: Option[zio.json.ast.Json],
-      uuid: Option[String],
-      sessionId: String
+      uuid: Option[MessageUuid],
+      sessionId: SessionId
   )
 
   /** User message replay (from session resume) */
   case UserReplay(
       message: ApiUserMessage,
-      parentToolUseId: Option[String],
-      uuid: String,
-      sessionId: String
+      parentToolUseId: Option[ToolUseId],
+      uuid: MessageUuid,
+      sessionId: SessionId
   )
 
   /** Final result message */
   case Result(
       outcome: ResultOutcome,
-      uuid: String,
-      sessionId: String
+      uuid: MessageUuid,
+      sessionId: SessionId
   )
 
   /** System event message */
   case System(
       event: SystemEvent,
-      uuid: String,
-      sessionId: String
+      uuid: MessageUuid,
+      sessionId: SessionId
   )
 
   /** Streaming event (partial response) */
   case StreamEvent(
       event: RawStreamEvent,
-      parentToolUseId: Option[String],
-      uuid: String,
-      sessionId: String
+      parentToolUseId: Option[ToolUseId],
+      uuid: MessageUuid,
+      sessionId: SessionId
   )
 
   /** Tool execution progress */
   case ToolProgress(
-      toolUseId: String,
-      toolName: String,
-      parentToolUseId: Option[String],
+      toolUseId: ToolUseId,
+      toolName: ToolName,
+      parentToolUseId: Option[ToolUseId],
       elapsedTimeSeconds: Double,
-      uuid: String,
-      sessionId: String
+      uuid: MessageUuid,
+      sessionId: SessionId
   )
 
   /** Authentication status update */
@@ -71,8 +73,8 @@ enum AgentMessage:
       isAuthenticating: Boolean,
       output: List[String],
       error: Option[String],
-      uuid: String,
-      sessionId: String
+      uuid: MessageUuid,
+      sessionId: SessionId
   )
 
 object AgentMessage:
@@ -165,11 +167,11 @@ object AgentMessage:
 
 /** API assistant message structure */
 final case class ApiAssistantMessage(
-    id: String,
-    role: String,
+    id: ApiMessageId,
+    role: Role,
     content: List[ContentBlock],
     model: String,
-    stopReason: Option[String],
+    stopReason: Option[StopReason],
     stopSequence: Option[String],
     usage: Option[ModelUsage]
 )
@@ -180,7 +182,7 @@ object ApiAssistantMessage:
 
 /** API user message structure */
 final case class ApiUserMessage(
-    role: String,
+    role: Role,
     content: List[ContentBlock]
 )
 

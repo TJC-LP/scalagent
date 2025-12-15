@@ -1,6 +1,7 @@
 package com.tjclp.claude.agent.messages
 
 import zio.json._
+import com.tjclp.claude.agent.types.ToolUseId
 
 /** Content blocks that can appear in assistant and user messages */
 enum ContentBlock:
@@ -9,14 +10,14 @@ enum ContentBlock:
 
   /** Tool use request from assistant */
   case ToolUse(
-      id: String,
+      id: ToolUseId,
       name: String,
       input: zio.json.ast.Json
   )
 
   /** Tool result from user (typically synthetic) */
   case ToolResult(
-      toolUseId: String,
+      toolUseId: ToolUseId,
       content: String,
       isError: Boolean = false
   )

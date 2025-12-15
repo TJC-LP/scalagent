@@ -1,6 +1,8 @@
 package com.tjclp.claude.agent.messages
 
 import zio.json._
+import com.tjclp.claude.agent.config.{Model, OutputStyle, PermissionMode}
+import com.tjclp.claude.agent.tools.ToolName
 
 /** System-level events emitted during agent execution */
 enum SystemEvent:
@@ -9,12 +11,12 @@ enum SystemEvent:
       apiKeySource: String, // Descriptive string like "/login managed key" or "ANTHROPIC_API_KEY"
       claudeCodeVersion: String,
       cwd: String,
-      tools: List[String],
+      tools: List[ToolName],
       mcpServers: List[McpServerStatus],
-      model: String,
-      permissionMode: String,
+      model: Model,
+      permissionMode: PermissionMode,
       slashCommands: List[String],
-      outputStyle: String,
+      outputStyle: OutputStyle,
       skills: List[String],
       plugins: List[PluginInfo],
       agents: Option[List[String]],
@@ -47,27 +49,38 @@ object SystemEvent:
 enum CompactTrigger:
   case Manual
   case Auto
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Manual     => "manual"
+    case Auto       => "auto"
+    case Custom(v)  => v
 
 object CompactTrigger:
-  given JsonDecoder[CompactTrigger] = DeriveJsonDecoder.gen[CompactTrigger]
-  given JsonEncoder[CompactTrigger] = DeriveJsonEncoder.gen[CompactTrigger]
+  given JsonEncoder[CompactTrigger] = JsonEncoder[String].contramap(_.toRaw)
+  given JsonDecoder[CompactTrigger] = JsonDecoder[String].map(fromString)
 
   def fromString(s: String): CompactTrigger = s match
     case "manual" => Manual
     case "auto"   => Auto
-    case other    => throw new IllegalArgumentException(s"Unknown compact trigger: $other")
+    case other    => Custom(other)
 
 /** SDK status values */
 enum SdkStatus:
   case Compacting
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Compacting => "compacting"
+    case Custom(v)  => v
 
 object SdkStatus:
-  given JsonDecoder[SdkStatus] = DeriveJsonDecoder.gen[SdkStatus]
-  given JsonEncoder[SdkStatus] = DeriveJsonEncoder.gen[SdkStatus]
+  given JsonEncoder[SdkStatus] = JsonEncoder[String].contramap(_.toRaw)
+  given JsonDecoder[SdkStatus] = JsonDecoder[String].map(fromString)
 
   def fromString(s: String): SdkStatus = s match
     case "compacting" => Compacting
-    case other        => throw new IllegalArgumentException(s"Unknown SDK status: $other")
+    case other        => Custom(other)
 
 /** Source of API key */
 enum ApiKeySource:
@@ -75,17 +88,25 @@ enum ApiKeySource:
   case Project
   case Org
   case Temporary
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case User       => "user"
+    case Project    => "project"
+    case Org        => "org"
+    case Temporary  => "temporary"
+    case Custom(v)  => v
 
 object ApiKeySource:
-  given JsonDecoder[ApiKeySource] = DeriveJsonDecoder.gen[ApiKeySource]
-  given JsonEncoder[ApiKeySource] = DeriveJsonEncoder.gen[ApiKeySource]
+  given JsonEncoder[ApiKeySource] = JsonEncoder[String].contramap(_.toRaw)
+  given JsonDecoder[ApiKeySource] = JsonDecoder[String].map(fromString)
 
   def fromString(s: String): ApiKeySource = s match
     case "user"      => User
     case "project"   => Project
     case "org"       => Org
     case "temporary" => Temporary
-    case other       => throw new IllegalArgumentException(s"Unknown API key source: $other")
+    case other       => Custom(other)
 
 /** MCP server connection status */
 final case class McpServerStatus(
@@ -104,17 +125,25 @@ enum McpConnectionStatus:
   case Failed
   case NeedsAuth
   case Pending
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Connected  => "connected"
+    case Failed     => "failed"
+    case NeedsAuth  => "needs_auth"
+    case Pending    => "pending"
+    case Custom(v)  => v
 
 object McpConnectionStatus:
-  given JsonDecoder[McpConnectionStatus] = DeriveJsonDecoder.gen[McpConnectionStatus]
-  given JsonEncoder[McpConnectionStatus] = DeriveJsonEncoder.gen[McpConnectionStatus]
+  given JsonEncoder[McpConnectionStatus] = JsonEncoder[String].contramap(_.toRaw)
+  given JsonDecoder[McpConnectionStatus] = JsonDecoder[String].map(fromString)
 
   def fromString(s: String): McpConnectionStatus = s match
     case "connected"  => Connected
     case "failed"     => Failed
     case "needs_auth" => NeedsAuth
     case "pending"    => Pending
-    case other => throw new IllegalArgumentException(s"Unknown MCP connection status: $other")
+    case other        => Custom(other)
 
 /** MCP server information */
 final case class McpServerInfo(

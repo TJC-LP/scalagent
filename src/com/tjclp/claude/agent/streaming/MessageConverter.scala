@@ -4,7 +4,10 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters._
 import zio.json._
 import zio.json.ast.Json
+import com.tjclp.claude.agent.config.{Model, OutputStyle, PermissionMode}
 import com.tjclp.claude.agent.messages._
+import com.tjclp.claude.agent.tools.ToolName
+import com.tjclp.claude.agent.types.{ApiMessageId, MessageUuid, SessionId, ToolUseId}
 
 /** Converts raw JavaScript SDK messages to Scala ADT.
   *
@@ -37,10 +40,10 @@ object MessageConverter:
   private def parseAssistantMessage(obj: js.Dynamic): AgentMessage.Assistant =
     AgentMessage.Assistant(
       message = parseApiAssistantMessage(obj.message),
-      parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption,
+      parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
       error = obj.error.asInstanceOf[js.UndefOr[String]].toOption.map(AssistantMessageError.fromString),
-      uuid = obj.uuid.asInstanceOf[String],
-      sessionId = obj.session_id.asInstanceOf[String]
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
 
   private def parseUserMessage(obj: js.Dynamic): AgentMessage =
@@ -49,18 +52,18 @@ object MessageConverter:
     if isReplay then
       AgentMessage.UserReplay(
         message = parseApiUserMessage(obj.message),
-        parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption,
-        uuid = obj.uuid.asInstanceOf[String],
-        sessionId = obj.session_id.asInstanceOf[String]
+        parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
+        uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+        sessionId = SessionId(obj.session_id.asInstanceOf[String])
       )
     else
       AgentMessage.User(
         message = parseApiUserMessage(obj.message),
-        parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption,
+        parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
         isSynthetic = obj.isSynthetic.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false),
         toolUseResult = obj.tool_use_result.asInstanceOf[js.UndefOr[js.Any]].toOption.map(jsToJson),
-        uuid = obj.uuid.asInstanceOf[js.UndefOr[String]].toOption,
-        sessionId = obj.session_id.asInstanceOf[String]
+        uuid = obj.uuid.asInstanceOf[js.UndefOr[String]].toOption.map(MessageUuid.apply),
+        sessionId = SessionId(obj.session_id.asInstanceOf[String])
       )
 
   private def parseResultMessage(obj: js.Dynamic): AgentMessage.Result =
@@ -94,8 +97,8 @@ object MessageConverter:
 
     AgentMessage.Result(
       outcome = outcome,
-      uuid = obj.uuid.asInstanceOf[String],
-      sessionId = obj.session_id.asInstanceOf[String]
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
 
   private def parseSystemMessage(obj: js.Dynamic): AgentMessage.System =
@@ -111,8 +114,8 @@ object MessageConverter:
 
     AgentMessage.System(
       event = event,
-      uuid = obj.uuid.asInstanceOf[String],
-      sessionId = obj.session_id.asInstanceOf[String]
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
 
   private def parseStreamEvent(obj: js.Dynamic): AgentMessage.StreamEvent =
@@ -124,9 +127,9 @@ object MessageConverter:
         contentBlock = parseOptionalContentBlock(event.content_block),
         delta = parseOptionalDelta(event.delta)
       ),
-      parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption,
-      uuid = obj.uuid.asInstanceOf[String],
-      sessionId = obj.session_id.asInstanceOf[String]
+      parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
 
   private def parseOptionalContentBlock(raw: js.Dynamic): Option[ContentBlock] =
@@ -138,7 +141,7 @@ object MessageConverter:
           ContentBlock.Text(raw.text.asInstanceOf[js.UndefOr[String]].getOrElse(""))
         case "tool_use" =>
           ContentBlock.ToolUse(
-            id = raw.id.asInstanceOf[String],
+            id = ToolUseId(raw.id.asInstanceOf[String]),
             name = raw.name.asInstanceOf[String],
             input = jsToJson(raw.input)
           )
@@ -168,12 +171,12 @@ object MessageConverter:
 
   private def parseToolProgress(obj: js.Dynamic): AgentMessage.ToolProgress =
     AgentMessage.ToolProgress(
-      toolUseId = obj.tool_use_id.asInstanceOf[String],
-      toolName = obj.tool_name.asInstanceOf[String],
-      parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption,
+      toolUseId = ToolUseId(obj.tool_use_id.asInstanceOf[String]),
+      toolName = ToolName.fromString(obj.tool_name.asInstanceOf[String]),
+      parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
       elapsedTimeSeconds = obj.elapsed_time_seconds.asInstanceOf[Double],
-      uuid = obj.uuid.asInstanceOf[String],
-      sessionId = obj.session_id.asInstanceOf[String]
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
 
   private def parseAuthStatus(obj: js.Dynamic): AgentMessage.AuthStatus =
@@ -181,26 +184,26 @@ object MessageConverter:
       isAuthenticating = obj.is_authenticating.asInstanceOf[Boolean],
       output = obj.output.asInstanceOf[js.Array[String]].toList,
       error = obj.error.asInstanceOf[js.UndefOr[String]].toOption,
-      uuid = obj.uuid.asInstanceOf[String],
-      sessionId = obj.session_id.asInstanceOf[String]
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
 
   // Helper parsers
 
   private def parseApiAssistantMessage(obj: js.Dynamic): ApiAssistantMessage =
     ApiAssistantMessage(
-      id = obj.id.asInstanceOf[String],
-      role = obj.role.asInstanceOf[String],
+      id = ApiMessageId(obj.id.asInstanceOf[String]),
+      role = Role.fromString(obj.role.asInstanceOf[String]),
       content = parseContentBlocks(obj.content),
       model = obj.model.asInstanceOf[String],
-      stopReason = obj.stop_reason.asInstanceOf[js.UndefOr[String]].toOption,
+      stopReason = obj.stop_reason.asInstanceOf[js.UndefOr[String]].toOption.map(StopReason.fromString),
       stopSequence = obj.stop_sequence.asInstanceOf[js.UndefOr[String]].toOption,
       usage = obj.usage.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.map(parseModelUsage)
     )
 
   private def parseApiUserMessage(obj: js.Dynamic): ApiUserMessage =
     ApiUserMessage(
-      role = obj.role.asInstanceOf[String],
+      role = Role.fromString(obj.role.asInstanceOf[String]),
       content = parseContentBlocks(obj.content)
     )
 
@@ -212,7 +215,7 @@ object MessageConverter:
           ContentBlock.Text(block.text.asInstanceOf[String])
         case "tool_use" =>
           ContentBlock.ToolUse(
-            id = block.id.asInstanceOf[String],
+            id = ToolUseId(block.id.asInstanceOf[String]),
             name = block.name.asInstanceOf[String],
             input = jsToJson(block.input)
           )
@@ -230,7 +233,7 @@ object MessageConverter:
           else
             js.JSON.stringify(contentValue)
           ContentBlock.ToolResult(
-            toolUseId = block.tool_use_id.asInstanceOf[String],
+            toolUseId = ToolUseId(block.tool_use_id.asInstanceOf[String]),
             content = contentStr,
             isError = block.is_error.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
           )
@@ -278,7 +281,7 @@ object MessageConverter:
       arr.asInstanceOf[js.Array[js.Dynamic]].toList.map { denial =>
         PermissionDenial(
           toolName = denial.tool_name.asInstanceOf[String],
-          toolUseId = denial.tool_use_id.asInstanceOf[String],
+          toolUseId = ToolUseId(denial.tool_use_id.asInstanceOf[String]),
           toolInput = jsToJson(denial.tool_input)
         )
       }
@@ -288,12 +291,12 @@ object MessageConverter:
       apiKeySource = obj.apiKeySource.asInstanceOf[String],
       claudeCodeVersion = obj.claude_code_version.asInstanceOf[String],
       cwd = obj.cwd.asInstanceOf[String],
-      tools = obj.tools.asInstanceOf[js.Array[String]].toList,
+      tools = obj.tools.asInstanceOf[js.Array[String]].toList.map(ToolName.fromString),
       mcpServers = parseMcpServers(obj.mcp_servers),
-      model = obj.model.asInstanceOf[String],
-      permissionMode = obj.permissionMode.asInstanceOf[String],
+      model = Model.fromId(obj.model.asInstanceOf[String]),
+      permissionMode = PermissionMode.fromString(obj.permissionMode.asInstanceOf[String]),
       slashCommands = obj.slash_commands.asInstanceOf[js.Array[String]].toList,
-      outputStyle = obj.output_style.asInstanceOf[String],
+      outputStyle = OutputStyle.fromString(obj.output_style.asInstanceOf[String]),
       skills = obj.skills.asInstanceOf[js.Array[String]].toList,
       plugins = parsePlugins(obj.plugins),
       agents = obj.agents.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList),

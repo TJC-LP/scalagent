@@ -7,6 +7,7 @@ import zio.json._
 import com.tjclp.claude.agent.hooks._
 import com.tjclp.claude.agent.permissions._
 import com.tjclp.claude.agent.tools.ToolName
+import com.tjclp.claude.agent.types.SessionId
 
 /** Configuration options for Claude Agent queries.
   *
@@ -83,7 +84,7 @@ final case class AgentOptions(
     sessionMode match
       case SessionMode.New      => () // Default, no flag needed
       case SessionMode.Continue => obj.continue = true
-      case SessionMode.Resume(id) => obj.resume = id
+      case SessionMode.Resume(id) => obj.resume = id.value
 
     outputFormat.foreach(of => obj.outputFormat = of.toRaw)
     if includePartialMessages then obj.includePartialMessages = true
@@ -188,7 +189,7 @@ object AgentOptions:
       opts.copy(sessionMode = SessionMode.Continue)
 
     /** Resume a specific session by ID */
-    def withResume(sessionId: String): AgentOptions =
+    def withResume(sessionId: SessionId): AgentOptions =
       opts.copy(sessionMode = SessionMode.Resume(sessionId))
 
     def withSystemPrompt(prompt: SystemPromptConfig): AgentOptions =

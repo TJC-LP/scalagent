@@ -1,5 +1,7 @@
 package com.tjclp.claude.agent.config
 
+import com.tjclp.claude.agent.types.SessionId
+
 /** Session mode for multi-turn conversations.
   *
   * Replaces the confusing combination of `continueSession: Boolean` and `resume: Option[String]`
@@ -26,7 +28,7 @@ enum SessionMode:
   case Continue
 
   /** Resume a specific session by ID */
-  case Resume(sessionId: String)
+  case Resume(sessionId: SessionId)
 
 object SessionMode:
 
@@ -39,6 +41,6 @@ object SessionMode:
     case _         => false
 
   /** Extract session ID if resuming */
-  def sessionId(mode: SessionMode): Option[String] = mode match
+  def sessionId(mode: SessionMode): Option[SessionId] = mode match
     case Resume(id) => Some(id)
     case _          => None

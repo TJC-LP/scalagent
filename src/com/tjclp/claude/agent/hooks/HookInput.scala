@@ -3,6 +3,7 @@ package com.tjclp.claude.agent.hooks
 import zio.json._
 import zio.json.ast.Json
 import com.tjclp.claude.agent.tools.ToolName
+import com.tjclp.claude.agent.types.{SessionId, SubagentId, ToolUseId}
 
 /** Input payloads for different hook event types.
   *
@@ -10,7 +11,7 @@ import com.tjclp.claude.agent.tools.ToolName
   */
 sealed trait HookInput:
   /** Session ID for this hook invocation */
-  def sessionId: String
+  def sessionId: SessionId
 
   /** Current working directory */
   def cwd: String
@@ -22,56 +23,56 @@ object HookInput:
 
   /** Input for PreToolUse hook - before tool execution */
   final case class PreToolUse(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
       toolName: ToolName,
       toolInput: Json,
-      toolUseId: String,
-      agentId: Option[String] = None
+      toolUseId: ToolUseId,
+      agentId: Option[SubagentId] = None
   ) extends HookInput
 
   /** Input for PostToolUse hook - after successful tool execution */
   final case class PostToolUse(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
       toolName: ToolName,
       toolInput: Json,
-      toolUseId: String,
+      toolUseId: ToolUseId,
       toolResponse: String,
-      agentId: Option[String] = None
+      agentId: Option[SubagentId] = None
   ) extends HookInput
 
   /** Input for PostToolUseFailure hook - after tool execution error */
   final case class PostToolUseFailure(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
       toolName: ToolName,
       toolInput: Json,
-      toolUseId: String,
+      toolUseId: ToolUseId,
       error: String,
-      agentId: Option[String] = None
+      agentId: Option[SubagentId] = None
   ) extends HookInput
 
   /** Input for PermissionRequest hook - when permission decision needed */
   final case class PermissionRequest(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
       toolName: ToolName,
       toolInput: Json,
-      toolUseId: String,
+      toolUseId: ToolUseId,
       suggestions: List[PermissionSuggestion] = Nil,
       blockedPath: Option[String] = None,
       decisionReason: Option[String] = None,
-      agentId: Option[String] = None
+      agentId: Option[SubagentId] = None
   ) extends HookInput
 
   /** Input for Notification hook */
   final case class Notification(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
       message: String,
@@ -80,7 +81,7 @@ object HookInput:
 
   /** Input for UserPromptSubmit hook */
   final case class UserPromptSubmit(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
       prompt: String
@@ -88,16 +89,16 @@ object HookInput:
 
   /** Input for SessionStart hook */
   final case class SessionStart(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
       isResume: Boolean = false,
-      previousSessionId: Option[String] = None
+      previousSessionId: Option[SessionId] = None
   ) extends HookInput
 
   /** Input for SessionEnd hook */
   final case class SessionEnd(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
       reason: SessionEndReason,
@@ -106,7 +107,7 @@ object HookInput:
 
   /** Input for Stop hook */
   final case class Stop(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
       reason: String
@@ -114,28 +115,28 @@ object HookInput:
 
   /** Input for SubagentStart hook */
   final case class SubagentStart(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
-      subagentId: String,
+      subagentId: SubagentId,
       subagentType: String,
-      parentToolUseId: String
+      parentToolUseId: ToolUseId
   ) extends HookInput
 
   /** Input for SubagentStop hook */
   final case class SubagentStop(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
-      subagentId: String,
+      subagentId: SubagentId,
       subagentType: String,
-      parentToolUseId: String,
+      parentToolUseId: ToolUseId,
       success: Boolean
   ) extends HookInput
 
   /** Input for PreCompact hook - before context compaction */
   final case class PreCompact(
-      sessionId: String,
+      sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
       currentTokens: Int,

@@ -1,6 +1,7 @@
 package com.tjclp.claude.agent.errors
 
 import zio.json._
+import com.tjclp.claude.agent.types.{SessionId, ToolUseId}
 
 /** Typed error ADT for Claude Agent operations.
   *
@@ -31,7 +32,7 @@ object AgentError:
   final case class PermissionDenied(
       toolName: String,
       reason: String,
-      toolUseId: Option[String] = None
+      toolUseId: Option[ToolUseId] = None
   ) extends AgentError:
     def message: String = s"Permission denied for tool '$toolName': $reason"
 
@@ -45,12 +46,12 @@ object AgentError:
 
   /** Session was closed or is no longer valid */
   final case class SessionClosed(
-      sessionId: String,
+      sessionId: SessionId,
       reason: Option[String] = None
   ) extends AgentError:
     def message: String = reason match
-      case Some(r) => s"Session '$sessionId' closed: $r"
-      case None    => s"Session '$sessionId' is closed"
+      case Some(r) => s"Session '${sessionId.value}' closed: $r"
+      case None    => s"Session '${sessionId.value}' is closed"
 
   /** API rate limit exceeded */
   final case class RateLimited(

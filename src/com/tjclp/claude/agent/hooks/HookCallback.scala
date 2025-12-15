@@ -6,6 +6,7 @@ import scala.scalajs.js.JSConverters._
 import zio._
 import zio.json.ast.Json
 import com.tjclp.claude.agent.tools.ToolName
+import com.tjclp.claude.agent.types.{SessionId, SubagentId, ToolUseId}
 
 /** Type alias for hook callback functions.
   *
@@ -94,7 +95,7 @@ object HookCallback:
     * This converts the SDK's hook input format to our typed HookInput ADT.
     */
   private def parseHookInput(raw: js.Dynamic): HookInput =
-    val sessionId = raw.session_id.asInstanceOf[String]
+    val sessionId = SessionId(raw.session_id.asInstanceOf[String])
     val cwd = raw.cwd.asInstanceOf[String]
     val transcriptPath = raw.transcript_path.asInstanceOf[String]
     val hookEvent = raw.hook_event.asInstanceOf[String]
@@ -107,8 +108,8 @@ object HookCallback:
           transcriptPath = transcriptPath,
           toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
-          toolUseId = raw.tool_use_id.asInstanceOf[String],
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption
+          toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
+          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
         )
 
       case "PostToolUse" =>
@@ -118,9 +119,9 @@ object HookCallback:
           transcriptPath = transcriptPath,
           toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
-          toolUseId = raw.tool_use_id.asInstanceOf[String],
+          toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
           toolResponse = raw.tool_response.asInstanceOf[String],
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption
+          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
         )
 
       case "PostToolUseFailure" =>
@@ -130,9 +131,9 @@ object HookCallback:
           transcriptPath = transcriptPath,
           toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
-          toolUseId = raw.tool_use_id.asInstanceOf[String],
+          toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
           error = raw.error.asInstanceOf[String],
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption
+          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
         )
 
       case "PermissionRequest" =>
@@ -142,8 +143,8 @@ object HookCallback:
           transcriptPath = transcriptPath,
           toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
-          toolUseId = raw.tool_use_id.asInstanceOf[String],
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption
+          toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
+          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
         )
 
       case "Notification" =>
@@ -192,9 +193,9 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          subagentId = raw.subagent_id.asInstanceOf[String],
+          subagentId = SubagentId(raw.subagent_id.asInstanceOf[String]),
           subagentType = raw.subagent_type.asInstanceOf[String],
-          parentToolUseId = raw.parent_tool_use_id.asInstanceOf[String]
+          parentToolUseId = ToolUseId(raw.parent_tool_use_id.asInstanceOf[String])
         )
 
       case "SubagentStop" =>
@@ -202,9 +203,9 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          subagentId = raw.subagent_id.asInstanceOf[String],
+          subagentId = SubagentId(raw.subagent_id.asInstanceOf[String]),
           subagentType = raw.subagent_type.asInstanceOf[String],
-          parentToolUseId = raw.parent_tool_use_id.asInstanceOf[String],
+          parentToolUseId = ToolUseId(raw.parent_tool_use_id.asInstanceOf[String]),
           success = raw.success.asInstanceOf[js.UndefOr[Boolean]].getOrElse(true)
         )
 

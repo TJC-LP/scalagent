@@ -7,6 +7,7 @@ import zio.json._
 import zio.json.ast.Json
 import com.tjclp.claude.agent.hooks.{PermissionSuggestion, PermissionBehavior}
 import com.tjclp.claude.agent.tools.ToolName
+import com.tjclp.claude.agent.types.{SubagentId, ToolUseId}
 
 /** Type alias for the canUseTool permission handler.
   *
@@ -40,8 +41,8 @@ final case class PermissionContext(
     suggestions: List[PermissionSuggestion] = Nil,
     blockedPath: Option[String] = None,
     decisionReason: Option[String] = None,
-    toolUseId: String,
-    agentId: Option[String] = None
+    toolUseId: ToolUseId,
+    agentId: Option[SubagentId] = None
 )
 
 object PermissionContext:
@@ -109,8 +110,8 @@ object CanUseTool:
       suggestions = parseSuggestions(options.suggestions),
       blockedPath = options.blockedPath.asInstanceOf[js.UndefOr[String]].toOption,
       decisionReason = options.decisionReason.asInstanceOf[js.UndefOr[String]].toOption,
-      toolUseId = options.toolUseID.asInstanceOf[String],
-      agentId = options.agentID.asInstanceOf[js.UndefOr[String]].toOption
+      toolUseId = ToolUseId(options.toolUseID.asInstanceOf[String]),
+      agentId = options.agentID.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
     )
 
   private def parseSuggestions(raw: js.Any): List[PermissionSuggestion] =

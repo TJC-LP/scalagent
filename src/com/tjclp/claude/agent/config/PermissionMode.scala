@@ -23,6 +23,9 @@ enum PermissionMode:
   /** Don't ask for permissions, deny if not pre-approved */
   case DontAsk
 
+  /** Custom/unknown permission mode for forward compatibility */
+  case Custom(value: String)
+
   /** Convert to raw JavaScript string value */
   def toRaw: String = this match
     case Default           => "default"
@@ -30,10 +33,12 @@ enum PermissionMode:
     case BypassPermissions => "bypassPermissions"
     case Plan              => "plan"
     case DontAsk           => "dontAsk"
+    case Custom(v)         => v
 
 object PermissionMode:
-  given JsonDecoder[PermissionMode] = DeriveJsonDecoder.gen[PermissionMode]
-  given JsonEncoder[PermissionMode] = DeriveJsonEncoder.gen[PermissionMode]
+  // JSON codecs using string conversion (not derived - handles raw strings properly)
+  given JsonEncoder[PermissionMode] = JsonEncoder[String].contramap(_.toRaw)
+  given JsonDecoder[PermissionMode] = JsonDecoder[String].map(fromString)
 
   def fromString(s: String): PermissionMode = s match
     case "default"           => Default
@@ -41,4 +46,4 @@ object PermissionMode:
     case "bypassPermissions" => BypassPermissions
     case "plan"              => Plan
     case "dontAsk"           => DontAsk
-    case other => throw new IllegalArgumentException(s"Unknown permission mode: $other")
+    case other               => Custom(other)

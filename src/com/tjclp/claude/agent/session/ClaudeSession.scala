@@ -10,6 +10,7 @@ import com.tjclp.claude.agent.config._
 import com.tjclp.claude.agent.errors._
 import com.tjclp.claude.agent.messages._
 import com.tjclp.claude.agent.streaming.{AsyncIterator, AsyncIteratorOps, MessageConverter}
+import com.tjclp.claude.agent.types.SessionId
 
 /** A session-based interface for multi-turn conversations with Claude.
   *
@@ -21,7 +22,7 @@ import com.tjclp.claude.agent.streaming.{AsyncIterator, AsyncIteratorOps, Messag
   */
 trait ClaudeSession:
   /** The unique session ID */
-  def sessionId: String
+  def sessionId: SessionId
 
   /** Send a message to the agent and receive streaming responses.
     *
@@ -90,12 +91,12 @@ object ClaudeSession:
     * @return
     *   The resumed ClaudeSession instance
     */
-  def resume(sessionId: String, options: AgentOptions = AgentOptions.default): IO[AgentError, ClaudeSession] =
+  def resume(sessionId: SessionId, options: AgentOptions = AgentOptions.default): IO[AgentError, ClaudeSession] =
     (for
       runtime <- ZIO.runtime[Any]
       session <- ZIO.fromPromiseJS {
         val rawOptions = options.toRaw.asInstanceOf[js.Dynamic]
-        rawOptions.resume = sessionId
+        rawOptions.resume = sessionId.value
 
         // Wire up hooks if any are configured
         if options.hooks.nonEmpty then
@@ -116,7 +117,7 @@ private final class ClaudeSessionLive(
     runtime: Runtime[Any]
 ) extends ClaudeSession:
 
-  override val sessionId: String = raw.session_id
+  override val sessionId: SessionId = SessionId(raw.session_id)
 
   override def send(message: String): ZStream[Any, AgentError, AgentMessage] =
     ZStream.unwrap {

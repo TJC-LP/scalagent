@@ -1,6 +1,7 @@
 package com.tjclp.claude.agent.messages
 
 import zio.json._
+import com.tjclp.claude.agent.types.ToolUseId
 
 /** Result outcome from a completed query */
 enum ResultOutcome:
@@ -100,17 +101,25 @@ enum ErrorReason:
   case MaxTurns
   case MaxBudgetUsd
   case MaxStructuredOutputRetries
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case DuringExecution          => "error_during_execution"
+    case MaxTurns                 => "error_max_turns"
+    case MaxBudgetUsd             => "error_max_budget_usd"
+    case MaxStructuredOutputRetries => "error_max_structured_output_retries"
+    case Custom(v)                => v
 
 object ErrorReason:
-  given JsonDecoder[ErrorReason] = DeriveJsonDecoder.gen[ErrorReason]
-  given JsonEncoder[ErrorReason] = DeriveJsonEncoder.gen[ErrorReason]
+  given JsonEncoder[ErrorReason] = JsonEncoder[String].contramap(_.toRaw)
+  given JsonDecoder[ErrorReason] = JsonDecoder[String].map(fromString)
 
   def fromString(s: String): ErrorReason = s match
     case "error_during_execution"              => DuringExecution
     case "error_max_turns"                     => MaxTurns
     case "error_max_budget_usd"                => MaxBudgetUsd
     case "error_max_structured_output_retries" => MaxStructuredOutputRetries
-    case other => throw new IllegalArgumentException(s"Unknown error reason: $other")
+    case other                                 => Custom(other)
 
 /** Token usage statistics */
 final case class ModelUsage(
@@ -144,7 +153,7 @@ object PerModelUsage:
 /** Record of a permission denial during query execution */
 final case class PermissionDenial(
     toolName: String,
-    toolUseId: String,
+    toolUseId: ToolUseId,
     toolInput: zio.json.ast.Json
 )
 
