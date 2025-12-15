@@ -5,6 +5,7 @@ import scala.scalajs.js.JSConverters._
 import zio._
 import zio.json._
 import com.tjclp.claude.agent.hooks._
+import com.tjclp.claude.agent.mcp.McpToolName
 import com.tjclp.claude.agent.permissions._
 import com.tjclp.claude.agent.tools.ToolName
 import com.tjclp.claude.agent.types.SessionId
@@ -63,7 +64,10 @@ final case class AgentOptions(
     settingSources: List[SettingSource] = List.empty,
 
     // Plugins to load
-    plugins: List[PluginConfig] = List.empty
+    plugins: List[PluginConfig] = List.empty,
+
+    // Subagents
+    agents: Map[String, AgentDefinition] = Map.empty
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -111,6 +115,9 @@ final case class AgentOptions(
 
     if plugins.nonEmpty then
       obj.plugins = plugins.map(_.toRaw).toJSArray
+
+    if agents.nonEmpty then
+      obj.agents = js.Dictionary(agents.view.mapValues(_.toRaw).toSeq*)
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks
@@ -359,6 +366,69 @@ object AgentOptions:
       */
     def withLocalPlugins(paths: String*): AgentOptions =
       opts.copy(plugins = opts.plugins ++ paths.map(PluginConfig.Local(_)))
+
+    /** Add a subagent definition.
+      *
+      * Example:
+      * {{{
+      * options.withAgent("code-reviewer", AgentDefinition(
+      *   description = "Expert code reviewer",
+      *   prompt = "You are a code review specialist..."
+      * ))
+      * }}}
+      */
+    def withAgent(name: String, definition: AgentDefinition): AgentOptions =
+      opts.copy(agents = opts.agents + (name -> definition))
+
+    /** Add multiple subagent definitions. */
+    def withAgents(newAgents: (String, AgentDefinition)*): AgentOptions =
+      opts.copy(agents = opts.agents ++ newAgents)
+
+    /** Add a read-only analysis agent (convenience method).
+      *
+      * Creates an agent with only Read, Grep, and Glob tools.
+      *
+      * Example:
+      * {{{
+      * options.withReadOnlyAgent(
+      *   "analyzer",
+      *   "Analyzes code architecture",
+      *   "You are an architecture analyst..."
+      * )
+      * }}}
+      */
+    def withReadOnlyAgent(name: String, description: String, prompt: String): AgentOptions =
+      opts.copy(agents = opts.agents + (name -> AgentDefinition.readOnly(description, prompt)))
+
+    /** Add an agent with access to specific MCP tools.
+      *
+      * Example:
+      * {{{
+      * options
+      *   .withMcpServer("weather", weatherServer)
+      *   .withAgentUsingMcp(
+      *     "weather-assistant",
+      *     description = "Weather specialist",
+      *     prompt = "You provide weather info...",
+      *     mcpTools = List(WeatherTools.getWeather),
+      *     builtinTools = List(ToolName.Read)
+      *   )
+      * }}}
+      */
+    def withAgentUsingMcp(
+        name: String,
+        description: String,
+        prompt: String,
+        mcpTools: List[McpToolName],
+        builtinTools: List[ToolName] = Nil,
+        model: Option[AgentModel] = None
+    ): AgentOptions =
+      opts.copy(agents = opts.agents + (name -> AgentDefinition(
+        description = description,
+        prompt = prompt,
+        tools = Some(builtinTools ++ mcpTools.map(_.toToolName)),
+        model = model
+      )))
 
 /** System prompt configuration */
 enum SystemPromptConfig:

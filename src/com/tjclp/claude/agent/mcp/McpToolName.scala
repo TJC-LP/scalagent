@@ -1,0 +1,96 @@
+package com.tjclp.claude.agent.mcp
+
+import zio.json._
+import com.tjclp.claude.agent.tools.ToolName
+
+/** Type-safe MCP tool name with compile-time server/tool binding.
+  *
+  * MCP tool names follow the pattern: `mcp__{server}__{tool}`
+  *
+  * Example:
+  * {{{
+  * // Define tool names for a server
+  * object MyTools extends McpToolNames("my-server"):
+  *   val getWeather = tool("get_weather")
+  *   val calculate = tool("calculate")
+  *
+  * // Use in agent definition (compile-time safe)
+  * AgentDefinition(
+  *   tools = Some(List(MyTools.getWeather.toToolName, MyTools.calculate.toToolName))
+  * )
+  * }}}
+  */
+opaque type McpToolName = String
+
+object McpToolName:
+  /** Create an MCP tool name from server and tool names */
+  def apply(serverName: String, toolName: String): McpToolName =
+    s"mcp__${serverName}__$toolName"
+
+  /** Parse an existing MCP tool name string */
+  def fromString(s: String): Option[McpToolName] =
+    if s.startsWith("mcp__") && s.count(_ == '_') >= 4 then Some(s)
+    else None
+
+  /** Unsafe creation from string (use when you know the format is correct) */
+  def unsafeFromString(s: String): McpToolName = s
+
+  extension (name: McpToolName)
+    /** Get the raw string value */
+    def value: String = name
+
+    /** Convert to ToolName for use in tool lists */
+    def toToolName: ToolName = ToolName.Custom(name)
+
+    /** Extract the server name */
+    def serverName: String =
+      val stripped = name.stripPrefix("mcp__")
+      val idx = stripped.indexOf("__")
+      if idx > 0 then stripped.substring(0, idx)
+      else stripped.takeWhile(_ != '_')
+
+    /** Extract the tool name */
+    def toolName: String =
+      val stripped = name.stripPrefix("mcp__")
+      val idx = stripped.indexOf("__")
+      if idx > 0 && idx + 2 < stripped.length then stripped.substring(idx + 2)
+      else ""
+
+  given Conversion[McpToolName, ToolName] = _.toToolName
+  given JsonEncoder[McpToolName] = JsonEncoder[String].contramap(identity)
+  given JsonDecoder[McpToolName] = JsonDecoder[String].map(unsafeFromString)
+
+/** Base class for defining type-safe MCP tool names for a server.
+  *
+  * Provides compile-time guarantees that tool names are correctly formatted. Extend this class to create a namespace of
+  * tools for your MCP server.
+  *
+  * Example:
+  * {{{
+  * object WeatherTools extends McpToolNames("weather-api"):
+  *   val getWeather = tool("get_weather")
+  *   val getForecast = tool("get_forecast")
+  *
+  *   override def allTools = List(getWeather, getForecast)
+  *
+  * // Type-safe usage in agent definitions
+  * val allowedTools: List[ToolName] = List(
+  *   WeatherTools.getWeather.toToolName,
+  *   WeatherTools.getForecast.toToolName
+  * )
+  *
+  * // Or use implicit conversion
+  * import WeatherTools.given
+  * val tools: List[ToolName] = List(WeatherTools.getWeather, WeatherTools.getForecast)
+  * }}}
+  */
+abstract class McpToolNames(val serverName: String):
+  /** Create a tool name for this server */
+  protected def tool(name: String): McpToolName =
+    McpToolName(serverName, name)
+
+  /** Get all tools defined in this namespace. Override to enable enumeration. */
+  def allTools: List[McpToolName] = Nil
+
+  /** Get all tools as ToolName for use in configurations */
+  def allToolNames: List[ToolName] = allTools.map(_.toToolName)
