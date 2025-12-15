@@ -17,11 +17,27 @@ import com.tjclp.claude.agent.types.SessionId
   * This provides the V2 session API with explicit send/receive semantics, which is more ergonomic for multi-turn
   * conversations compared to the V1 generator-based approach.
   *
+  * The phantom type parameter `S` tracks session state at compile time:
+  *   - `ClaudeSession[Open]` - active session that can send/receive messages
+  *   - `ClaudeSession[Closed]` - closed session, communication methods are unavailable
+  *
+  * Example usage:
+  * {{{
+  * for
+  *   session <- ClaudeSession.create()           // ClaudeSession[Open]
+  *   response <- session.ask("Hello!")           // OK - session is Open
+  *   closed <- session.close                     // ClaudeSession[Closed]
+  *   // closed.ask("Hi") would be a compile error!
+  * yield response
+  * }}}
+  *
+  * @tparam S
+  *   The session state (Open or Closed)
   * @note
   *   This wraps the unstable V2 API from the TypeScript SDK. The API may change.
   */
-trait ClaudeSession:
-  /** The unique session ID */
+trait ClaudeSession[S <: SessionState]:
+  /** The unique session ID (always available regardless of state) */
   def sessionId: SessionId
 
   /** Send a message to the agent and receive streaming responses.
@@ -31,7 +47,7 @@ trait ClaudeSession:
     * @return
     *   A stream of agent messages in response
     */
-  def send(message: String): ZStream[Any, AgentError, AgentMessage]
+  def send(message: String)(using S =:= Open): ZStream[Any, AgentError, AgentMessage]
 
   /** Send a message and collect all responses.
     *
@@ -40,30 +56,39 @@ trait ClaudeSession:
     * @return
     *   All response messages as a list
     */
-  def sendComplete(message: String): IO[AgentError, List[AgentMessage]]
+  def sendComplete(message: String)(using S =:= Open): IO[AgentError, List[AgentMessage]]
 
   /** Send a message and get just the text response.
     *
     * Convenience method that extracts and concatenates all text content.
     */
-  def ask(message: String): IO[AgentError, String]
-
-  /** Close the session and release resources. */
-  def close: IO[AgentError, Unit]
+  def ask(message: String)(using S =:= Open): IO[AgentError, String]
 
   /** Interrupt the current operation. */
-  def interrupt: IO[AgentError, Unit]
+  def interrupt(using S =:= Open): IO[AgentError, Unit]
+
+  /** Close the session and release resources.
+    *
+    * @return
+    *   A closed session (for type tracking purposes)
+    */
+  def close(using S =:= Open): IO[AgentError, ClaudeSession[Closed]]
 
 object ClaudeSession:
+  /** Type alias for an open session - the common case */
+  type OpenSession = ClaudeSession[Open]
+
+  /** Type alias for a closed session */
+  type ClosedSession = ClaudeSession[Closed]
 
   /** Create a new session with the given options.
     *
     * @param options
     *   Configuration options for the session
     * @return
-    *   A new ClaudeSession instance
+    *   A new open ClaudeSession instance
     */
-  def create(options: AgentOptions = AgentOptions.default): IO[AgentError, ClaudeSession] =
+  def create(options: AgentOptions = AgentOptions.default): IO[AgentError, ClaudeSession[Open]] =
     (for
       runtime <- ZIO.runtime[Any]
       session <- ZIO.fromPromiseJS {
@@ -89,9 +114,9 @@ object ClaudeSession:
     * @param options
     *   Configuration options (optional overrides)
     * @return
-    *   The resumed ClaudeSession instance
+    *   The resumed open ClaudeSession instance
     */
-  def resume(sessionId: SessionId, options: AgentOptions = AgentOptions.default): IO[AgentError, ClaudeSession] =
+  def resume(sessionId: SessionId, options: AgentOptions = AgentOptions.default): IO[AgentError, ClaudeSession[Open]] =
     (for
       runtime <- ZIO.runtime[Any]
       session <- ZIO.fromPromiseJS {
@@ -115,11 +140,11 @@ object ClaudeSession:
 private final class ClaudeSessionLive(
     raw: RawSession,
     runtime: Runtime[Any]
-) extends ClaudeSession:
+) extends ClaudeSession[Open]:
 
   override val sessionId: SessionId = SessionId(raw.session_id)
 
-  override def send(message: String): ZStream[Any, AgentError, AgentMessage] =
+  override def send(message: String)(using Open =:= Open): ZStream[Any, AgentError, AgentMessage] =
     ZStream.unwrap {
       ZIO.attempt {
         val asyncIter = raw.send(message).asInstanceOf[AsyncIterator[js.Dynamic]]
@@ -130,19 +155,49 @@ private final class ClaudeSessionLive(
       }.mapError(AgentError.fromThrowable)
     }
 
-  override def sendComplete(message: String): IO[AgentError, List[AgentMessage]] =
+  override def sendComplete(message: String)(using Open =:= Open): IO[AgentError, List[AgentMessage]] =
     send(message).runCollect.map(_.toList)
 
-  override def ask(message: String): IO[AgentError, String] =
+  override def ask(message: String)(using Open =:= Open): IO[AgentError, String] =
     sendComplete(message).map { messages =>
       messages.flatMap(_.text).mkString("\n")
     }
 
-  override def close: IO[AgentError, Unit] =
-    ZIO.fromPromiseJS(raw.close()).mapError(AgentError.fromThrowable)
-
-  override def interrupt: IO[AgentError, Unit] =
+  override def interrupt(using Open =:= Open): IO[AgentError, Unit] =
     ZIO.attempt(raw.interrupt()).mapError(AgentError.fromThrowable)
+
+  override def close(using Open =:= Open): IO[AgentError, ClaudeSession[Closed]] =
+    ZIO.fromPromiseJS(raw.close())
+      .as(ClosedSessionImpl(sessionId))
+      .mapError(AgentError.fromThrowable)
+
+/** Implementation for a closed session.
+  *
+  * All methods requiring Open state are implemented but will never be called
+  * due to the evidence parameter requirement. The compiler prevents calling
+  * these methods on a Closed session.
+  */
+private final class ClosedSessionImpl(
+    override val sessionId: SessionId
+) extends ClaudeSession[Closed]:
+
+  // These methods are unreachable - the compiler prevents calling them on Closed sessions
+  // due to the `using Closed =:= Open` evidence requirement (which can never be satisfied)
+
+  override def send(message: String)(using Closed =:= Open): ZStream[Any, AgentError, AgentMessage] =
+    throw new IllegalStateException("Cannot send on a closed session")
+
+  override def sendComplete(message: String)(using Closed =:= Open): IO[AgentError, List[AgentMessage]] =
+    throw new IllegalStateException("Cannot send on a closed session")
+
+  override def ask(message: String)(using Closed =:= Open): IO[AgentError, String] =
+    throw new IllegalStateException("Cannot send on a closed session")
+
+  override def interrupt(using Closed =:= Open): IO[AgentError, Unit] =
+    throw new IllegalStateException("Cannot interrupt a closed session")
+
+  override def close(using Closed =:= Open): IO[AgentError, ClaudeSession[Closed]] =
+    throw new IllegalStateException("Session is already closed")
 
 /** Raw JavaScript session type */
 @js.native

@@ -118,6 +118,8 @@ object Claude:
   /** Create a new session for multi-turn conversations.
     *
     * The session is scoped and will be automatically closed when the scope exits.
+    * Returns a `ClaudeSession[Open]` to ensure compile-time safety - you cannot
+    * accidentally use a closed session.
     *
     * Example:
     * {{{
@@ -133,9 +135,9 @@ object Claude:
     * @param options
     *   Configuration options (optional)
     * @return
-    *   A scoped ClaudeSession
+    *   A scoped open ClaudeSession
     */
-  def session(options: AgentOptions = AgentOptions.default): ZIO[Scope, AgentError, ClaudeSession] =
+  def session(options: AgentOptions = AgentOptions.default): ZIO[Scope, AgentError, ClaudeSession[Open]] =
     ClaudeSession.create(options).withFinalizer(s => s.close.ignoreLogged)
 
   /** Run a multi-turn conversation with automatic resource management.
@@ -158,12 +160,12 @@ object Claude:
     * @param options
     *   Configuration options
     * @param f
-    *   The conversation function
+    *   The conversation function (receives an open session)
     * @return
     *   The result of the conversation
     */
   def conversation[A](options: AgentOptions = AgentOptions.default)(
-      f: ClaudeSession => IO[AgentError, A]
+      f: ClaudeSession[Open] => IO[AgentError, A]
   ): IO[AgentError, A] =
     ZIO.scoped {
       session(options).flatMap(f)
@@ -180,5 +182,5 @@ object Claude:
     * }
     * }}}
     */
-  def chat[A](f: ClaudeSession => IO[AgentError, A]): IO[AgentError, A] =
+  def chat[A](f: ClaudeSession[Open] => IO[AgentError, A]): IO[AgentError, A] =
     conversation(AgentOptions.default)(f)
