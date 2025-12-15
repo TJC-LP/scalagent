@@ -1,6 +1,6 @@
 package com.tjclp.claude.agent.types
 
-import zio.json._
+import zio.json.{JsonDecoder, JsonEncoder}
 
 /** Type-safe opaque wrappers for string identifiers.
   *
@@ -24,12 +24,12 @@ object SessionId:
   def apply(s: String): SessionId = s
   extension (id: SessionId)
     def value: String = id
-    def isEmpty: Boolean = id.value.isEmpty
-    def nonEmpty: Boolean = id.value.nonEmpty
+    def isEmpty: Boolean = value.isEmpty
+    def nonEmpty: Boolean = !value.isEmpty
 
-  // Use identity since opaque type is already String
-  given JsonEncoder[SessionId] = JsonEncoder[String].contramap(identity)
-  given JsonDecoder[SessionId] = JsonDecoder[String].map(apply)
+  // Use concrete instances (not implicit search) to avoid false "infinite loop" warnings
+  given JsonEncoder[SessionId] = JsonEncoder.string.asInstanceOf[JsonEncoder[SessionId]]
+  given JsonDecoder[SessionId] = JsonDecoder.string.asInstanceOf[JsonDecoder[SessionId]]
 
 /** Unique identifier for a tool use request */
 opaque type ToolUseId = String
@@ -37,11 +37,11 @@ object ToolUseId:
   def apply(s: String): ToolUseId = s
   extension (id: ToolUseId)
     def value: String = id
-    def isEmpty: Boolean = id.value.isEmpty
-    def nonEmpty: Boolean = id.value.nonEmpty
+    def isEmpty: Boolean = value.isEmpty
+    def nonEmpty: Boolean = !value.isEmpty
 
-  given JsonEncoder[ToolUseId] = JsonEncoder[String].contramap(identity)
-  given JsonDecoder[ToolUseId] = JsonDecoder[String].map(apply)
+  given JsonEncoder[ToolUseId] = JsonEncoder.string.asInstanceOf[JsonEncoder[ToolUseId]]
+  given JsonDecoder[ToolUseId] = JsonDecoder.string.asInstanceOf[JsonDecoder[ToolUseId]]
 
 /** Unique identifier for a message */
 opaque type MessageUuid = String
@@ -49,10 +49,10 @@ object MessageUuid:
   def apply(s: String): MessageUuid = s
   extension (id: MessageUuid)
     def value: String = id
-    def isEmpty: Boolean = id.value.isEmpty
+    def isEmpty: Boolean = value.isEmpty
 
-  given JsonEncoder[MessageUuid] = JsonEncoder[String].contramap(identity)
-  given JsonDecoder[MessageUuid] = JsonDecoder[String].map(apply)
+  given JsonEncoder[MessageUuid] = JsonEncoder.string.asInstanceOf[JsonEncoder[MessageUuid]]
+  given JsonDecoder[MessageUuid] = JsonDecoder.string.asInstanceOf[JsonDecoder[MessageUuid]]
 
 /** Unique identifier for a subagent */
 opaque type SubagentId = String
@@ -60,10 +60,10 @@ object SubagentId:
   def apply(s: String): SubagentId = s
   extension (id: SubagentId)
     def value: String = id
-    def isEmpty: Boolean = id.value.isEmpty
+    def isEmpty: Boolean = value.isEmpty
 
-  given JsonEncoder[SubagentId] = JsonEncoder[String].contramap(identity)
-  given JsonDecoder[SubagentId] = JsonDecoder[String].map(apply)
+  given JsonEncoder[SubagentId] = JsonEncoder.string.asInstanceOf[JsonEncoder[SubagentId]]
+  given JsonDecoder[SubagentId] = JsonDecoder.string.asInstanceOf[JsonDecoder[SubagentId]]
 
 /** API-level message identifier */
 opaque type ApiMessageId = String
@@ -71,7 +71,7 @@ object ApiMessageId:
   def apply(s: String): ApiMessageId = s
   extension (id: ApiMessageId)
     def value: String = id
-    def isEmpty: Boolean = id.value.isEmpty
+    def isEmpty: Boolean = value.isEmpty
 
-  given JsonEncoder[ApiMessageId] = JsonEncoder[String].contramap(identity)
-  given JsonDecoder[ApiMessageId] = JsonDecoder[String].map(apply)
+  given JsonEncoder[ApiMessageId] = JsonEncoder.string.asInstanceOf[JsonEncoder[ApiMessageId]]
+  given JsonDecoder[ApiMessageId] = JsonDecoder.string.asInstanceOf[JsonDecoder[ApiMessageId]]

@@ -1,6 +1,6 @@
 package com.tjclp.claude.agent.mcp
 
-import zio.json._
+import zio.json.{JsonDecoder, JsonEncoder}
 import com.tjclp.claude.agent.tools.ToolName
 
 /** Type-safe MCP tool name with compile-time server/tool binding.
@@ -57,8 +57,10 @@ object McpToolName:
       else ""
 
   given Conversion[McpToolName, ToolName] = _.toToolName
-  given JsonEncoder[McpToolName] = JsonEncoder[String].contramap(identity)
-  given JsonDecoder[McpToolName] = JsonDecoder[String].map(unsafeFromString)
+
+  // Opaque type is String at runtime, so cast is safe
+  given JsonEncoder[McpToolName] = JsonEncoder.string.asInstanceOf[JsonEncoder[McpToolName]]
+  given JsonDecoder[McpToolName] = JsonDecoder.string.asInstanceOf[JsonDecoder[McpToolName]]
 
 /** Base class for defining type-safe MCP tool names for a server.
   *

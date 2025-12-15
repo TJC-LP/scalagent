@@ -1,6 +1,6 @@
 package com.tjclp.claude.agent.config
 
-import zio.json._
+import zio.json.{JsonDecoder, JsonEncoder}
 
 /** Type-safe wrapper for skill names.
   *
@@ -46,6 +46,6 @@ object SkillName:
       if isPluginSkill then name.dropWhile(_ != ':').drop(1)
       else name
 
-  // Use identity since opaque type is already String
-  given JsonEncoder[SkillName] = JsonEncoder[String].contramap(identity)
-  given JsonDecoder[SkillName] = JsonDecoder[String].map(apply)
+  // Opaque type is String at runtime, so cast is safe
+  given JsonEncoder[SkillName] = JsonEncoder.string.asInstanceOf[JsonEncoder[SkillName]]
+  given JsonDecoder[SkillName] = JsonDecoder.string.asInstanceOf[JsonDecoder[SkillName]]
