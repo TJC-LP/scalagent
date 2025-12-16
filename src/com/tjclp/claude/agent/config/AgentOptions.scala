@@ -430,6 +430,38 @@ object AgentOptions:
         model = model
       )))
 
+    /** Configure structured output with type-safe schema derivation.
+      *
+      * Requires a StructuredOutput type class instance for the output type, which provides both JSON Schema generation
+      * and type-safe parsing.
+      *
+      * Example:
+      * {{{
+      * case class Result(summary: String, score: Int)
+      * object Result:
+      *   given Schema[Result] = DeriveSchema.gen[Result]
+      *   given JsonDecoder[Result] = DeriveJsonDecoder.gen[Result]
+      *   given StructuredOutput[Result] = StructuredOutput.derive[Result]
+      *
+      * val options = AgentOptions.default.withStructuredOutput[Result]
+      * }}}
+      */
+    def withStructuredOutput[A](using so: StructuredOutput[A]): AgentOptions =
+      opts.copy(outputFormat = Some(StructuredOutput.toOutputFormat[A]))
+
+    /** Configure structured output with an explicit OutputFormat.
+      *
+      * Use this when you have a pre-built JSON Schema as zio.json.ast.Json.
+      *
+      * Example:
+      * {{{
+      * val schema = Json.Obj("type" -> Json.Str("object"), ...)
+      * options.withOutputFormat(OutputFormat(schema))
+      * }}}
+      */
+    def withOutputFormat(format: OutputFormat): AgentOptions =
+      opts.copy(outputFormat = Some(format))
+
 /** System prompt configuration */
 enum SystemPromptConfig:
   /** Custom system prompt string */

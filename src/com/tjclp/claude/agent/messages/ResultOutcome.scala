@@ -1,6 +1,8 @@
 package com.tjclp.claude.agent.messages
 
 import zio.json._
+import zio.json.ast.Json
+import com.tjclp.claude.agent.config.StructuredOutput
 import com.tjclp.claude.agent.types.ToolUseId
 
 /** Result outcome from a completed query */
@@ -94,6 +96,33 @@ object ResultOutcome:
     def errorReason: Option[ErrorReason] = outcome match
       case Error(reason, _, _, _, _, _, _, _, _) => Some(reason)
       case _: Success                            => None
+
+    /** Get structured output JSON if available (Success only) */
+    def structuredOutput: Option[Json] = outcome match
+      case Success(_, _, _, _, _, _, _, _, so) => so
+      case _: Error                            => None
+
+    /** Parse structured output to a typed value.
+      *
+      * Requires a StructuredOutput type class instance for the target type.
+      *
+      * Example:
+      * {{{
+      * case class Result(summary: String, score: Int)
+      * object Result:
+      *   given Schema[Result] = DeriveSchema.gen[Result]
+      *   given JsonDecoder[Result] = DeriveJsonDecoder.gen[Result]
+      *   given StructuredOutput[Result] = StructuredOutput.derive[Result]
+      *
+      * outcome.parseAs[Result] match
+      *   case Right(result) => println(result.summary)
+      *   case Left(error) => println(s"Parse error: $error")
+      * }}}
+      */
+    def parseAs[A](using so: StructuredOutput[A]): Either[String, A] =
+      structuredOutput match
+        case Some(json) => so.parse(json)
+        case None       => Left("No structured output in result")
 
 /** Reason for query error termination */
 enum ErrorReason:
