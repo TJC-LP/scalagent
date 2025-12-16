@@ -58,7 +58,14 @@ object examples extends ScalaJSModule {
     "macro"      -> "com.tjclp.claude.agent.examples.MacroToolExample",
     "custom"     -> "com.tjclp.claude.agent.examples.CustomToolExample",
     "hook"       -> "com.tjclp.claude.agent.examples.HookExample",
-    "permission" -> "com.tjclp.claude.agent.examples.PermissionExample"
+    "permission" -> "com.tjclp.claude.agent.examples.PermissionExample",
+    "session"    -> "com.tjclp.claude.agent.examples.SessionExample",
+    // New examples for recent features
+    "structured" -> "com.tjclp.claude.agent.examples.StructuredOutputExample",
+    "subagent"   -> "com.tjclp.claude.agent.examples.SubagentExample",
+    "plugin"     -> "com.tjclp.claude.agent.examples.PluginExample",
+    "prompt"     -> "com.tjclp.claude.agent.examples.SystemPromptExample",
+    "command"    -> "com.tjclp.claude.agent.examples.SlashCommandExample"
   )
 
   // List available examples
