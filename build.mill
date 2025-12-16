@@ -2,10 +2,11 @@ package build
 
 import mill.*, scalalib.*, scalajslib.*
 import mill.scalajslib.api.*
+import publish.*
 import mainargs.arg
 
 // Main library module - sources in /src
-object agent extends ScalaJSModule {
+object agent extends ScalaJSModule with PublishModule {
   def scalaVersion = "3.3.4"
   def scalaJSVersion = "1.17.0"
 
@@ -26,6 +27,20 @@ object agent extends ScalaJSModule {
   // Source at project root /src
   override def moduleDir = build.moduleDir
   override def sources = Task.Sources(moduleDir / "src")
+
+  // Publishing configuration
+  def publishVersion = "0.1.0-SNAPSHOT"
+
+  def pomSettings = PomSettings(
+    description = "Claude Agent SDK for Scala.js - Type-safe bindings for Claude Code CLI",
+    organization = "com.tjclp",
+    url = "https://github.com/tjclp/claude-agent-sdk-scalajs",
+    licenses = Seq(License.MIT),
+    versionControl = VersionControl.github("tjclp", "claude-agent-sdk-scalajs"),
+    developers = Seq()
+  )
+
+  def artifactName = "claude-agent-sdk"
 
   // Test module
   object test extends ScalaJSTests with TestModule.Munit {

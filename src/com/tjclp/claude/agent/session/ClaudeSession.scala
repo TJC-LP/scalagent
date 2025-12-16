@@ -91,7 +91,7 @@ object ClaudeSession:
   def create(options: AgentOptions = AgentOptions.default): IO[AgentError, ClaudeSession[Open]] =
     (for
       runtime <- ZIO.runtime[Any]
-      session <- ZIO.fromPromiseJS {
+      session <- ZIO.attempt {
         val rawOptions = options.toRaw.asInstanceOf[js.Dynamic]
 
         // Wire up hooks if any are configured
@@ -103,6 +103,7 @@ object ClaudeSession:
           rawOptions.canUseTool = handler
         }
 
+        // V2 API returns SDKSession synchronously (not a Promise)
         SdkSessionModule.unstable_v2_createSession(rawOptions)
       }
     yield ClaudeSessionLive(session.asInstanceOf[RawSession], runtime)).mapError(AgentError.fromThrowable)
@@ -119,7 +120,7 @@ object ClaudeSession:
   def resume(sessionId: SessionId, options: AgentOptions = AgentOptions.default): IO[AgentError, ClaudeSession[Open]] =
     (for
       runtime <- ZIO.runtime[Any]
-      session <- ZIO.fromPromiseJS {
+      session <- ZIO.attempt {
         val rawOptions = options.toRaw.asInstanceOf[js.Dynamic]
         rawOptions.resume = sessionId.value
 
@@ -132,7 +133,8 @@ object ClaudeSession:
           rawOptions.canUseTool = handler
         }
 
-        SdkSessionModule.unstable_v2_resumeSession(rawOptions)
+        // V2 API returns SDKSession synchronously (not a Promise)
+        SdkSessionModule.unstable_v2_resumeSession(sessionId.value, rawOptions)
       }
     yield ClaudeSessionLive(session.asInstanceOf[RawSession], runtime)).mapError(AgentError.fromThrowable)
 
@@ -142,17 +144,23 @@ private final class ClaudeSessionLive(
     runtime: Runtime[Any]
 ) extends ClaudeSession[Open]:
 
-  override val sessionId: SessionId = SessionId(raw.session_id)
+  // sessionId is a getter that may throw if called before first message
+  // For simplicity, we access it lazily
+  override lazy val sessionId: SessionId = SessionId(raw.sessionId)
 
   override def send(message: String)(using Open =:= Open): ZStream[Any, AgentError, AgentMessage] =
     ZStream.unwrap {
-      ZIO.attempt {
-        val asyncIter = raw.send(message).asInstanceOf[AsyncIterator[js.Dynamic]]
-        AsyncIteratorOps
-          .toZStream(asyncIter)
-          .map(MessageConverter.fromRaw)
-          .mapError(AgentError.fromThrowable)
-      }.mapError(AgentError.fromThrowable)
+      // V2 API: send() returns Promise<void>, receive() returns AsyncGenerator
+      ZIO.fromPromiseJS(raw.send(message))
+        .as {
+          // After sending, receive the response stream
+          val asyncIter = raw.receive().asInstanceOf[AsyncIterator[js.Dynamic]]
+          AsyncIteratorOps
+            .toZStream(asyncIter)
+            .map(MessageConverter.fromRaw)
+            .mapError(AgentError.fromThrowable)
+        }
+        .mapError(AgentError.fromThrowable)
     }
 
   override def sendComplete(message: String)(using Open =:= Open): IO[AgentError, List[AgentMessage]] =
@@ -167,7 +175,8 @@ private final class ClaudeSessionLive(
     ZIO.attempt(raw.interrupt()).mapError(AgentError.fromThrowable)
 
   override def close(using Open =:= Open): IO[AgentError, ClaudeSession[Closed]] =
-    ZIO.fromPromiseJS(raw.close())
+    // V2 API: close() returns void (synchronous)
+    ZIO.attempt(raw.close())
       .as(ClosedSessionImpl(sessionId))
       .mapError(AgentError.fromThrowable)
 
@@ -199,12 +208,18 @@ private final class ClosedSessionImpl(
   override def close(using Closed =:= Open): IO[AgentError, ClaudeSession[Closed]] =
     throw new IllegalStateException("Session is already closed")
 
-/** Raw JavaScript session type */
+/** Raw JavaScript session type matching SDKSession interface */
 @js.native
 private trait RawSession extends js.Object:
-  val session_id: String = js.native
-  def send(message: String): js.Object = js.native
-  def close(): js.Promise[Unit] = js.native
+  // sessionId is a getter - available after first message, or immediately for resumed sessions
+  def sessionId: String = js.native
+  // send returns Promise<void>
+  def send(message: String): js.Promise[Unit] = js.native
+  // receive returns AsyncGenerator<SDKMessage>
+  def receive(): js.Object = js.native
+  // close returns void (synchronous)
+  def close(): Unit = js.native
+  // interrupt is synchronous
   def interrupt(): Unit = js.native
 
 /** JavaScript module binding for the V2 session SDK functions.
@@ -214,5 +229,6 @@ private trait RawSession extends js.Object:
 @js.native
 @JSImport("@anthropic-ai/claude-agent-sdk", JSImport.Namespace)
 private object SdkSessionModule extends js.Object:
-  def unstable_v2_createSession(options: js.Dynamic): js.Promise[js.Object] = js.native
-  def unstable_v2_resumeSession(options: js.Dynamic): js.Promise[js.Object] = js.native
+  // V2 API returns SDKSession synchronously (not Promise)
+  def unstable_v2_createSession(options: js.Dynamic): js.Object = js.native
+  def unstable_v2_resumeSession(sessionId: String, options: js.Dynamic): js.Object = js.native
