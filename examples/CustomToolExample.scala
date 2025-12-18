@@ -26,14 +26,17 @@ object CustomToolExample extends ZIOAppDefault:
   case class WeatherInput(location: String, unit: Option[String])
   object WeatherInput:
     given JsonDecoder[WeatherInput] = DeriveJsonDecoder.gen[WeatherInput]
+    given ToolInput[WeatherInput] = ToolInput.derive[WeatherInput]
 
   case class CalculatorInput(operation: String, a: Double, b: Double)
   object CalculatorInput:
     given JsonDecoder[CalculatorInput] = DeriveJsonDecoder.gen[CalculatorInput]
+    given ToolInput[CalculatorInput] = ToolInput.derive[CalculatorInput]
 
   case class LookupInput(query: String)
   object LookupInput:
     given JsonDecoder[LookupInput] = DeriveJsonDecoder.gen[LookupInput]
+    given ToolInput[LookupInput] = ToolInput.derive[LookupInput]
 
   val run: ZIO[Any, Throwable, Unit] =
     for
@@ -43,17 +46,8 @@ object CustomToolExample extends ZIOAppDefault:
 
   private def runWithCustomTools(runtime: Runtime[Any]): ZIO[Any, Throwable, Unit] =
     // Define a weather tool
-    val weatherTool = ToolBuilder[WeatherInput]("get_weather")
-      .description("Get the current weather for a location")
-      .schema(
-        JsonSchema
-          .obj(
-            "location" -> JsonSchema.string,
-            "unit" -> JsonSchema.enumOf("celsius", "fahrenheit")
-          )
-          .required("location")
-      )
-      .handler { input =>
+    val weatherTool = ToolDef
+      .fromInput[WeatherInput]("get_weather", "Get the current weather for a location") { input =>
         val unit = input.unit.getOrElse("celsius")
         val temp = if unit == "celsius" then "22" else "72"
         val symbol = if unit == "celsius" then "C" else "F"
@@ -63,18 +57,8 @@ object CustomToolExample extends ZIOAppDefault:
       }
 
     // Define a calculator tool
-    val calculatorTool = ToolBuilder[CalculatorInput]("calculator")
-      .description("Perform basic arithmetic operations")
-      .schema(
-        JsonSchema
-          .obj(
-            "operation" -> JsonSchema.enumOf("add", "subtract", "multiply", "divide"),
-            "a" -> JsonSchema.number,
-            "b" -> JsonSchema.number
-          )
-          .required("operation", "a", "b")
-      )
-      .handler { input =>
+    val calculatorTool = ToolDef
+      .fromInput[CalculatorInput]("calculator", "Perform basic arithmetic operations") { input =>
         input.operation match
           case "add" =>
             ZIO.succeed(ToolResult.Success(s"${input.a} + ${input.b} = ${input.a + input.b}"))
@@ -90,12 +74,8 @@ object CustomToolExample extends ZIOAppDefault:
       }
 
     // Define a knowledge lookup tool
-    val lookupTool = ToolBuilder[LookupInput]("knowledge_lookup")
-      .description("Look up information from a knowledge base")
-      .schema(
-        JsonSchema.obj("query" -> JsonSchema.string).required("query")
-      )
-      .handler { input =>
+    val lookupTool = ToolDef
+      .fromInput[LookupInput]("knowledge_lookup", "Look up information from a knowledge base") { input =>
         // Simulated knowledge base
         val knowledge = Map(
           "scala" -> "Scala is a programming language that combines object-oriented and functional programming.",

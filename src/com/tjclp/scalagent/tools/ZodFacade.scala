@@ -51,6 +51,8 @@ object ZodConverter:
   /** Convert a JsonSchema to a ZodType */
   def toZodType(schema: JsonSchema): ZodType =
     schema match
+      case JsonSchema.Described(inner, desc) =>
+        toZodType(inner).describe(desc)
       case JsonSchema.StringType => Zod.string()
       case JsonSchema.IntType => Zod.number()
       case JsonSchema.NumberType => Zod.number()

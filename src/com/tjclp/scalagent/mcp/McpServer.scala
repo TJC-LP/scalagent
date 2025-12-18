@@ -15,12 +15,16 @@ import com.tjclp.scalagent.config.McpServerConfig
   *
   * Example usage:
   * {{{
-  * val weatherTool = ToolBuilder[WeatherInput]("get_weather")
-  *   .description("Get current weather for a location")
-  *   .schema(JsonSchema.obj("location" -> JsonSchema.string).required("location"))
-  *   .handler { input =>
-  *     ZIO.succeed(ToolResult.Success(s"Weather in ${input.location}: Sunny, 72°F"))
-  *   }
+  * case class WeatherInput(location: String) derives JsonDecoder
+  * object WeatherInput:
+  *   given ToolInput[WeatherInput] = ToolInput.derive[WeatherInput]
+  *
+  * val weatherTool = ToolDef.fromInput[WeatherInput](
+  *   name = "get_weather",
+  *   description = "Get current weather for a location"
+  * ) { input =>
+  *   ZIO.succeed(ToolResult.Success(s"Weather in ${input.location}: Sunny, 72°F"))
+  * }
   *
   * val server = McpServer.create("weather-server", List(weatherTool))
   * val options = AgentOptions.default.withMcpServer("weather", server)

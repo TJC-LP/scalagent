@@ -8,8 +8,9 @@ import zio.json.*
 
 /** Tool definition for custom tools.
   *
-  * This is a skeleton for future type-safe tool definitions. The SDK uses Zod schemas for tool input validation, which
-  * doesn't translate well to ScalablyTyped. This DSL provides a Scala-native alternative.
+  * Use ToolInput.derive for case-class inputs to generate schemas automatically and keep tool
+  * definitions type-safe. The SDK expects Zod schemas for validation; we generate them from our
+  * JsonSchema representation.
   *
   * @tparam A
   *   The input type for the tool
@@ -85,23 +86,31 @@ final case class ToolDef[A](
         result <- handler(input)
       yield resultToJs(result)
 
-      // Handle errors gracefully
-      val safeEffect = effect.catchAll { err =>
-        val errMsg = Option(err.getMessage).getOrElse(err.getClass.getName)
-        val fullError = s"Tool execution failed: $errMsg"
-        ZIO.succeed(
-          resultToJs(ToolResult.Error(fullError))
-        )
-      }
-
       Unsafe.unsafe { implicit unsafe =>
-        runtime.unsafe.runToFuture(safeEffect).toJSPromise
+        // Let failures propagate to the SDK; return ToolResult.Error for custom error content.
+        runtime.unsafe.runToFuture(effect).toJSPromise
       }
     }
 
   /** Convert a ToolResult to the SDK's expected format */
   private def resultToJs(result: ToolResult): js.Object =
     result.toRaw
+
+object ToolDef:
+  /** Create a tool from a derived ToolInput instance. */
+  def fromInput[A: JsonDecoder](
+      name: String,
+      description: String
+  )(handler: A => Task[ToolResult])(using input: ToolInput[A]): ToolDef[A] =
+    ToolDef(name, description, input.jsonSchema, handler)
+
+  /** Derive the input schema from the case class type directly. */
+  inline def derive[A: JsonDecoder](
+      name: String,
+      description: String
+  )(handler: A => Task[ToolResult]): ToolDef[A] =
+    val input = ToolInput.derive[A]
+    ToolDef(name, description, input.jsonSchema, handler)
 
 /** Content block types for tool results - supports multimodal output */
 sealed trait ToolContent:
@@ -120,10 +129,65 @@ object ToolContent:
       mimeType = mimeType
     )
 
-  /** Resource reference */
-  final case class Resource(uri: String, mimeType: Option[String] = None) extends ToolContent:
+  /** Audio content (base64 encoded) */
+  final case class Audio(data: String, mimeType: String = "audio/wav") extends ToolContent:
+    def toRaw: js.Dynamic = js.Dynamic.literal(
+      `type` = "audio",
+      data = data,
+      mimeType = mimeType
+    )
+
+  /** Resource link (by URI) */
+  final case class ResourceLink(
+      uri: String,
+      mimeType: Option[String] = None,
+      description: Option[String] = None
+  ) extends ToolContent:
     def toRaw: js.Dynamic =
-      val obj = js.Dynamic.literal(`type` = "resource", uri = uri)
+      val obj = js.Dynamic.literal(`type` = "resource_link", uri = uri)
+      mimeType.foreach(m => obj.mimeType = m)
+      description.foreach(d => obj.description = d)
+      obj
+
+  /** Embedded resource content (text/blob) */
+  final case class EmbeddedResource(resource: ResourceContents) extends ToolContent:
+    def toRaw: js.Dynamic =
+      js.Dynamic.literal(`type` = "resource", resource = resource.toRaw)
+
+  /** Backwards-compatible alias for resource links */
+  @deprecated("Use ResourceLink or EmbeddedResource", "0.1.0")
+  final case class Resource(
+      uri: String,
+      mimeType: Option[String] = None,
+      description: Option[String] = None
+  ) extends ToolContent:
+    def toRaw: js.Dynamic =
+      ResourceLink(uri, mimeType, description).toRaw
+
+/** Embedded resource contents */
+sealed trait ResourceContents:
+  def toRaw: js.Dynamic
+
+object ResourceContents:
+  /** Text resource payload */
+  final case class Text(
+      uri: String,
+      text: String,
+      mimeType: Option[String] = None
+  ) extends ResourceContents:
+    def toRaw: js.Dynamic =
+      val obj = js.Dynamic.literal(uri = uri, text = text)
+      mimeType.foreach(m => obj.mimeType = m)
+      obj
+
+  /** Binary resource payload (base64-encoded) */
+  final case class Blob(
+      uri: String,
+      blob: String,
+      mimeType: Option[String] = None
+  ) extends ResourceContents:
+    def toRaw: js.Dynamic =
+      val obj = js.Dynamic.literal(uri = uri, blob = blob)
       mimeType.foreach(m => obj.mimeType = m)
       obj
 
@@ -151,6 +215,13 @@ object ToolResult:
       content = js.Array(contents.map(_.toRaw)*)
     ).asInstanceOf[js.Object]
 
+  /** Error result with custom content blocks */
+  final case class Failure(contents: List[ToolContent]) extends ToolResult:
+    def toRaw: js.Object = js.Dynamic.literal(
+      content = js.Array(contents.map(_.toRaw)*),
+      isError = true
+    ).asInstanceOf[js.Object]
+
   /** Error result */
   final case class Error(message: String) extends ToolResult:
     def toRaw: js.Object = js.Dynamic.literal(
@@ -163,7 +234,20 @@ object ToolResult:
   def json[A: JsonEncoder](a: A): ToolResult = Structured(a)
   def image(base64: String, mime: String = "image/png"): ToolResult =
     Multi(List(ToolContent.Image(base64, mime)))
+  def audio(base64: String, mime: String = "audio/wav"): ToolResult =
+    Multi(List(ToolContent.Audio(base64, mime)))
+  def resourceLink(
+      uri: String,
+      mimeType: Option[String] = None,
+      description: Option[String] = None
+  ): ToolResult =
+    Multi(List(ToolContent.ResourceLink(uri, mimeType, description)))
+  def resourceText(uri: String, text: String, mimeType: Option[String] = None): ToolResult =
+    Multi(List(ToolContent.EmbeddedResource(ResourceContents.Text(uri, text, mimeType))))
+  def resourceBlob(uri: String, blob: String, mimeType: Option[String] = None): ToolResult =
+    Multi(List(ToolContent.EmbeddedResource(ResourceContents.Blob(uri, blob, mimeType))))
   def error(msg: String): ToolResult = Error(msg)
+  def errorContents(contents: ToolContent*): ToolResult = Failure(contents.toList)
 
   // Multimodal builder for fluent construction
   def multi: MultiBuilder = MultiBuilder(Nil)
@@ -172,9 +256,22 @@ object ToolResult:
     def text(s: String): MultiBuilder = copy(contents = contents :+ ToolContent.Text(s))
     def image(base64: String, mime: String = "image/png"): MultiBuilder =
       copy(contents = contents :+ ToolContent.Image(base64, mime))
+    def audio(base64: String, mime: String = "audio/wav"): MultiBuilder =
+      copy(contents = contents :+ ToolContent.Audio(base64, mime))
     def resource(uri: String, mime: Option[String] = None): MultiBuilder =
-      copy(contents = contents :+ ToolContent.Resource(uri, mime))
+      copy(contents = contents :+ ToolContent.ResourceLink(uri, mime))
+    def resourceLink(
+        uri: String,
+        mimeType: Option[String] = None,
+        description: Option[String] = None
+    ): MultiBuilder =
+      copy(contents = contents :+ ToolContent.ResourceLink(uri, mimeType, description))
+    def resourceText(uri: String, text: String, mimeType: Option[String] = None): MultiBuilder =
+      copy(contents = contents :+ ToolContent.EmbeddedResource(ResourceContents.Text(uri, text, mimeType)))
+    def resourceBlob(uri: String, blob: String, mimeType: Option[String] = None): MultiBuilder =
+      copy(contents = contents :+ ToolContent.EmbeddedResource(ResourceContents.Blob(uri, blob, mimeType)))
     def build: ToolResult = Multi(contents)
+    def buildError: ToolResult = Failure(contents)
 
 /** JSON Schema representation for tool input validation.
   *
@@ -228,6 +325,13 @@ object JsonSchema:
       if required.nonEmpty then obj.required = required.toJSArray
       obj.asInstanceOf[js.Object]
 
+  /** Schema wrapper with human-readable description */
+  final case class Described(schema: JsonSchema, description: String) extends JsonSchema:
+    def toRaw: js.Object =
+      val obj = schema.toRaw.asInstanceOf[js.Dynamic]
+      obj.description = description
+      obj.asInstanceOf[js.Object]
+
   // Builder DSL
 
   /** String schema */
@@ -251,6 +355,10 @@ object JsonSchema:
   /** Object schema builder */
   def obj(properties: (String, JsonSchema)*): ObjectBuilder =
     ObjectBuilder(properties.toMap)
+
+  /** Attach a description to a schema */
+  def describe(schema: JsonSchema, description: String): JsonSchema =
+    Described(schema, description)
 
   /** Builder for object schemas */
   final case class ObjectBuilder(
@@ -276,7 +384,15 @@ object JsonSchema:
   // Allow ObjectBuilder to be used as JsonSchema
   given Conversion[ObjectBuilder, JsonSchema] = _.build
 
+  extension (schema: JsonSchema)
+    /** Attach a description to a schema */
+    def describe(description: String): JsonSchema =
+      Described(schema, description)
+
 /** Tool builder DSL for fluent tool definition.
+  *
+  * Prefer ToolDef.fromInput with ToolInput.derive for case-class inputs. Use this
+  * builder when you need a fully manual schema.
   *
   * Example usage:
   * {{{

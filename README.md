@@ -23,8 +23,8 @@ A type-safe Scala.js SDK for the [`@anthropic-ai/claude-agent-sdk`](https://www.
 ### Simple One-Shot Query
 
 ```scala
-import com.tjclp.scalagent._
-import zio._
+import com.tjclp.scalagent.*
+import zio.*
 
 object MyApp extends ZIOAppDefault:
   val run =
@@ -37,9 +37,9 @@ object MyApp extends ZIOAppDefault:
 ### Streaming Responses
 
 ```scala
-import com.tjclp.scalagent._
-import com.tjclp.scalagent.config._
-import zio._
+import com.tjclp.scalagent.*
+import com.tjclp.scalagent.config.*
+import zio.*
 
 object StreamingApp extends ZIOAppDefault:
   val run =
@@ -54,10 +54,10 @@ object StreamingApp extends ZIOAppDefault:
 ### Multi-Turn Conversation
 
 ```scala
-import com.tjclp.scalagent._
-import com.tjclp.scalagent.config._
-import com.tjclp.scalagent.session._
-import zio._
+import com.tjclp.scalagent.*
+import com.tjclp.scalagent.config.*
+import com.tjclp.scalagent.session.*
+import zio.*
 
 object ConversationApp extends ZIOAppDefault:
   val run =
@@ -74,11 +74,11 @@ object ConversationApp extends ZIOAppDefault:
 Get type-safe responses with compile-time JSON Schema generation:
 
 ```scala
-import com.tjclp.scalagent._
-import com.tjclp.scalagent.config._
+import com.tjclp.scalagent.*
+import com.tjclp.scalagent.config.*
 import com.tjclp.scalagent.macros.description
-import zio._
-import zio.json._
+import zio.*
+import zio.json.*
 
 // Define your output type with optional field descriptions
 case class Analysis(
@@ -195,22 +195,22 @@ for
 yield ()
 ```
 
-### Custom Tool Definitions (Skeleton)
+### Custom Tool Definitions (Type-Safe)
 
 ```scala
-import com.tjclp.scalagent.tools._
+import com.tjclp.scalagent.tools.*
+import zio.json.*
 
-case class WeatherInput(location: String, unit: String)
+case class WeatherInput(location: String, unit: Option[String]) derives JsonDecoder
+object WeatherInput:
+  given ToolInput[WeatherInput] = ToolInput.derive[WeatherInput]
 
-val weatherTool = ToolBuilder[WeatherInput]("get_weather")
-  .description("Get current weather for a location")
-  .schema(JsonSchema.obj(
-    "location" -> JsonSchema.string,
-    "unit" -> JsonSchema.enum("celsius", "fahrenheit")
-  ).required("location"))
-  .handler { input =>
-    fetchWeather(input.location, input.unit).map(ToolResult.Success(_))
-  }
+val weatherTool = ToolDef.fromInput[WeatherInput](
+  name = "get_weather",
+  description = "Get current weather for a location"
+) { input =>
+  fetchWeather(input.location, input.unit.getOrElse("celsius")).map(ToolResult.Success(_))
+}
 ```
 
 ## Architecture

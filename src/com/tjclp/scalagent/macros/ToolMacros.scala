@@ -168,13 +168,18 @@ object ToolMacros:
     // 3. Generate JSON schema (inline to avoid quotes context issues)
     val propsExpr: List[Expr[(String, JsonSchema)]] = paramInfos.map {
       case (name, tpe, desc, isOptional, enumCases) =>
-        val schemaExpr = enumCases match
+        val baseSchemaExpr = enumCases match
           case Some(cases) =>
             // Generate enum schema with case names
             val casesExpr = Expr(cases)
             '{ JsonSchema.enumOf($casesExpr*) }
           case None =>
             typeToSchemaInline(tpe)
+
+        val schemaExpr =
+          if desc.nonEmpty then '{ JsonSchema.describe($baseSchemaExpr, ${ Expr(desc) }) }
+          else baseSchemaExpr
+
         '{ (${ Expr(name) }, $schemaExpr) }
     }
 
