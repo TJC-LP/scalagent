@@ -1,8 +1,8 @@
 package com.tjclp.scalagent.macros
 
 import scala.scalajs.js
-import scala.scalajs.js.JSConverters._
-import zio.json._
+import scala.scalajs.js.JSConverters.*
+import zio.json.*
 
 /** Typeclass for converting JavaScript values to Scala types.
   *

@@ -1,7 +1,7 @@
 package com.tjclp.scalagent.config
 
 import scala.scalajs.js
-import zio.json._
+import zio.json.*
 
 /** Permission mode for tool execution.
   *

@@ -2,8 +2,8 @@ package com.tjclp.scalagent.hooks
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.scalajs.js
-import scala.scalajs.js.JSConverters._
-import zio._
+import scala.scalajs.js.JSConverters.*
+import zio.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{SessionId, SubagentId, ToolUseId}
@@ -228,7 +228,7 @@ object HookCallback:
         )
 
   private def parseJson(value: js.Any): Json =
-    import zio.json._
+    import zio.json.*
     val jsonStr = js.JSON.stringify(value)
     jsonStr.fromJson[Json].getOrElse(Json.Null)
 

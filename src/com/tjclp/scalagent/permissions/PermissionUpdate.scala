@@ -1,8 +1,8 @@
 package com.tjclp.scalagent.permissions
 
 import scala.scalajs.js
-import scala.scalajs.js.JSConverters._
-import zio.json._
+import scala.scalajs.js.JSConverters.*
+import zio.json.*
 import com.tjclp.scalagent.config.PermissionMode
 import com.tjclp.scalagent.hooks.PermissionBehavior
 

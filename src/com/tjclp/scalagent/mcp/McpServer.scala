@@ -1,12 +1,12 @@
 package com.tjclp.scalagent.mcp
 
 import scala.scalajs.js
-import scala.scalajs.js.annotation._
-import scala.scalajs.js.JSConverters._
+import scala.scalajs.js.annotation.*
+import scala.scalajs.js.JSConverters.*
 import scala.concurrent.ExecutionContext.Implicits.global
-import zio._
-import zio.json._
-import com.tjclp.scalagent.tools._
+import zio.*
+import zio.json.*
+import com.tjclp.scalagent.tools.*
 import com.tjclp.scalagent.config.McpServerConfig
 
 /** Create in-process MCP servers that can be used with the Claude Agent SDK.

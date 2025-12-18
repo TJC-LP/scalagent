@@ -8,7 +8,7 @@ import com.tjclp.scalagent.tools.ToolName
   *
   * Example:
   * {{{
-  * import HookPredicates._
+  * import HookPredicates.*
   *
   * val securityHook = HookCallback.blockTools(ToolName.Bash)
   *   .when(isPreToolUse)

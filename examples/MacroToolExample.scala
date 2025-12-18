@@ -1,12 +1,12 @@
 package com.tjclp.scalagent.examples
 
-import zio._
-import zio.json._
-import com.tjclp.scalagent._
+import zio.*
+import zio.json.*
+import com.tjclp.scalagent.*
 import com.tjclp.scalagent.config.{AgentOptions, Model, PermissionMode}
-import com.tjclp.scalagent.messages._
-import com.tjclp.scalagent.tools._
-import com.tjclp.scalagent.macros._
+import com.tjclp.scalagent.messages.*
+import com.tjclp.scalagent.tools.*
+import com.tjclp.scalagent.macros.*
 
 /** Example demonstrating macro-based tool definition.
   *

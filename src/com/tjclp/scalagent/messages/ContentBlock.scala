@@ -1,6 +1,6 @@
 package com.tjclp.scalagent.messages
 
-import zio.json._
+import zio.json.*
 import com.tjclp.scalagent.types.ToolUseId
 
 /** Content blocks that can appear in assistant and user messages */

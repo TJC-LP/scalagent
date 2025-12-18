@@ -1,8 +1,8 @@
 package com.tjclp.scalagent.mcp
 
 import scala.scalajs.js
-import zio._
-import com.tjclp.scalagent.tools._
+import zio.*
+import com.tjclp.scalagent.tools.*
 
 /** Bridge between Scala ToolDef and SDK MCP tool format.
   *

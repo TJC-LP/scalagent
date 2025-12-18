@@ -1,6 +1,6 @@
 package com.tjclp.scalagent.messages
 
-import zio.json._
+import zio.json.*
 
 /** Message role in the conversation.
   *

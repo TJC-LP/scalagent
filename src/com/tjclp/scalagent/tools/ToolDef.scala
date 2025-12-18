@@ -1,10 +1,10 @@
 package com.tjclp.scalagent.tools
 
 import scala.scalajs.js
-import scala.scalajs.js.JSConverters._
+import scala.scalajs.js.JSConverters.*
 import scala.concurrent.ExecutionContext.Implicits.global
-import zio._
-import zio.json._
+import zio.*
+import zio.json.*
 
 /** Tool definition for custom tools.
   *

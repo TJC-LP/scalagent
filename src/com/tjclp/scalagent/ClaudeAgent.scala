@@ -1,13 +1,13 @@
 package com.tjclp.scalagent
 
 import scala.scalajs.js
-import scala.scalajs.js.annotation._
-import zio._
-import zio.stream._
-import com.tjclp.scalagent.config._
-import com.tjclp.scalagent.errors._
-import com.tjclp.scalagent.messages._
-import com.tjclp.scalagent.streaming._
+import scala.scalajs.js.annotation.*
+import zio.*
+import zio.stream.*
+import com.tjclp.scalagent.config.*
+import com.tjclp.scalagent.errors.*
+import com.tjclp.scalagent.messages.*
+import com.tjclp.scalagent.streaming.*
 
 /** Main API for interacting with the Claude Agent SDK.
   *

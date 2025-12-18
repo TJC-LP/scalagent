@@ -1,8 +1,8 @@
 package com.tjclp.scalagent.config
 
 import scala.scalajs.js
-import scala.scalajs.js.JSConverters._
-import zio.json._
+import scala.scalajs.js.JSConverters.*
+import zio.json.*
 
 /** MCP (Model Context Protocol) server configuration.
   *

@@ -1,8 +1,8 @@
 package com.tjclp.scalagent.config
 
-import zio.json._
+import zio.json.*
 import zio.json.ast.Json
-import zio.schema._
+import zio.schema.*
 import com.tjclp.scalagent.schema.SchemaToJson
 import com.tjclp.scalagent.macros.StructuredOutputMacros
 

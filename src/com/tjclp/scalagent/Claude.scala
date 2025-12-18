@@ -1,11 +1,11 @@
 package com.tjclp.scalagent
 
-import zio._
-import zio.stream._
-import com.tjclp.scalagent.config._
-import com.tjclp.scalagent.errors._
-import com.tjclp.scalagent.messages._
-import com.tjclp.scalagent.session._
+import zio.*
+import zio.stream.*
+import com.tjclp.scalagent.config.*
+import com.tjclp.scalagent.errors.*
+import com.tjclp.scalagent.messages.*
+import com.tjclp.scalagent.session.*
 
 /** Simplified entry point for the Claude Agent SDK.
   *

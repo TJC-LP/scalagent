@@ -1,6 +1,6 @@
 package com.tjclp.scalagent.messages
 
-import zio.json._
+import zio.json.*
 import com.tjclp.scalagent.config.{CommandName, Model, OutputStyle, PermissionMode, SkillName}
 import com.tjclp.scalagent.tools.ToolName
 

@@ -1,6 +1,6 @@
 package com.tjclp.scalagent.errors
 
-import zio.json._
+import zio.json.*
 import com.tjclp.scalagent.types.{SessionId, ToolUseId}
 
 /** Typed error ADT for Claude Agent operations.

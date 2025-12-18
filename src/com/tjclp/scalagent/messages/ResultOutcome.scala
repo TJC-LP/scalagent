@@ -1,6 +1,6 @@
 package com.tjclp.scalagent.messages
 
-import zio.json._
+import zio.json.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.config.StructuredOutput
 import com.tjclp.scalagent.types.ToolUseId

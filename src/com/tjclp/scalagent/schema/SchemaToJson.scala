@@ -1,7 +1,7 @@
 package com.tjclp.scalagent.schema
 
 import zio.json.ast.Json
-import zio.schema._
+import zio.schema.*
 
 /** Converts zio-schema Schema[A] to JSON Schema.
   *
