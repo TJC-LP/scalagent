@@ -87,7 +87,7 @@ object SlashCommandExample extends ZIOAppDefault:
       _ <- Console.printLine("5. Live Demo - Discovering Available Commands:").orDie
 
       options = AgentOptions.default
-        .withModel(Model.Sonnet4)
+        .withModel(Model.Sonnet4_5)
         .withPermissionMode(PermissionMode.DontAsk)
         .withMaxTurns(1)
 

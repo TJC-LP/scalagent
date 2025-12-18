@@ -37,7 +37,7 @@ object SessionExample extends ZIOAppDefault:
 
         // Configure options and create session
         options = AgentOptions.default
-          .withModel(Model.Sonnet4)
+          .withModel(Model.Sonnet4_5)
           .withPermissionMode(PermissionMode.BypassPermissions)
           .withMaxTurns(5)
         session <- ClaudeSession.create(options).withFinalizer(s =>

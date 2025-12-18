@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Java
+        uses: actions/setup-java@v4.4.0
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2.0.2
+        with:
+          bun-version: "latest"
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+      - name: Compile
+        run: ./mill agent.compile
+      - name: Test
+        run: ./mill agent.test

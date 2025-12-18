@@ -119,7 +119,7 @@ object CustomToolExample extends ZIOAppDefault:
     )
 
     val options = AgentOptions.default
-      .withModel(Model.Sonnet4)
+      .withModel(Model.Sonnet4_5)
       .withPermissionMode(PermissionMode.DontAsk)
       .withMaxTurns(10)
       .withMcpServer("custom", mcpServer)

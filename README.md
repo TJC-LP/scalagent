@@ -62,7 +62,7 @@ import zio._
 object ConversationApp extends ZIOAppDefault:
   val run =
     for
-      session  <- ClaudeSession.create(AgentOptions.default.withModel(Model.Sonnet4))
+      session  <- ClaudeSession.create(AgentOptions.default.withModel(Model.Sonnet4_5))
       _        <- session.send("Remember the number 42").runDrain
       answer   <- session.ask("What number did I ask you to remember?")
       _        <- Console.printLine(s"Claude remembered: $answer")
@@ -93,7 +93,7 @@ given StructuredOutput[Analysis] = StructuredOutput.derive[Analysis]
 object AnalysisApp extends ZIOAppDefault:
   val run =
     val options = AgentOptions.default
-      .withModel(Model.Sonnet4)
+      .withModel(Model.Sonnet4_5)
       .withStructuredOutput[Analysis]
 
     for
@@ -112,13 +112,13 @@ object AnalysisApp extends ZIOAppDefault:
 bun install
 
 # Compile the project
-mill agent.compile
+./mill agent.compile
 
 # Run the example (compiles and runs with Bun)
 bun run run
 
 # Or manually:
-mill examples.fastLinkJS
+./mill examples.fastLinkJS
 bun run out/examples/fastLinkJS.dest/main.js
 ```
 
@@ -128,7 +128,7 @@ Use `AgentOptions` to configure queries:
 
 ```scala
 val options = AgentOptions.default
-  .withModel("claude-sonnet-4-20250514")
+  .withModel(Model.Sonnet4_5)
   .withMaxTurns(10)
   .withMaxBudgetUsd(0.50)
   .withPermissionMode(PermissionMode.AcceptEdits)
@@ -140,6 +140,7 @@ val options = AgentOptions.default
 | Option | Description |
 |--------|-------------|
 | `withModel(m)` | Set the model to use |
+| `withModelId(id)` | Set a custom/new model ID |
 | `withMaxTurns(n)` | Limit number of conversation turns |
 | `withMaxBudgetUsd(b)` | Set maximum cost budget |
 | `withPermissionMode(pm)` | Control permission handling |

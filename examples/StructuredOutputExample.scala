@@ -40,7 +40,7 @@ object StructuredOutputExample extends ZIOAppDefault:
 
   val run: ZIO[Any, Any, Unit] =
     val options = AgentOptions.default
-      .withModel(Model.Sonnet4)
+      .withModel(Model.Sonnet4_5)
       .withPermissionMode(PermissionMode.DontAsk)
       .withMaxTurns(3)
       .withStructuredOutput[CodeAnalysis]

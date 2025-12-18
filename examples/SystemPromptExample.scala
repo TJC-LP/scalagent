@@ -56,7 +56,7 @@ object SystemPromptExample extends ZIOAppDefault:
       _ <- Console.printLine("1. Custom System Prompt:").orDie
 
       customOptions = AgentOptions.default
-        .withModel(Model.Sonnet4)
+        .withModel(Model.Sonnet4_5)
         .withPermissionMode(PermissionMode.DontAsk)
         .withMaxTurns(3)
         .withSystemPrompt(scalaExpertPrompt)
@@ -76,7 +76,7 @@ object SystemPromptExample extends ZIOAppDefault:
       _ <- Console.printLine("2. Preset System Prompt (claude_code):").orDie
 
       presetOptions = AgentOptions.default
-        .withModel(Model.Sonnet4)
+        .withModel(Model.Sonnet4_5)
         .withPermissionMode(PermissionMode.DontAsk)
         .withMaxTurns(3)
         .withSystemPrompt(claudeCodePrompt)
@@ -90,7 +90,7 @@ object SystemPromptExample extends ZIOAppDefault:
       _ <- Console.printLine("3. Enhanced Preset with Appended Instructions:").orDie
 
       enhancedOptions = AgentOptions.default
-        .withModel(Model.Sonnet4)
+        .withModel(Model.Sonnet4_5)
         .withPermissionMode(PermissionMode.DontAsk)
         .withMaxTurns(3)
         .withSystemPrompt(enhancedClaudeCode)
