@@ -165,7 +165,23 @@ object ToolMacros:
         (name, tpe, paramDesc, isOptional, enumCases)
       }
 
-    // 3. Generate JSON schema (inline to avoid quotes context issues)
+    // 3. Validate return type (ToolResult or ZIO[Any, Throwable, ToolResult])
+    val returnType: TypeRepr = method.tree match
+      case ddef: DefDef => ddef.returnTpt.tpe
+      case _            => report.errorAndAbort(s"Unable to inspect return type for ${method.name}")
+
+    val toolResultTpe = TypeRepr.of[ToolResult]
+    val zioToolResultTpe = TypeRepr.of[ZIO[Any, Throwable, ToolResult]]
+
+    val returnsToolResult = returnType <:< toolResultTpe
+    val returnsZioToolResult = returnType <:< zioToolResultTpe
+
+    if !returnsToolResult && !returnsZioToolResult then
+      report.errorAndAbort(
+        s"@Tool methods must return ToolResult or Task[ToolResult] (ZIO[Any, Throwable, ToolResult]). Found: ${returnType.show}"
+      )
+
+    // 4. Generate JSON schema (inline to avoid quotes context issues)
     val propsExpr: List[Expr[(String, JsonSchema)]] = paramInfos.map {
       case (name, tpe, desc, isOptional, enumCases) =>
         val baseSchemaExpr = enumCases match
@@ -192,7 +208,7 @@ object ToolMacros:
       withRequired.build
     }
 
-    // 4. Create stable method reference using eta-expansion (like fast-mcp-scala)
+    // 5. Create stable method reference using eta-expansion (like fast-mcp-scala)
     val methodRefExpr: Expr[Any] = ownerType match
       case TermRef(_, _) =>
         val companionSym = ownerType.termSymbol
@@ -207,7 +223,7 @@ object ToolMacros:
           s"Expected singleton type for tool container, got ${ownerType.show}"
         )
 
-    // 5. Build parameter extraction expressions with enum conversion
+    // 6. Build parameter extraction expressions with enum conversion
     // For each parameter, generate code that extracts from map and converts enums
     val argExtractorExprs: List[Expr[scala.collection.immutable.Map[String, Any] => Any]] =
       paramInfos.map { case (name, tpe, _, isOptional, enumCases) =>
@@ -264,25 +280,33 @@ object ToolMacros:
 
     val argExtractorsExpr = Expr.ofList(argExtractorExprs)
 
-    // 6. Generate handler that extracts args at RUNTIME with enum conversion
-    val handlerExpr: Expr[scala.collection.immutable.Map[String, Any] => Task[ToolResult]] = '{
-      (args: scala.collection.immutable.Map[String, Any]) =>
-        ZIO
-          .attempt {
-            // Extract and convert each argument
-            val extractors = $argExtractorsExpr
-            val argsList: List[Any] = extractors.map(extractor => extractor(args))
-            // Invoke the method at runtime
-            RuntimeInvoker.invoke($methodRefExpr, argsList)
-          }
-          .flatMap {
-            case t: Task[?]      => t.asInstanceOf[Task[ToolResult]]
-            case tr: ToolResult  => ZIO.succeed(tr)
-            case other           => ZIO.succeed(ToolResult.text(other.toString))
-          }
-    }
+    // 7. Generate handler that extracts args at RUNTIME with enum conversion
+    val handlerExpr: Expr[scala.collection.immutable.Map[String, Any] => Task[ToolResult]] =
+      if returnsZioToolResult then
+        '{
+          (args: scala.collection.immutable.Map[String, Any]) =>
+            ZIO
+              .attempt {
+                val extractors = $argExtractorsExpr
+                val argsList: List[Any] = extractors.map(extractor => extractor(args))
+                RuntimeInvoker.invoke($methodRefExpr, argsList)
+                  .asInstanceOf[ZIO[Any, Throwable, ToolResult]]
+              }
+              .flatMap(identity)
+        }
+      else
+        '{
+          (args: scala.collection.immutable.Map[String, Any]) =>
+            ZIO
+              .attempt {
+                val extractors = $argExtractorsExpr
+                val argsList: List[Any] = extractors.map(extractor => extractor(args))
+                RuntimeInvoker.invoke($methodRefExpr, argsList)
+                  .asInstanceOf[ToolResult]
+              }
+        }
 
-    // 7. Create ToolDef
+    // 8. Create ToolDef
     '{
       ToolDef[scala.collection.immutable.Map[String, Any]](
         name = ${ Expr(toolName) },

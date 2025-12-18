@@ -2,6 +2,8 @@ package com.tjclp.scalagent.examples
 
 import zio.*
 import zio.json.*
+import scala.scalajs.js
+import scala.scalajs.js.annotation.*
 import com.tjclp.scalagent.*
 import com.tjclp.scalagent.config.{AgentOptions, Model, PermissionMode}
 import com.tjclp.scalagent.messages.*
@@ -25,6 +27,43 @@ import com.tjclp.scalagent.macros.*
   * Requires ANTHROPIC_API_KEY environment variable to be set.
   */
 object MacroToolExample extends ZIOAppDefault:
+  @js.native
+  @JSImport("node:fs", JSImport.Namespace)
+  private object Fs extends js.Object:
+    def readFileSync(path: String): js.Any = js.native
+    def existsSync(path: String): Boolean = js.native
+
+  @js.native
+  @JSImport("node:path", JSImport.Namespace)
+  private object Path extends js.Object:
+    def join(parts: String*): String = js.native
+    def dirname(path: String): String = js.native
+
+  @js.native
+  @JSImport("node:buffer", "Buffer")
+  private object NodeBuffer extends js.Object:
+    def from(data: js.Any): Buffer = js.native
+
+  @js.native
+  private trait Buffer extends js.Object:
+    def toString(encoding: String): String = js.native
+
+  private def readBase64(path: String): String =
+    val cwd = js.Dynamic.global.process.cwd().asInstanceOf[String]
+    val root = findRepoRoot(cwd)
+    val resolved = Path.join(root, path)
+    NodeBuffer.from(Fs.readFileSync(resolved)).toString("base64")
+
+  private def findRepoRoot(start: String): String =
+    var current = start
+    var depth = 0
+    while depth < 8 && !Fs.existsSync(Path.join(current, "build.mill")) do
+      val parent = Path.dirname(current)
+      if parent == current then depth = 8
+      else
+        current = parent
+        depth += 1
+    current
 
   // Define tools with minimal ceremony using @Tool and @Param annotations
   object MyTools:
@@ -108,8 +147,7 @@ object MacroToolExample extends ZIOAppDefault:
             )
           )
         case RichMode.Media =>
-          val pngBase64 =
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wIAAgMBAp9W8Z8AAAAASUVORK5CYII="
+          val pngBase64 = readBase64("examples/resources/demo.png")
           val wavBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="
           ZIO.succeed(
             ToolResult.multi
@@ -151,7 +189,7 @@ object MacroToolExample extends ZIOAppDefault:
             |1. What's the weather in Tokyo?
             |2. What is 15 multiplied by 7?
             |3. Tell me about ZIO
-            |4. Show a rich content response using rich_content_demo (mode=Ok)
+            |4. Show a rich content response using rich_content_demo (mode=Media)
             |
             |Please use the tools to answer these questions.""".stripMargin,
           options
