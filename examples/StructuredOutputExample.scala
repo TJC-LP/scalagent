@@ -2,17 +2,18 @@ package com.tjclp.scalagent.examples
 
 import zio._
 import zio.json._
-import zio.schema._
 import com.tjclp.scalagent._
 import com.tjclp.scalagent.config._
 import com.tjclp.scalagent.errors._
 import com.tjclp.scalagent.messages._
+import com.tjclp.scalagent.macros.description
 
 /** Example demonstrating structured outputs with compile-time schema derivation.
   *
-  * This example shows how to:
-  * - Define case classes with zio-schema derivation
-  * - Use withStructuredOutput[T] on AgentOptions
+  * This example shows the simplified API:
+  * - Define case classes with `derives JsonDecoder`
+  * - Use @description annotations for field documentation
+  * - Use StructuredOutput.derive[T] to generate JSON Schema
   * - Parse typed responses with parseAs[T]
   *
   * Run with: EXAMPLE=structured mill examples.run
@@ -21,22 +22,21 @@ import com.tjclp.scalagent.messages._
   */
 object StructuredOutputExample extends ZIOAppDefault:
 
-  // Define the structured output type with all required derivations
+  // Define the structured output type - much simpler now!
+  // Just add `derives JsonDecoder` and optional @description annotations
   case class CodeAnalysis(
+      @description("A brief summary of the code's purpose and functionality")
       summary: String,
+      @description("Complexity level: 'low', 'medium', or 'high'")
       complexity: String,
+      @description("List of specific improvement suggestions")
       suggestions: List[String],
+      @description("Quality score from 0-100")
       score: Int
-  )
+  ) derives JsonDecoder
 
-  object CodeAnalysis:
-    // zio-schema for JSON Schema generation
-    given Schema[CodeAnalysis] = DeriveSchema.gen[CodeAnalysis]
-    // zio-json for parsing
-    given JsonDecoder[CodeAnalysis] = DeriveJsonDecoder.gen[CodeAnalysis]
-    given JsonEncoder[CodeAnalysis] = DeriveJsonEncoder.gen[CodeAnalysis]
-    // Combine them for structured output
-    given StructuredOutput[CodeAnalysis] = StructuredOutput.derive[CodeAnalysis]
+  // Single line to derive StructuredOutput - generates JSON Schema with descriptions
+  given StructuredOutput[CodeAnalysis] = StructuredOutput.derive[CodeAnalysis]
 
   val run: ZIO[Any, Any, Unit] =
     val options = AgentOptions.default
