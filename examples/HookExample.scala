@@ -1,12 +1,12 @@
-package com.tjclp.claude.agent.examples
+package com.tjclp.scalagent.examples
 
 import zio._
 import zio.stream._
-import com.tjclp.claude.agent._
-import com.tjclp.claude.agent.config.{AgentOptions, Model, PermissionMode}
-import com.tjclp.claude.agent.messages._
-import com.tjclp.claude.agent.hooks._
-import com.tjclp.claude.agent.tools.ToolName
+import com.tjclp.scalagent._
+import com.tjclp.scalagent.config.{AgentOptions, Model, PermissionMode}
+import com.tjclp.scalagent.messages._
+import com.tjclp.scalagent.hooks._
+import com.tjclp.scalagent.tools.ToolName
 
 /** Example demonstrating the hook system for tool interception.
   *
@@ -15,7 +15,7 @@ import com.tjclp.claude.agent.tools.ToolName
   *   2. Block specific tools (e.g., Bash commands)
   *   3. Modify tool behavior based on custom logic
   *
-  * Run with: mill examples.runMain com.tjclp.claude.agent.examples.HookExample
+  * Run with: mill examples.runMain com.tjclp.scalagent.examples.HookExample
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set.
   */

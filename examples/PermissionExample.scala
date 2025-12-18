@@ -1,13 +1,13 @@
-package com.tjclp.claude.agent.examples
+package com.tjclp.scalagent.examples
 
 import zio._
 import zio.stream._
 import zio.json.ast.Json
-import com.tjclp.claude.agent._
-import com.tjclp.claude.agent.config.{AgentOptions, Model, PermissionMode}
-import com.tjclp.claude.agent.messages._
-import com.tjclp.claude.agent.permissions._
-import com.tjclp.claude.agent.tools.ToolName
+import com.tjclp.scalagent._
+import com.tjclp.scalagent.config.{AgentOptions, Model, PermissionMode}
+import com.tjclp.scalagent.messages._
+import com.tjclp.scalagent.permissions._
+import com.tjclp.scalagent.tools.ToolName
 
 /** Example demonstrating the permission callback system.
   *
@@ -16,7 +16,7 @@ import com.tjclp.claude.agent.tools.ToolName
   *   2. Allow/deny tools based on context
   *   3. Use permission utilities for common patterns
   *
-  * Run with: mill examples.runMain com.tjclp.claude.agent.examples.PermissionExample
+  * Run with: mill examples.runMain com.tjclp.scalagent.examples.PermissionExample
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set.
   */

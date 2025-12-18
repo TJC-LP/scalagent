@@ -1,12 +1,12 @@
-package com.tjclp.claude.agent.examples
+package com.tjclp.scalagent.examples
 
 import zio._
 import zio.json._
-import com.tjclp.claude.agent._
-import com.tjclp.claude.agent.config.{AgentOptions, Model, PermissionMode}
-import com.tjclp.claude.agent.messages._
-import com.tjclp.claude.agent.tools._
-import com.tjclp.claude.agent.macros._
+import com.tjclp.scalagent._
+import com.tjclp.scalagent.config.{AgentOptions, Model, PermissionMode}
+import com.tjclp.scalagent.messages._
+import com.tjclp.scalagent.tools._
+import com.tjclp.scalagent.macros._
 
 /** Example demonstrating macro-based tool definition.
   *
@@ -20,7 +20,7 @@ import com.tjclp.claude.agent.macros._
   *   - Support for structured output with ToolResult.json()
   *   - Support for multimodal output with ToolResult.multi
   *
-  * Run with: mill examples.runMain com.tjclp.claude.agent.examples.MacroToolExample
+  * Run with: mill examples.runMain com.tjclp.scalagent.examples.MacroToolExample
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set.
   */

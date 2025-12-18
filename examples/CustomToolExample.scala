@@ -1,13 +1,13 @@
-package com.tjclp.claude.agent.examples
+package com.tjclp.scalagent.examples
 
 import zio._
 import zio.stream._
 import zio.json._
-import com.tjclp.claude.agent._
-import com.tjclp.claude.agent.config.{AgentOptions, Model, PermissionMode}
-import com.tjclp.claude.agent.messages._
-import com.tjclp.claude.agent.tools._
-import com.tjclp.claude.agent.mcp._
+import com.tjclp.scalagent._
+import com.tjclp.scalagent.config.{AgentOptions, Model, PermissionMode}
+import com.tjclp.scalagent.messages._
+import com.tjclp.scalagent.tools._
+import com.tjclp.scalagent.mcp._
 
 /** Example demonstrating custom MCP tool creation.
   *
@@ -16,7 +16,7 @@ import com.tjclp.claude.agent.mcp._
   *   2. Create an in-process MCP server with those tools
   *   3. Use the custom tools in a Claude agent query
   *
-  * Run with: mill examples.runMain com.tjclp.claude.agent.examples.CustomToolExample
+  * Run with: mill examples.runMain com.tjclp.scalagent.examples.CustomToolExample
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set.
   */

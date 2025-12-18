@@ -1,9 +1,9 @@
 {
-  "name": "claude-agent-sdk-scalajs",
+  "name": "scalagent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Scala.JS facade for @anthropic-ai/claude-agent-sdk",
+  "description": "Scalagent - Type-safe Scala.js SDK for Claude Code CLI",
   "scripts": {
     "build": "mill agent.compile",
     "run": "mill examples.fastLinkJS && bun run out/examples/fastLinkJS.dest/main.js"

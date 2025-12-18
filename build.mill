@@ -32,15 +32,15 @@ object agent extends ScalaJSModule with PublishModule {
   def publishVersion = "0.1.0-SNAPSHOT"
 
   def pomSettings = PomSettings(
-    description = "Claude Agent SDK for Scala.js - Type-safe bindings for Claude Code CLI",
+    description = "Scalagent - Type-safe Scala.js SDK for Claude Code CLI",
     organization = "com.tjclp",
-    url = "https://github.com/tjclp/claude-agent-sdk-scalajs",
+    url = "https://github.com/tjclp/scalagent",
     licenses = Seq(License.MIT),
-    versionControl = VersionControl.github("tjclp", "claude-agent-sdk-scalajs"),
+    versionControl = VersionControl.github("tjclp", "scalagent"),
     developers = Seq()
   )
 
-  def artifactName = "claude-agent-sdk"
+  def artifactName = "scalagent"
 
   // Test module
   object test extends ScalaJSTests with TestModule.Munit {
@@ -69,18 +69,18 @@ object examples extends ScalaJSModule {
 
   // Available examples - add new ones here
   val exampleClasses = Map(
-    "simple"     -> "com.tjclp.claude.agent.examples.SimpleQuery",
-    "macro"      -> "com.tjclp.claude.agent.examples.MacroToolExample",
-    "custom"     -> "com.tjclp.claude.agent.examples.CustomToolExample",
-    "hook"       -> "com.tjclp.claude.agent.examples.HookExample",
-    "permission" -> "com.tjclp.claude.agent.examples.PermissionExample",
-    "session"    -> "com.tjclp.claude.agent.examples.SessionExample",
+    "simple"     -> "com.tjclp.scalagent.examples.SimpleQuery",
+    "macro"      -> "com.tjclp.scalagent.examples.MacroToolExample",
+    "custom"     -> "com.tjclp.scalagent.examples.CustomToolExample",
+    "hook"       -> "com.tjclp.scalagent.examples.HookExample",
+    "permission" -> "com.tjclp.scalagent.examples.PermissionExample",
+    "session"    -> "com.tjclp.scalagent.examples.SessionExample",
     // New examples for recent features
-    "structured" -> "com.tjclp.claude.agent.examples.StructuredOutputExample",
-    "subagent"   -> "com.tjclp.claude.agent.examples.SubagentExample",
-    "plugin"     -> "com.tjclp.claude.agent.examples.PluginExample",
-    "prompt"     -> "com.tjclp.claude.agent.examples.SystemPromptExample",
-    "command"    -> "com.tjclp.claude.agent.examples.SlashCommandExample"
+    "structured" -> "com.tjclp.scalagent.examples.StructuredOutputExample",
+    "subagent"   -> "com.tjclp.scalagent.examples.SubagentExample",
+    "plugin"     -> "com.tjclp.scalagent.examples.PluginExample",
+    "prompt"     -> "com.tjclp.scalagent.examples.SystemPromptExample",
+    "command"    -> "com.tjclp.scalagent.examples.SlashCommandExample"
   )
 
   // List available examples
@@ -97,7 +97,7 @@ object examples extends ScalaJSModule {
     println("  EXAMPLE=hook ./mill examples.run      # run hook example")
     println()
     println("Or run any class directly:")
-    println("  ./mill examples.runMain com.tjclp.claude.agent.examples.SimpleQuery")
+    println("  ./mill examples.runMain com.tjclp.scalagent.examples.SimpleQuery")
   }
 
   // Dynamic mainClass based on environment or default
@@ -115,5 +115,5 @@ object examples extends ScalaJSModule {
   //        ./mill examples.run  (runs macro by default)
   //
   // Or use runMain directly:
-  //        ./mill examples.runMain com.tjclp.claude.agent.examples.SimpleQuery
+  //        ./mill examples.runMain com.tjclp.scalagent.examples.SimpleQuery
 }

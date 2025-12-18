@@ -1,12 +1,12 @@
-package com.tjclp.claude.agent.examples
+package com.tjclp.scalagent.examples
 
 import zio._
 import zio.stream._
-import com.tjclp.claude.agent._
-import com.tjclp.claude.agent.config.{AgentOptions, Model, PermissionMode}
-import com.tjclp.claude.agent.errors._
-import com.tjclp.claude.agent.messages._
-import com.tjclp.claude.agent.session._
+import com.tjclp.scalagent._
+import com.tjclp.scalagent.config.{AgentOptions, Model, PermissionMode}
+import com.tjclp.scalagent.errors._
+import com.tjclp.scalagent.messages._
+import com.tjclp.scalagent.session._
 
 /** Example demonstrating the V2 Session API for multi-turn conversations.
   *
@@ -20,7 +20,7 @@ import com.tjclp.claude.agent.session._
   *   - Simple text responses with `session.ask(message)` (no streaming)
   *   - Proper resource cleanup with `session.close`
   *
-  * Run with: mill examples.runMain com.tjclp.claude.agent.examples.SessionExample
+  * Run with: mill examples.runMain com.tjclp.scalagent.examples.SessionExample
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set.
   *

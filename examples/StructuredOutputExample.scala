@@ -1,12 +1,12 @@
-package com.tjclp.claude.agent.examples
+package com.tjclp.scalagent.examples
 
 import zio._
 import zio.json._
 import zio.schema._
-import com.tjclp.claude.agent._
-import com.tjclp.claude.agent.config._
-import com.tjclp.claude.agent.errors._
-import com.tjclp.claude.agent.messages._
+import com.tjclp.scalagent._
+import com.tjclp.scalagent.config._
+import com.tjclp.scalagent.errors._
+import com.tjclp.scalagent.messages._
 
 /** Example demonstrating structured outputs with compile-time schema derivation.
   *

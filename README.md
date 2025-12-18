@@ -1,6 +1,6 @@
-# Claude Agent SDK - Scala.JS Facade
+# Scalagent
 
-A Scala.JS facade for the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk), providing idiomatic ZIO-based access to Claude's agentic capabilities.
+A type-safe Scala.js SDK for the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk), providing idiomatic ZIO-based access to Claude's agentic capabilities.
 
 ## Features
 
@@ -20,9 +20,9 @@ A Scala.JS facade for the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.c
 ## Quick Start
 
 ```scala
-import com.tjclp.claude.agent._
-import com.tjclp.claude.agent.config._
-import com.tjclp.claude.agent.messages._
+import com.tjclp.scalagent._
+import com.tjclp.scalagent.config._
+import com.tjclp.scalagent.messages._
 import zio._
 
 object MyApp extends ZIOAppDefault:
@@ -130,7 +130,7 @@ yield ()
 ### Custom Tool Definitions (Skeleton)
 
 ```scala
-import com.tjclp.claude.agent.tools._
+import com.tjclp.scalagent.tools._
 
 case class WeatherInput(location: String, unit: String)
 
@@ -167,19 +167,18 @@ val weatherTool = ToolBuilder[WeatherInput]("get_weather")
 ## Project Structure
 
 ```
-claude-agent-sdk-scalajs/
+scalagent/
 ├── build.mill                    # Mill build configuration
 ├── package.json                  # NPM dependencies
-├── agent/src/
-│   └── com/tjclp/claude/agent/
+├── src/
+│   └── com/tjclp/scalagent/
 │       ├── messages/             # Message ADT
 │       ├── config/               # Configuration types
 │       ├── streaming/            # AsyncGenerator → ZStream
 │       ├── tools/                # Tool DSL skeleton
 │       └── ClaudeAgent.scala     # Main ZIO service
-└── examples/src/
-    └── com/tjclp/claude/agent/examples/
-        └── SimpleQuery.scala
+└── examples/
+    └── SimpleQuery.scala         # Example applications
 ```
 
 ## License
