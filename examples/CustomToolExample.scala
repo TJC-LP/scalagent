@@ -23,28 +23,16 @@ import com.tjclp.scalagent.mcp.*
 object CustomToolExample extends ZIOAppDefault:
 
   // Define input types for our custom tools
-  case class WeatherInput(location: String, unit: Option[String])
-  object WeatherInput:
-    given JsonDecoder[WeatherInput] = DeriveJsonDecoder.gen[WeatherInput]
-    given ToolInput[WeatherInput] = ToolInput.derive[WeatherInput]
+  case class WeatherInput(location: String, unit: Option[String]) derives JsonDecoder, ToolInput
 
-  case class CalculatorInput(operation: String, a: Double, b: Double)
-  object CalculatorInput:
-    given JsonDecoder[CalculatorInput] = DeriveJsonDecoder.gen[CalculatorInput]
-    given ToolInput[CalculatorInput] = ToolInput.derive[CalculatorInput]
+  case class CalculatorInput(operation: String, a: Double, b: Double) derives JsonDecoder, ToolInput
 
-  case class LookupInput(query: String)
-  object LookupInput:
-    given JsonDecoder[LookupInput] = DeriveJsonDecoder.gen[LookupInput]
-    given ToolInput[LookupInput] = ToolInput.derive[LookupInput]
+  case class LookupInput(query: String) derives JsonDecoder, ToolInput
 
   enum RichContentMode derives JsonDecoder:
     case Ok, Media, Error
 
-  case class RichContentInput(mode: RichContentMode)
-  object RichContentInput:
-    given JsonDecoder[RichContentInput] = DeriveJsonDecoder.gen[RichContentInput]
-    given ToolInput[RichContentInput] = ToolInput.derive[RichContentInput]
+  case class RichContentInput(mode: RichContentMode) derives JsonDecoder, ToolInput
 
   val run: ZIO[Any, Throwable, Unit] =
     for
