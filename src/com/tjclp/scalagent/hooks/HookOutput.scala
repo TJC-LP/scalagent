@@ -1,8 +1,8 @@
 package com.tjclp.scalagent.hooks
 
 import scala.scalajs.js
-import scala.scalajs.js.JSConverters._
-import zio.json._
+import scala.scalajs.js.JSConverters.*
+import zio.json.*
 import zio.json.ast.Json
 
 /** Output types for hook responses.

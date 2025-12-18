@@ -1,7 +1,7 @@
 package com.tjclp.scalagent.macros
 
 import scala.scalajs.js
-import scala.scalajs.js.JSConverters._
+import scala.scalajs.js.JSConverters.*
 import zio.schema.Schema
 import zio.schema.StandardType
 

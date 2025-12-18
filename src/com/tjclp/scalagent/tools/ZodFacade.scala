@@ -1,8 +1,8 @@
 package com.tjclp.scalagent.tools
 
 import scala.scalajs.js
-import scala.scalajs.js.annotation._
-import scala.scalajs.js.JSConverters._
+import scala.scalajs.js.annotation.*
+import scala.scalajs.js.JSConverters.*
 
 /** Minimal Zod facade for SDK tool schema creation.
   *

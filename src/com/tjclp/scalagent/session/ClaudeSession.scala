@@ -1,14 +1,14 @@
 package com.tjclp.scalagent.session
 
 import scala.scalajs.js
-import scala.scalajs.js.annotation._
-import scala.scalajs.js.JSConverters._
+import scala.scalajs.js.annotation.*
+import scala.scalajs.js.JSConverters.*
 import scala.concurrent.ExecutionContext.Implicits.global
-import zio._
-import zio.stream._
-import com.tjclp.scalagent.config._
-import com.tjclp.scalagent.errors._
-import com.tjclp.scalagent.messages._
+import zio.*
+import zio.stream.*
+import com.tjclp.scalagent.config.*
+import com.tjclp.scalagent.errors.*
+import com.tjclp.scalagent.messages.*
 import com.tjclp.scalagent.streaming.{AsyncIterator, AsyncIteratorOps, MessageConverter}
 import com.tjclp.scalagent.types.SessionId
 

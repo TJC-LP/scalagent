@@ -2,8 +2,8 @@ package com.tjclp.scalagent.config
 
 import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
-import zio._
-import zio.json._
+import zio.*
+import zio.json.*
 
 /** Node.js fs module facade for plugin validation */
 @js.native
@@ -78,7 +78,7 @@ object PluginConfig:
     */
   def localValidated(path: String): IO[PluginError, PluginConfig] =
     ZIO.attempt {
-      import PluginError._
+      import PluginError.*
 
       // Check path exists
       if !NodeFs.existsSync(path) then

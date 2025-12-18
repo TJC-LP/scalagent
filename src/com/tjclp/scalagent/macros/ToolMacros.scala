@@ -2,7 +2,7 @@ package com.tjclp.scalagent.macros
 
 import scala.quoted.*
 import scala.scalajs.js
-import scala.scalajs.js.JSConverters._
+import scala.scalajs.js.JSConverters.*
 import scala.concurrent.ExecutionContext.Implicits.global
 import zio.*
 import zio.json.*

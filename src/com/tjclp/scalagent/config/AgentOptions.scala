@@ -1,12 +1,12 @@
 package com.tjclp.scalagent.config
 
 import scala.scalajs.js
-import scala.scalajs.js.JSConverters._
-import zio._
-import zio.json._
-import com.tjclp.scalagent.hooks._
+import scala.scalajs.js.JSConverters.*
+import zio.*
+import zio.json.*
+import com.tjclp.scalagent.hooks.*
 import com.tjclp.scalagent.mcp.McpToolName
-import com.tjclp.scalagent.permissions._
+import com.tjclp.scalagent.permissions.*
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.SessionId
 

@@ -1,6 +1,6 @@
 package com.tjclp.scalagent.hooks
 
-import zio.json._
+import zio.json.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{SessionId, SubagentId, ToolUseId}

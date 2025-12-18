@@ -1,6 +1,6 @@
 package com.tjclp.scalagent.hooks
 
-import zio.json._
+import zio.json.*
 
 /** Hook event types supported by the Claude Agent SDK.
   *

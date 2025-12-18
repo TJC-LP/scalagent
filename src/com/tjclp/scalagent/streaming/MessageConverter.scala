@@ -1,11 +1,11 @@
 package com.tjclp.scalagent.streaming
 
 import scala.scalajs.js
-import scala.scalajs.js.JSConverters._
-import zio.json._
+import scala.scalajs.js.JSConverters.*
+import zio.json.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.config.{CommandName, Model, OutputStyle, PermissionMode, SkillName}
-import com.tjclp.scalagent.messages._
+import com.tjclp.scalagent.messages.*
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{ApiMessageId, MessageUuid, SessionId, ToolUseId}
 

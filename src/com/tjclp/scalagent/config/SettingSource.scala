@@ -1,6 +1,6 @@
 package com.tjclp.scalagent.config
 
-import zio.json._
+import zio.json.*
 
 /** Setting source for filesystem-based configuration loading.
   *

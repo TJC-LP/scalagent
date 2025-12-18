@@ -1,6 +1,6 @@
 package com.tjclp.scalagent.tools
 
-import zio.json._
+import zio.json.*
 
 /** Type-safe tool names for the Claude Agent SDK.
   *

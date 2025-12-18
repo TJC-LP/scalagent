@@ -43,3 +43,25 @@ final class Tool(
 final class Param(
     val description: String
 ) extends StaticAnnotation
+
+/** Describe a field in a structured output case class.
+  *
+  * Use on case class fields to provide descriptions that will be included in the JSON schema for structured output.
+  *
+  * Example:
+  * {{{
+  * case class Analysis(
+  *   @description("A brief summary of the findings") summary: String,
+  *   @description("Confidence score from 0.0 to 1.0") confidence: Double,
+  *   @description("List of identified issues") issues: List[String]
+  * )
+  *
+  * given StructuredOutput[Analysis] = StructuredOutput.derive[Analysis]
+  * }}}
+  *
+  * @param text
+  *   Human-readable description of the field
+  */
+final class description(
+    val text: String
+) extends StaticAnnotation
