@@ -244,7 +244,8 @@ val errorTool = ToolDef.fromInput[WeatherInput](
 
 ### Macro Tool Definitions (@Tool)
 
-Prefer the macro-based style when you want minimal boilerplate and inline parameter docs:
+Prefer the macro-based style when you want minimal boilerplate and inline parameter docs.
+Return types can be `ToolResult`, `String`, `Task[ToolResult]`, or `Task[String]` (strings are wrapped as `ToolResult.text`).
 
 ```scala
 import com.tjclp.scalagent.macros.*
@@ -259,9 +260,9 @@ object MyTools:
   def getWeather(
       @Param("City or location name") location: String,
       @Param("Temperature unit") unit: Option[Unit] = None
-  ): Task[ToolResult] =
+  ): String =
     val u = unit.getOrElse(Unit.Celsius)
-    ZIO.succeed(ToolResult.text(s"Weather in $location: 22°${u.toString.take(1)}"))
+    s"Weather in $location: 22°${u.toString.take(1)}"
 
 // One-liner server creation from annotated object
 val server = ToolMacros.createServer[MyTools.type]("macro-tools", runtime)

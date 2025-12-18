@@ -12,7 +12,7 @@ import scala.annotation.StaticAnnotation
   * def getWeather(
   *   @Param("City name") location: String,
   *   @Param("Temperature unit") unit: Option[String] = None
-  * ): Task[ToolResult] = ???
+  * ): Task[String] = ???
   * }}}
   *
   * @param name
@@ -34,7 +34,7 @@ final class Tool(
   * def search(
   *   @Param("Search query string") query: String,
   *   @Param("Maximum results to return") limit: Option[Int] = None
-  * ): Task[ToolResult] = ???
+  * ): String = ???
   * }}}
   *
   * @param description

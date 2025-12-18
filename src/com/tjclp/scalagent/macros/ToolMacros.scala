@@ -17,7 +17,7 @@ import com.tjclp.scalagent.config.McpServerConfig
   * {{{
   * object MyTools:
   *   @Tool("get_weather", "Get weather for a location")
-  *   def getWeather(@Param("Location") location: String): Task[ToolResult] = ???
+  *   def getWeather(@Param("Location") location: String): Task[String] = ???
   *
   * val server = ToolMacros.createServer[MyTools.type]("my-server", runtime)
   * }}}
@@ -165,20 +165,24 @@ object ToolMacros:
         (name, tpe, paramDesc, isOptional, enumCases)
       }
 
-    // 3. Validate return type (ToolResult or ZIO[Any, Throwable, ToolResult])
+    // 3. Validate return type (ToolResult/String or ZIO[Any, Throwable, ToolResult/String])
     val returnType: TypeRepr = method.tree match
       case ddef: DefDef => ddef.returnTpt.tpe
       case _            => report.errorAndAbort(s"Unable to inspect return type for ${method.name}")
 
     val toolResultTpe = TypeRepr.of[ToolResult]
     val zioToolResultTpe = TypeRepr.of[ZIO[Any, Throwable, ToolResult]]
+    val stringTpe = TypeRepr.of[String]
+    val zioStringTpe = TypeRepr.of[ZIO[Any, Throwable, String]]
 
     val returnsToolResult = returnType <:< toolResultTpe
     val returnsZioToolResult = returnType <:< zioToolResultTpe
+    val returnsString = returnType <:< stringTpe
+    val returnsZioString = returnType <:< zioStringTpe
 
-    if !returnsToolResult && !returnsZioToolResult then
+    if !returnsToolResult && !returnsZioToolResult && !returnsString && !returnsZioString then
       report.errorAndAbort(
-        s"@Tool methods must return ToolResult or Task[ToolResult] (ZIO[Any, Throwable, ToolResult]). Found: ${returnType.show}"
+        s"@Tool methods must return ToolResult, String, Task[ToolResult], or Task[String] (ZIO[Any, Throwable, ...]). Found: ${returnType.show}"
       )
 
     // 4. Generate JSON schema (inline to avoid quotes context issues)
@@ -294,7 +298,19 @@ object ToolMacros:
               }
               .flatMap(identity)
         }
-      else
+      else if returnsZioString then
+        '{
+          (args: scala.collection.immutable.Map[String, Any]) =>
+            ZIO
+              .attempt {
+                val extractors = $argExtractorsExpr
+                val argsList: List[Any] = extractors.map(extractor => extractor(args))
+                RuntimeInvoker.invoke($methodRefExpr, argsList)
+                  .asInstanceOf[ZIO[Any, Throwable, String]]
+              }
+              .flatMap(_.map(ToolResult.text))
+        }
+      else if returnsToolResult then
         '{
           (args: scala.collection.immutable.Map[String, Any]) =>
             ZIO
@@ -304,6 +320,18 @@ object ToolMacros:
                 RuntimeInvoker.invoke($methodRefExpr, argsList)
                   .asInstanceOf[ToolResult]
               }
+        }
+      else
+        '{
+          (args: scala.collection.immutable.Map[String, Any]) =>
+            ZIO
+              .attempt {
+                val extractors = $argExtractorsExpr
+                val argsList: List[Any] = extractors.map(extractor => extractor(args))
+                RuntimeInvoker.invoke($methodRefExpr, argsList)
+                  .asInstanceOf[String]
+              }
+              .map(ToolResult.text)
         }
 
     // 8. Create ToolDef
