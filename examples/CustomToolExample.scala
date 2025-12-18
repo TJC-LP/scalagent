@@ -38,6 +38,14 @@ object CustomToolExample extends ZIOAppDefault:
     given JsonDecoder[LookupInput] = DeriveJsonDecoder.gen[LookupInput]
     given ToolInput[LookupInput] = ToolInput.derive[LookupInput]
 
+  enum RichContentMode derives JsonDecoder:
+    case Ok, Media, Error
+
+  case class RichContentInput(mode: RichContentMode)
+  object RichContentInput:
+    given JsonDecoder[RichContentInput] = DeriveJsonDecoder.gen[RichContentInput]
+    given ToolInput[RichContentInput] = ToolInput.derive[RichContentInput]
+
   val run: ZIO[Any, Throwable, Unit] =
     for
       runtime <- ZIO.runtime[Any]
@@ -91,20 +99,57 @@ object CustomToolExample extends ZIOAppDefault:
         ZIO.succeed(ToolResult.Success(result))
       }
 
+    // Define a rich content tool (text + image + audio + resources)
+    val richContentTool = ToolDef
+      .fromInput[RichContentInput]("rich_content_demo", "Return rich MCP content blocks") { input =>
+        input.mode match
+          case RichContentMode.Error =>
+            ZIO.succeed(
+              ToolResult.errorContents(
+                ToolContent.Text("Unable to render rich content."),
+                ToolContent.ResourceLink(
+                  uri = "https://example.com/troubleshooting",
+                  description = Some("Troubleshooting guide")
+                )
+              )
+            )
+          case RichContentMode.Media =>
+            val pngBase64 =
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wIAAgMBAp9W8Z8AAAAASUVORK5CYII="
+            val wavBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="
+            ZIO.succeed(
+              ToolResult.multi
+                .text("Here is rich content: image, audio, resource link, and embedded text.")
+                .image(pngBase64, mime = "image/png")
+                .audio(wavBase64, mime = "audio/wav")
+                .resourceLink("https://example.com/spec", description = Some("Spec link"))
+                .resourceText("urn:example:note", "Embedded resource text", mimeType = Some("text/plain"))
+                .build
+            )
+          case RichContentMode.Ok =>
+            ZIO.succeed(
+              ToolResult.multi
+                .text("Here is rich content: a resource link and embedded text.")
+                .resourceLink("https://example.com/spec", description = Some("Spec link"))
+                .resourceText("urn:example:note", "Embedded resource text", mimeType = Some("text/plain"))
+                .build
+            )
+      }
+
     // Create an MCP server with our custom tools
     val mcpServer = McpServer.create(
       name = "custom-tools",
-      tools = List(weatherTool, calculatorTool, lookupTool),
+      tools = List(weatherTool, calculatorTool, lookupTool, richContentTool),
       runtime = runtime
     )
 
     val options = AgentOptions.default
       .withModel(Model.Sonnet4_5)
-      .withPermissionMode(PermissionMode.DontAsk)
+      .withPermissionMode(PermissionMode.BypassPermissions)
       .withMaxTurns(10)
       .withMcpServer("custom", mcpServer)
 
-    Console.printLine("Starting agent with custom tools: get_weather, calculator, knowledge_lookup") *>
+    Console.printLine("Starting agent with custom tools: get_weather, calculator, knowledge_lookup, rich_content_demo") *>
       Console.printLine("---") *>
       ClaudeAgent
         .query(
@@ -112,6 +157,7 @@ object CustomToolExample extends ZIOAppDefault:
             |1. What's the weather in Tokyo?
             |2. What is 15 multiplied by 7?
             |3. Tell me about ZIO
+            |4. Show a rich content response using rich_content_demo (mode=Ok)
             |
             |Please use the tools to answer these questions.""".stripMargin,
           options

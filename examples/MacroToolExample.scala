@@ -41,6 +41,9 @@ object MacroToolExample extends ZIOAppDefault:
     enum Operation:
       case Add, Subtract, Multiply, Divide
 
+    enum RichMode derives JsonDecoder:
+      case Ok, Media, Error
+
     @Tool("get_weather", "Get the current weather for a location")
     def getWeather(
         @Param("City or location name") location: String,
@@ -89,6 +92,41 @@ object MacroToolExample extends ZIOAppDefault:
 
       ZIO.succeed(ToolResult.text(result))
 
+    @Tool("rich_content_demo", "Return rich MCP content blocks")
+    def richContent(
+        @Param("Response mode (Ok or Error)") mode: RichMode
+    ): Task[ToolResult] =
+      mode match
+        case RichMode.Error =>
+          ZIO.succeed(
+            ToolResult.errorContents(
+              ToolContent.Text("Unable to render rich content."),
+              ToolContent.ResourceLink(
+                uri = "https://example.com/help",
+                description = Some("Help center")
+              )
+            )
+          )
+        case RichMode.Media =>
+          val pngBase64 =
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wIAAgMBAp9W8Z8AAAAASUVORK5CYII="
+          val wavBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="
+          ZIO.succeed(
+            ToolResult.multi
+              .text("Here is rich content: image, audio, and a resource link.")
+              .image(pngBase64, mime = "image/png")
+              .audio(wavBase64, mime = "audio/wav")
+              .resourceLink("https://example.com/spec", description = Some("Spec link"))
+              .build
+          )
+        case RichMode.Ok =>
+          ZIO.succeed(
+            ToolResult.multi
+              .text("Here is rich content: a resource link.")
+              .resourceLink("https://example.com/spec", description = Some("Spec link"))
+              .build
+          )
+
   val run: ZIO[Any, Throwable, Unit] =
     for
       runtime <- ZIO.runtime[Any]
@@ -104,7 +142,7 @@ object MacroToolExample extends ZIOAppDefault:
         .withMcpServer("tools", server)
 
       _ <- Console.printLine(
-        "Starting agent with macro-defined tools: get_weather, calculator, knowledge_lookup"
+        "Starting agent with macro-defined tools: get_weather, calculator, knowledge_lookup, rich_content_demo"
       )
       _ <- Console.printLine("---")
       _ <- ClaudeAgent
@@ -113,6 +151,7 @@ object MacroToolExample extends ZIOAppDefault:
             |1. What's the weather in Tokyo?
             |2. What is 15 multiplied by 7?
             |3. Tell me about ZIO
+            |4. Show a rich content response using rich_content_demo (mode=Ok)
             |
             |Please use the tools to answer these questions.""".stripMargin,
           options

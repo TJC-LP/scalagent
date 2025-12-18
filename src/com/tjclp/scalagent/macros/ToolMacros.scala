@@ -177,7 +177,7 @@ object ToolMacros:
             typeToSchemaInline(tpe)
 
         val schemaExpr =
-          if desc.nonEmpty then '{ JsonSchema.describe($baseSchemaExpr, ${ Expr(desc) }) }
+          if desc.nonEmpty then '{ JsonSchema.Described($baseSchemaExpr, ${ Expr(desc) }) }
           else baseSchemaExpr
 
         '{ (${ Expr(name) }, $schemaExpr) }
@@ -276,8 +276,9 @@ object ToolMacros:
             RuntimeInvoker.invoke($methodRefExpr, argsList)
           }
           .flatMap {
-            case t: Task[?] => t.asInstanceOf[Task[ToolResult]]
-            case other      => ZIO.succeed(ToolResult.text(other.toString))
+            case t: Task[?]      => t.asInstanceOf[Task[ToolResult]]
+            case tr: ToolResult  => ZIO.succeed(tr)
+            case other           => ZIO.succeed(ToolResult.text(other.toString))
           }
     }
 

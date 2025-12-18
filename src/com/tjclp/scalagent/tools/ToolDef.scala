@@ -140,11 +140,16 @@ object ToolContent:
   /** Resource link (by URI) */
   final case class ResourceLink(
       uri: String,
+      name: Option[String] = None,
       mimeType: Option[String] = None,
       description: Option[String] = None
   ) extends ToolContent:
     def toRaw: js.Dynamic =
-      val obj = js.Dynamic.literal(`type` = "resource_link", uri = uri)
+      val obj = js.Dynamic.literal(
+        `type` = "resource_link",
+        name = name.getOrElse(uri),
+        uri = uri
+      )
       mimeType.foreach(m => obj.mimeType = m)
       description.foreach(d => obj.description = d)
       obj
@@ -158,11 +163,12 @@ object ToolContent:
   @deprecated("Use ResourceLink or EmbeddedResource", "0.1.0")
   final case class Resource(
       uri: String,
+      name: Option[String] = None,
       mimeType: Option[String] = None,
       description: Option[String] = None
   ) extends ToolContent:
     def toRaw: js.Dynamic =
-      ResourceLink(uri, mimeType, description).toRaw
+      ResourceLink(uri, name, mimeType, description).toRaw
 
 /** Embedded resource contents */
 sealed trait ResourceContents:
@@ -238,10 +244,11 @@ object ToolResult:
     Multi(List(ToolContent.Audio(base64, mime)))
   def resourceLink(
       uri: String,
+      name: Option[String] = None,
       mimeType: Option[String] = None,
       description: Option[String] = None
   ): ToolResult =
-    Multi(List(ToolContent.ResourceLink(uri, mimeType, description)))
+    Multi(List(ToolContent.ResourceLink(uri, name, mimeType, description)))
   def resourceText(uri: String, text: String, mimeType: Option[String] = None): ToolResult =
     Multi(List(ToolContent.EmbeddedResource(ResourceContents.Text(uri, text, mimeType))))
   def resourceBlob(uri: String, blob: String, mimeType: Option[String] = None): ToolResult =
@@ -259,13 +266,14 @@ object ToolResult:
     def audio(base64: String, mime: String = "audio/wav"): MultiBuilder =
       copy(contents = contents :+ ToolContent.Audio(base64, mime))
     def resource(uri: String, mime: Option[String] = None): MultiBuilder =
-      copy(contents = contents :+ ToolContent.ResourceLink(uri, mime))
+      copy(contents = contents :+ ToolContent.ResourceLink(uri, None, mime))
     def resourceLink(
         uri: String,
+        name: Option[String] = None,
         mimeType: Option[String] = None,
         description: Option[String] = None
     ): MultiBuilder =
-      copy(contents = contents :+ ToolContent.ResourceLink(uri, mimeType, description))
+      copy(contents = contents :+ ToolContent.ResourceLink(uri, name, mimeType, description))
     def resourceText(uri: String, text: String, mimeType: Option[String] = None): MultiBuilder =
       copy(contents = contents :+ ToolContent.EmbeddedResource(ResourceContents.Text(uri, text, mimeType)))
     def resourceBlob(uri: String, blob: String, mimeType: Option[String] = None): MultiBuilder =
@@ -355,10 +363,6 @@ object JsonSchema:
   /** Object schema builder */
   def obj(properties: (String, JsonSchema)*): ObjectBuilder =
     ObjectBuilder(properties.toMap)
-
-  /** Attach a description to a schema */
-  def describe(schema: JsonSchema, description: String): JsonSchema =
-    Described(schema, description)
 
   /** Builder for object schemas */
   final case class ObjectBuilder(

@@ -213,6 +213,60 @@ val weatherTool = ToolDef.fromInput[WeatherInput](
 }
 ```
 
+### Rich Tool Results (Multimodal + Errors)
+
+Tools can return arrays of content blocks (text, image, audio, resources), and you can emit
+custom error content when something fails:
+
+```scala
+val richTool = ToolDef.fromInput[WeatherInput](
+  name = "rich_content_demo",
+  description = "Return rich MCP content blocks"
+) { _ =>
+  val pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wIAAgMBAp9W8Z8AAAAASUVORK5CYII="
+  ToolResult.multi
+    .text("Here is rich content.")
+    .image(pngBase64, mime = "image/png")
+    .resourceLink("https://example.com/spec", description = Some("Spec link"))
+    .build
+}
+
+val errorTool = ToolDef.fromInput[WeatherInput](
+  name = "rich_error_demo",
+  description = "Return rich error content"
+) { _ =>
+  ToolResult.errorContents(
+    ToolContent.Text("Something went wrong."),
+    ToolContent.ResourceLink("https://example.com/help")
+  )
+}
+```
+
+### Macro Tool Definitions (@Tool)
+
+Prefer the macro-based style when you want minimal boilerplate and inline parameter docs:
+
+```scala
+import com.tjclp.scalagent.macros.*
+import com.tjclp.scalagent.tools.*
+import zio.*
+
+object MyTools:
+  enum Unit:
+    case Celsius, Fahrenheit
+
+  @Tool("get_weather", "Get the current weather for a location")
+  def getWeather(
+      @Param("City or location name") location: String,
+      @Param("Temperature unit") unit: Option[Unit] = None
+  ): Task[ToolResult] =
+    val u = unit.getOrElse(Unit.Celsius)
+    ZIO.succeed(ToolResult.text(s"Weather in $location: 22°${u.toString.take(1)}"))
+
+// One-liner server creation from annotated object
+val server = ToolMacros.createServer[MyTools.type]("macro-tools", runtime)
+```
+
 ## Architecture
 
 ```

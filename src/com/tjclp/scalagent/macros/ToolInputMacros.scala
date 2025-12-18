@@ -62,7 +62,7 @@ object ToolInputMacros:
       val schemaExpr = descOpt match
         case Some(desc) =>
           val descExpr = Expr(desc)
-          '{ JsonSchema.describe($baseSchemaExpr, $descExpr) }
+          '{ JsonSchema.Described($baseSchemaExpr, $descExpr) }
         case None =>
           baseSchemaExpr
       '{ ($nameExpr, $schemaExpr) }
