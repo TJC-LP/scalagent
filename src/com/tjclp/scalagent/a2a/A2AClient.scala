@@ -47,12 +47,27 @@ object A2AClient:
       headers: Map[String, String] = Map.empty
   )
 
-  /** Create a client by discovering an agent at the given URL */
+  /** Create a client by discovering an agent at the given URL.
+    *
+    * @param url
+    *   The URL of the A2A agent (must be http:// or https://)
+    * @param headers
+    *   Optional headers for authentication
+    * @return
+    *   A2AClient for communicating with the agent
+    * @throws IllegalArgumentException
+    *   if URL scheme is not http or https
+    */
   def discover(url: String, headers: Map[String, String] = Map.empty): Task[A2AClient] =
-    ZIO.fromPromiseJS {
-      val factory = new JsClientFactory()
-      factory.createFromUrl(url)
-    }.map(jsClient => A2AClientLive(jsClient))
+    ZIO
+      .fail(new IllegalArgumentException(s"Invalid URL scheme. Must be http:// or https://: $url"))
+      .when(!url.startsWith("http://") && !url.startsWith("https://"))
+      .zipRight {
+        ZIO.fromPromiseJS {
+          val factory = new JsClientFactory()
+          factory.createFromUrl(url)
+        }.map(jsClient => A2AClientLive(jsClient))
+      }
 
   /** Create a client from an existing agent card */
   def fromCard(card: AgentCard, headers: Map[String, String] = Map.empty): Task[A2AClient] =

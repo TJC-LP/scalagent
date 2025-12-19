@@ -200,52 +200,67 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
     val Response = js.Dynamic.global.Response
     val headers = js.Dynamic.literal(`Content-Type` = "application/json")
 
-    // Parse the JSON-RPC request
-    val request = JsJSON.parse(body)
-    val method = request.method.asInstanceOf[String]
-    val params = request.params
-    val requestId = request.id
+    // Parse the JSON-RPC request with error handling
+    try
+      val request = JsJSON.parse(body)
+      val method = request.method.asInstanceOf[String]
+      val params = request.params
+      val requestId = request.id
 
-    // Route to the appropriate handler method
-    val resultPromise: js.Promise[js.Dynamic] = method match
-      case "message/send" => requestHandler.sendMessage(params, js.undefined)
-      case "tasks/get"    => requestHandler.getTask(params, js.undefined)
-      case "tasks/cancel" => requestHandler.cancelTask(params, js.undefined)
-      case _ =>
-        js.Promise.resolve(
-          js.Dynamic.literal(
-            error = js.Dynamic.literal(
-              code = -32601,
-              message = s"Method not found: $method"
+      // Route to the appropriate handler method
+      val resultPromise: js.Promise[js.Dynamic] = method match
+        case "message/send" => requestHandler.sendMessage(params, js.undefined)
+        case "tasks/get"    => requestHandler.getTask(params, js.undefined)
+        case "tasks/cancel" => requestHandler.cancelTask(params, js.undefined)
+        case _ =>
+          js.Promise.resolve(
+            js.Dynamic.literal(
+              error = js.Dynamic.literal(
+                code = -32601,
+                message = s"Method not found: $method"
+              )
             )
           )
-        )
 
-    // Wrap result in JSON-RPC response format
-    resultPromise
-      .`then`[js.Dynamic] { result =>
+      // Wrap result in JSON-RPC response format
+      resultPromise
+        .`then`[js.Dynamic] { result =>
+          val response = js.Dynamic.literal(
+            jsonrpc = "2.0",
+            result = result,
+            id = requestId
+          )
+          js.Dynamic.newInstance(Response)(
+            JsJSON.stringify(response),
+            js.Dynamic.literal(status = 200, headers = headers)
+          )
+        }
+        .`catch`[js.Dynamic] { error =>
+          val errorMsg = if error != null then error.toString else "Unknown error"
+          val response = js.Dynamic.literal(
+            jsonrpc = "2.0",
+            error = js.Dynamic.literal(code = -32603, message = errorMsg),
+            id = requestId
+          )
+          js.Dynamic.newInstance(Response)(
+            JsJSON.stringify(response),
+            js.Dynamic.literal(status = 200, headers = headers)
+          )
+        }
+    catch
+      case e: Exception =>
+        // Return JSON-RPC parse error (-32700) for malformed JSON
         val response = js.Dynamic.literal(
           jsonrpc = "2.0",
-          result = result,
-          id = requestId
+          error = js.Dynamic.literal(code = -32700, message = s"Parse error: ${e.getMessage}"),
+          id = null
         )
-        js.Dynamic.newInstance(Response)(
-          JsJSON.stringify(response),
-          js.Dynamic.literal(status = 200, headers = headers)
+        js.Promise.resolve(
+          js.Dynamic.newInstance(Response)(
+            JsJSON.stringify(response),
+            js.Dynamic.literal(status = 200, headers = headers)
+          )
         )
-      }
-      .`catch`[js.Dynamic] { error =>
-        val errorMsg = if error != null then error.toString else "Unknown error"
-        val response = js.Dynamic.literal(
-          jsonrpc = "2.0",
-          error = js.Dynamic.literal(code = -32603, message = errorMsg),
-          id = requestId
-        )
-        js.Dynamic.newInstance(Response)(
-          JsJSON.stringify(response),
-          js.Dynamic.literal(status = 200, headers = headers)
-        )
-      }
 
 /** Bun.serve binding */
 @js.native

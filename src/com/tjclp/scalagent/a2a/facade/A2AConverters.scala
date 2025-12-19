@@ -92,7 +92,7 @@ object A2AConverters:
       messageId = js.messageId.toOption.map(MessageId(_)),
       contextId = js.contextId.toOption.map(ContextId(_)),
       taskId = js.taskId.toOption.map(TaskId(_)),
-      metadata = js.metadata.toOption.map(d => Json.decoder.decodeJson(JsJSON.stringify(d)).toOption.get)
+      metadata = js.metadata.toOption.flatMap(d => Json.decoder.decodeJson(JsJSON.stringify(d)).toOption)
     )
 
   def toJs(msg: A2AMessage): JsMessage =
