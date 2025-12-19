@@ -58,6 +58,14 @@ object examples extends ScalaJSModule {
   override def moduleKind = ModuleKind.ESModule
   override def moduleDeps = Seq(agent)
 
+  // Use Bun instead of Node.js for running examples
+  override def jsEnvConfig = Task {
+    JsEnvConfig.NodeJs(
+      executable = "bun",
+      args = Nil
+    )
+  }
+
   def mvnDeps = Seq(
     mvn"dev.zio::zio::2.1.14",
     mvn"dev.zio::zio-streams::2.1.14"
@@ -80,7 +88,8 @@ object examples extends ScalaJSModule {
     "subagent"   -> "com.tjclp.scalagent.examples.SubagentExample",
     "plugin"     -> "com.tjclp.scalagent.examples.PluginExample",
     "prompt"     -> "com.tjclp.scalagent.examples.SystemPromptExample",
-    "command"    -> "com.tjclp.scalagent.examples.SlashCommandExample"
+    "command"    -> "com.tjclp.scalagent.examples.SlashCommandExample",
+    "a2a"        -> "com.tjclp.scalagent.examples.A2AExample"
   )
 
   // List available examples
