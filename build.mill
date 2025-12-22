@@ -29,15 +29,17 @@ object agent extends ScalaJSModule with PublishModule {
   override def sources = Task.Sources(moduleDir / "src")
 
   // Publishing configuration
-  def publishVersion = "0.1.0-SNAPSHOT"
+  def publishVersion = sys.env.getOrElse("PUBLISH_VERSION", "0.1.0-SNAPSHOT")
 
   def pomSettings = PomSettings(
     description = "Scalagent - Type-safe Scala.js SDK for Claude Code CLI",
     organization = "com.tjclp",
-    url = "https://github.com/tjclp/scalagent",
+    url = "https://github.com/TJC-LP/scalagent",
     licenses = Seq(License.MIT),
-    versionControl = VersionControl.github("tjclp", "scalagent"),
-    developers = Seq()
+    versionControl = VersionControl.github("TJC-LP", "scalagent"),
+    developers = Seq(
+      Developer("TJC-LP", "TJC-LP", "https://github.com/TJC-LP")
+    )
   )
 
   def artifactName = "scalagent"
