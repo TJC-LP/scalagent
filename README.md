@@ -11,6 +11,34 @@ A type-safe Scala.js SDK for the [`@anthropic-ai/claude-agent-sdk`](https://www.
 - **Multi-turn conversations** via session management
 - **Tool definition DSL** for custom MCP tools
 
+## Installation
+
+[![Maven Central](https://img.shields.io/maven-central/v/com.tjclp/scalagent_sjs1_3.svg)](https://central.sonatype.com/artifact/com.tjclp/scalagent_sjs1_3)
+
+### Mill
+
+```scala
+def ivyDeps = Seq(
+  mvn"com.tjclp::scalagent::0.1.0"
+)
+```
+
+### SBT
+
+```scala
+libraryDependencies += "com.tjclp" %%% "scalagent" % "0.1.0"
+```
+
+### Maven
+
+```xml
+<dependency>
+  <groupId>com.tjclp</groupId>
+  <artifactId>scalagent_sjs1_3</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
 ## Requirements
 
 - Mill build tool
