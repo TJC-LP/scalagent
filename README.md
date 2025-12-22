@@ -23,8 +23,8 @@ A type-safe Scala.js SDK for the [`@anthropic-ai/claude-agent-sdk`](https://www.
 ### Simple One-Shot Query
 
 ```scala
-import com.tjclp.scalagent._
-import zio._
+import com.tjclp.scalagent.*
+import zio.*
 
 object MyApp extends ZIOAppDefault:
   val run =
@@ -37,9 +37,9 @@ object MyApp extends ZIOAppDefault:
 ### Streaming Responses
 
 ```scala
-import com.tjclp.scalagent._
-import com.tjclp.scalagent.config._
-import zio._
+import com.tjclp.scalagent.*
+import com.tjclp.scalagent.config.*
+import zio.*
 
 object StreamingApp extends ZIOAppDefault:
   val run =
@@ -54,15 +54,15 @@ object StreamingApp extends ZIOAppDefault:
 ### Multi-Turn Conversation
 
 ```scala
-import com.tjclp.scalagent._
-import com.tjclp.scalagent.config._
-import com.tjclp.scalagent.session._
-import zio._
+import com.tjclp.scalagent.*
+import com.tjclp.scalagent.config.*
+import com.tjclp.scalagent.session.*
+import zio.*
 
 object ConversationApp extends ZIOAppDefault:
   val run =
     for
-      session  <- ClaudeSession.create(AgentOptions.default.withModel(Model.Sonnet4))
+      session  <- ClaudeSession.create(AgentOptions.default.withModel(Model.Sonnet4_5))
       _        <- session.send("Remember the number 42").runDrain
       answer   <- session.ask("What number did I ask you to remember?")
       _        <- Console.printLine(s"Claude remembered: $answer")
@@ -74,11 +74,11 @@ object ConversationApp extends ZIOAppDefault:
 Get type-safe responses with compile-time JSON Schema generation:
 
 ```scala
-import com.tjclp.scalagent._
-import com.tjclp.scalagent.config._
+import com.tjclp.scalagent.*
+import com.tjclp.scalagent.config.*
 import com.tjclp.scalagent.macros.description
-import zio._
-import zio.json._
+import zio.*
+import zio.json.*
 
 // Define your output type with optional field descriptions
 case class Analysis(
@@ -93,7 +93,7 @@ given StructuredOutput[Analysis] = StructuredOutput.derive[Analysis]
 object AnalysisApp extends ZIOAppDefault:
   val run =
     val options = AgentOptions.default
-      .withModel(Model.Sonnet4)
+      .withModel(Model.Sonnet4_5)
       .withStructuredOutput[Analysis]
 
     for
@@ -112,13 +112,13 @@ object AnalysisApp extends ZIOAppDefault:
 bun install
 
 # Compile the project
-mill agent.compile
+./mill agent.compile
 
 # Run the example (compiles and runs with Bun)
 bun run run
 
 # Or manually:
-mill examples.fastLinkJS
+./mill examples.fastLinkJS
 bun run out/examples/fastLinkJS.dest/main.js
 ```
 
@@ -128,7 +128,7 @@ Use `AgentOptions` to configure queries:
 
 ```scala
 val options = AgentOptions.default
-  .withModel("claude-sonnet-4-20250514")
+  .withModel(Model.Sonnet4_5)
   .withMaxTurns(10)
   .withMaxBudgetUsd(0.50)
   .withPermissionMode(PermissionMode.AcceptEdits)
@@ -140,6 +140,7 @@ val options = AgentOptions.default
 | Option | Description |
 |--------|-------------|
 | `withModel(m)` | Set the model to use |
+| `withModelId(id)` | Set a custom/new model ID |
 | `withMaxTurns(n)` | Limit number of conversation turns |
 | `withMaxBudgetUsd(b)` | Set maximum cost budget |
 | `withPermissionMode(pm)` | Control permission handling |
@@ -194,22 +195,77 @@ for
 yield ()
 ```
 
-### Custom Tool Definitions (Skeleton)
+### Custom Tool Definitions (Type-Safe)
 
 ```scala
-import com.tjclp.scalagent.tools._
+import com.tjclp.scalagent.tools.*
+import zio.json.*
 
-case class WeatherInput(location: String, unit: String)
+case class WeatherInput(location: String, unit: Option[String]) derives JsonDecoder
+object WeatherInput:
+  given ToolInput[WeatherInput] = ToolInput.derive[WeatherInput]
 
-val weatherTool = ToolBuilder[WeatherInput]("get_weather")
-  .description("Get current weather for a location")
-  .schema(JsonSchema.obj(
-    "location" -> JsonSchema.string,
-    "unit" -> JsonSchema.enum("celsius", "fahrenheit")
-  ).required("location"))
-  .handler { input =>
-    fetchWeather(input.location, input.unit).map(ToolResult.Success(_))
-  }
+val weatherTool = ToolDef.fromInput[WeatherInput](
+  name = "get_weather",
+  description = "Get current weather for a location"
+) { input =>
+  fetchWeather(input.location, input.unit.getOrElse("celsius")).map(ToolResult.Success(_))
+}
+```
+
+### Rich Tool Results (Multimodal + Errors)
+
+Tools can return arrays of content blocks (text, image, audio, resources), and you can emit
+custom error content when something fails:
+
+```scala
+val richTool = ToolDef.fromInput[WeatherInput](
+  name = "rich_content_demo",
+  description = "Return rich MCP content blocks"
+) { _ =>
+  val pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wIAAgMBAp9W8Z8AAAAASUVORK5CYII="
+  ToolResult.multi
+    .text("Here is rich content.")
+    .image(pngBase64, mime = "image/png")
+    .resourceLink("https://example.com/spec", description = Some("Spec link"))
+    .build
+}
+
+val errorTool = ToolDef.fromInput[WeatherInput](
+  name = "rich_error_demo",
+  description = "Return rich error content"
+) { _ =>
+  ToolResult.errorContents(
+    ToolContent.Text("Something went wrong."),
+    ToolContent.ResourceLink("https://example.com/help")
+  )
+}
+```
+
+### Macro Tool Definitions (@Tool)
+
+Prefer the macro-based style when you want minimal boilerplate and inline parameter docs.
+Return types can be `ToolResult`, `String`, `Task[ToolResult]`, or `Task[String]` (strings are wrapped as `ToolResult.text`).
+
+```scala
+import com.tjclp.scalagent.macros.*
+import com.tjclp.scalagent.tools.*
+import zio.*
+
+object MyTools:
+  enum Unit:
+    case Celsius, Fahrenheit
+
+  @Tool("get_weather", "Get the current weather for a location")
+  def getWeather(
+      @Param("City or location name") location: String,
+      @Param("Temperature unit") unit: Option[Unit] = None
+  ): String =
+    val u = unit.getOrElse(Unit.Celsius)
+    s"Weather in $location: 22°${u.toString.take(1)}"
+
+// One-liner server creation from annotated object
+val server = ToolMacros.createServer[MyTools.type]("macro-tools", runtime)
 ```
 
 ## Architecture

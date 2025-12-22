@@ -23,17 +23,16 @@ import com.tjclp.scalagent.mcp.*
 object CustomToolExample extends ZIOAppDefault:
 
   // Define input types for our custom tools
-  case class WeatherInput(location: String, unit: Option[String])
-  object WeatherInput:
-    given JsonDecoder[WeatherInput] = DeriveJsonDecoder.gen[WeatherInput]
+  case class WeatherInput(location: String, unit: Option[String]) derives JsonDecoder, ToolInput
 
-  case class CalculatorInput(operation: String, a: Double, b: Double)
-  object CalculatorInput:
-    given JsonDecoder[CalculatorInput] = DeriveJsonDecoder.gen[CalculatorInput]
+  case class CalculatorInput(operation: String, a: Double, b: Double) derives JsonDecoder, ToolInput
 
-  case class LookupInput(query: String)
-  object LookupInput:
-    given JsonDecoder[LookupInput] = DeriveJsonDecoder.gen[LookupInput]
+  case class LookupInput(query: String) derives JsonDecoder, ToolInput
+
+  enum RichContentMode derives JsonDecoder:
+    case Ok, Media, Error
+
+  case class RichContentInput(mode: RichContentMode) derives JsonDecoder, ToolInput
 
   val run: ZIO[Any, Throwable, Unit] =
     for
@@ -43,17 +42,8 @@ object CustomToolExample extends ZIOAppDefault:
 
   private def runWithCustomTools(runtime: Runtime[Any]): ZIO[Any, Throwable, Unit] =
     // Define a weather tool
-    val weatherTool = ToolBuilder[WeatherInput]("get_weather")
-      .description("Get the current weather for a location")
-      .schema(
-        JsonSchema
-          .obj(
-            "location" -> JsonSchema.string,
-            "unit" -> JsonSchema.enumOf("celsius", "fahrenheit")
-          )
-          .required("location")
-      )
-      .handler { input =>
+    val weatherTool = ToolDef
+      .fromInput[WeatherInput]("get_weather", "Get the current weather for a location") { input =>
         val unit = input.unit.getOrElse("celsius")
         val temp = if unit == "celsius" then "22" else "72"
         val symbol = if unit == "celsius" then "C" else "F"
@@ -63,18 +53,8 @@ object CustomToolExample extends ZIOAppDefault:
       }
 
     // Define a calculator tool
-    val calculatorTool = ToolBuilder[CalculatorInput]("calculator")
-      .description("Perform basic arithmetic operations")
-      .schema(
-        JsonSchema
-          .obj(
-            "operation" -> JsonSchema.enumOf("add", "subtract", "multiply", "divide"),
-            "a" -> JsonSchema.number,
-            "b" -> JsonSchema.number
-          )
-          .required("operation", "a", "b")
-      )
-      .handler { input =>
+    val calculatorTool = ToolDef
+      .fromInput[CalculatorInput]("calculator", "Perform basic arithmetic operations") { input =>
         input.operation match
           case "add" =>
             ZIO.succeed(ToolResult.Success(s"${input.a} + ${input.b} = ${input.a + input.b}"))
@@ -90,12 +70,8 @@ object CustomToolExample extends ZIOAppDefault:
       }
 
     // Define a knowledge lookup tool
-    val lookupTool = ToolBuilder[LookupInput]("knowledge_lookup")
-      .description("Look up information from a knowledge base")
-      .schema(
-        JsonSchema.obj("query" -> JsonSchema.string).required("query")
-      )
-      .handler { input =>
+    val lookupTool = ToolDef
+      .fromInput[LookupInput]("knowledge_lookup", "Look up information from a knowledge base") { input =>
         // Simulated knowledge base
         val knowledge = Map(
           "scala" -> "Scala is a programming language that combines object-oriented and functional programming.",
@@ -111,20 +87,56 @@ object CustomToolExample extends ZIOAppDefault:
         ZIO.succeed(ToolResult.Success(result))
       }
 
+    // Define a rich content tool (text + image + audio + resources)
+    val richContentTool = ToolDef
+      .fromInput[RichContentInput]("rich_content_demo", "Return rich MCP content blocks") { input =>
+        input.mode match
+          case RichContentMode.Error =>
+            ZIO.succeed(
+              ToolResult.errorContents(
+                ToolContent.Text("Unable to render rich content."),
+                ToolContent.ResourceLink(
+                  uri = "https://example.com/troubleshooting",
+                  description = Some("Troubleshooting guide")
+                )
+              )
+            )
+          case RichContentMode.Media =>
+            val pngBase64 = ToolFiles.readBase64("examples/resources/demo.png")
+            val wavBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="
+            ZIO.succeed(
+              ToolResult.multi
+                .text("Here is rich content: image, audio, resource link, and embedded text.")
+                .image(pngBase64, mime = "image/png")
+                .audio(wavBase64, mime = "audio/wav")
+                .resourceLink("https://example.com/spec", description = Some("Spec link"))
+                .resourceText("urn:example:note", "Embedded resource text", mimeType = Some("text/plain"))
+                .build
+            )
+          case RichContentMode.Ok =>
+            ZIO.succeed(
+              ToolResult.multi
+                .text("Here is rich content: a resource link and embedded text.")
+                .resourceLink("https://example.com/spec", description = Some("Spec link"))
+                .resourceText("urn:example:note", "Embedded resource text", mimeType = Some("text/plain"))
+                .build
+            )
+      }
+
     // Create an MCP server with our custom tools
     val mcpServer = McpServer.create(
       name = "custom-tools",
-      tools = List(weatherTool, calculatorTool, lookupTool),
+      tools = List(weatherTool, calculatorTool, lookupTool, richContentTool),
       runtime = runtime
     )
 
     val options = AgentOptions.default
-      .withModel(Model.Sonnet4)
-      .withPermissionMode(PermissionMode.DontAsk)
+      .withModel(Model.Sonnet4_5)
+      .withPermissionMode(PermissionMode.BypassPermissions)
       .withMaxTurns(10)
       .withMcpServer("custom", mcpServer)
 
-    Console.printLine("Starting agent with custom tools: get_weather, calculator, knowledge_lookup") *>
+    Console.printLine("Starting agent with custom tools: get_weather, calculator, knowledge_lookup, rich_content_demo") *>
       Console.printLine("---") *>
       ClaudeAgent
         .query(
@@ -132,6 +144,7 @@ object CustomToolExample extends ZIOAppDefault:
             |1. What's the weather in Tokyo?
             |2. What is 15 multiplied by 7?
             |3. Tell me about ZIO
+            |4. Show a rich content response using rich_content_demo (mode=Media) and summarize the image.
             |
             |Please use the tools to answer these questions.""".stripMargin,
           options

@@ -72,7 +72,7 @@ object PermissionExample extends ZIOAppDefault:
       yield result
 
     val options = AgentOptions.default
-      .withModel(Model.Sonnet4)
+      .withModel(Model.Sonnet4_5)
       .withPermissionMode(PermissionMode.Default)
       .withMaxTurns(5)
       .withCanUseTool(customPermissionHandler)

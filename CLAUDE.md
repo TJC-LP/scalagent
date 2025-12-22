@@ -25,7 +25,7 @@ Default to using Bun instead of Node.js.
 
 ## Testing
 
-Use `bun test` to run tests.
+Use `./mill agent.test` for the Scala/MUnit suite. Use `bun test` only for JS/TS tests.
 
 ```ts#index.test.ts
 import { test, expect } from "bun:test";

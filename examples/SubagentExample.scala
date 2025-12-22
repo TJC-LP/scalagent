@@ -56,7 +56,7 @@ object SubagentExample extends ZIOAppDefault:
   val run: ZIO[Any, Any, Unit] =
     // Configure options with multiple agents
     val options = AgentOptions.default
-      .withModel(Model.Sonnet4)
+      .withModel(Model.Sonnet4_5)
       .withPermissionMode(PermissionMode.DontAsk)
       .withMaxTurns(5)
       // Add agents using different methods

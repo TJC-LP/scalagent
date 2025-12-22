@@ -214,6 +214,14 @@ object AgentOptions:
     def withSystemPrompt(prompt: SystemPromptConfig): AgentOptions =
       opts.copy(systemPrompt = Some(prompt))
 
+    /** Set a custom system prompt string */
+    def withSystemPrompt(prompt: String): AgentOptions =
+      opts.copy(systemPrompt = Some(SystemPromptConfig.Custom(prompt)))
+
+    /** Append to the claude_code preset system prompt */
+    def appendSystemPrompt(append: String): AgentOptions =
+      opts.copy(systemPrompt = Some(SystemPromptConfig.claudeCodeWith(append)))
+
     def withTools(config: ToolsConfig): AgentOptions =
       opts.copy(tools = Some(config))
 
