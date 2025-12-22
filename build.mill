@@ -28,8 +28,19 @@ object agent extends ScalaJSModule with PublishModule {
   override def moduleDir = build.moduleDir
   override def sources = Task.Sources(moduleDir / "src")
 
-  // Publishing configuration
-  def publishVersion = sys.env.getOrElse("PUBLISH_VERSION", "0.1.0-SNAPSHOT")
+  // Publishing configuration - read from PUBLISH_VERSION env var (set by CI)
+  // Task.Input ensures env var is re-evaluated each run (not cached)
+  override def publishVersion = Task.Input {
+    Task.env.get("PUBLISH_VERSION").getOrElse("0.1.0-SNAPSHOT")
+  }
+
+  // Skip scaladoc generation - Scala.js facades cause doc errors
+  override def docJar: T[PathRef] = Task {
+    val jar = Task.dest / "empty-javadoc.jar"
+    val jos = new java.util.jar.JarOutputStream(new java.io.FileOutputStream(jar.toIO))
+    jos.close()
+    PathRef(jar)
+  }
 
   def pomSettings = PomSettings(
     description = "Scalagent - Type-safe Scala.js SDK for Claude Code CLI",
