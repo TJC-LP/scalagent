@@ -2,7 +2,6 @@ package com.tjclp.scalagent.examples
 
 import zio.*
 import com.tjclp.scalagent.*
-import com.tjclp.scalagent.config.PluginError
 
 /** Example demonstrating plugin configuration and validation.
   *

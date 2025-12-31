@@ -3,7 +3,6 @@ package com.tjclp.scalagent.examples
 import zio.*
 import zio.json.*
 import com.tjclp.scalagent.*
-import com.tjclp.scalagent.macros.ToolMacros
 
 /** Example demonstrating macro-based tool definition.
   *

@@ -3,7 +3,6 @@ package com.tjclp.scalagent.examples
 import zio.*
 import zio.json.*
 import com.tjclp.scalagent.*
-import com.tjclp.scalagent.messages.ResultOutcome.parseAs
 
 /** Example demonstrating structured outputs with compile-time schema derivation.
   *

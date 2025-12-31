@@ -4,6 +4,7 @@ A type-safe Scala.js SDK for the [`@anthropic-ai/claude-agent-sdk`](https://www.
 
 ## Features
 
+- **Single import convenience** — `import com.tjclp.scalagent.*` brings all types into scope
 - **ZIO + ZStream** integration for purely functional streaming
 - **Structured outputs** with compile-time JSON Schema generation
 - **Type-safe message ADT** mirroring the SDK's discriminated unions
@@ -66,7 +67,6 @@ object MyApp extends ZIOAppDefault:
 
 ```scala
 import com.tjclp.scalagent.*
-import com.tjclp.scalagent.config.*
 import zio.*
 
 object StreamingApp extends ZIOAppDefault:
@@ -83,8 +83,6 @@ object StreamingApp extends ZIOAppDefault:
 
 ```scala
 import com.tjclp.scalagent.*
-import com.tjclp.scalagent.config.*
-import com.tjclp.scalagent.session.*
 import zio.*
 
 object ConversationApp extends ZIOAppDefault:
@@ -103,8 +101,6 @@ Get type-safe responses with compile-time JSON Schema generation:
 
 ```scala
 import com.tjclp.scalagent.*
-import com.tjclp.scalagent.config.*
-import com.tjclp.scalagent.macros.description
 import zio.*
 import zio.json.*
 
@@ -226,7 +222,7 @@ yield ()
 ### Custom Tool Definitions (Type-Safe)
 
 ```scala
-import com.tjclp.scalagent.tools.*
+import com.tjclp.scalagent.*
 import zio.json.*
 
 case class WeatherInput(location: String, unit: Option[String]) derives JsonDecoder
@@ -276,8 +272,7 @@ Prefer the macro-based style when you want minimal boilerplate and inline parame
 Return types can be `ToolResult`, `String`, `Task[ToolResult]`, or `Task[String]` (strings are wrapped as `ToolResult.text`).
 
 ```scala
-import com.tjclp.scalagent.macros.*
-import com.tjclp.scalagent.tools.*
+import com.tjclp.scalagent.*
 import zio.*
 
 object MyTools:
