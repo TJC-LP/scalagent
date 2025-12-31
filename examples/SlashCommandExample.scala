@@ -2,9 +2,7 @@ package com.tjclp.scalagent.examples
 
 import zio.*
 import com.tjclp.scalagent.*
-import com.tjclp.scalagent.config.*
-import com.tjclp.scalagent.errors.*
-import com.tjclp.scalagent.messages.*
+import com.tjclp.scalagent.config.CommandName
 
 /** Example demonstrating type-safe slash command references.
   *

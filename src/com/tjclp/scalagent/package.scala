@@ -19,8 +19,6 @@ import com.tjclp.scalagent.messages.*
   *
   * {{{
   * import com.tjclp.scalagent.*
-  * import com.tjclp.scalagent.config.*
-  * import com.tjclp.scalagent.messages.*
   * import zio.*
   *
   * object MyApp extends ZIOAppDefault:
@@ -74,6 +72,52 @@ package object scalagent {
 
   /** Convenience type alias for the main service */
   type ClaudeAgentService = ClaudeAgent
+
+  // ============================================================================
+  // Re-exports for single-import convenience
+  // ============================================================================
+
+  // Config
+  export config.{AgentOptions, Model, PermissionMode, SessionMode, StructuredOutput}
+  export config.{McpServerConfig, OutputFormat, SystemPromptConfig, SandboxSettings}
+  export config.{PluginConfig, AgentDefinition, AgentModel, SettingSource}
+
+  // Messages
+  export messages.{AgentMessage, ContentBlock, ResultOutcome, ErrorReason}
+  export messages.{Role, StopReason, ModelUsage, PerModelUsage, SystemEvent}
+  export messages.{ApiAssistantMessage, ApiUserMessage, StreamDelta, ImageSource}
+
+  // Errors
+  export errors.AgentError
+
+  // Session
+  export session.{ClaudeSession, SessionState, Open, Closed}
+
+  // Tools
+  export tools.{ToolDef, ToolInput, ToolResult, ToolContent, ToolName, JsonSchema, ToolFiles}
+
+  // Types (ID wrappers)
+  export types.{SessionId, ToolUseId, MessageUuid, SubagentId}
+
+  // Hooks
+  export hooks.{HookEvent, HookCallback, HookInput, HookOutput}
+
+  // Permissions
+  export permissions.{CanUseTool, PermissionResult}
+
+  // MCP
+  export mcp.{McpServer, McpTool}
+
+  // A2A
+  export a2a.{A2AClient, A2AServer, A2ATool, AgentCard, AgentSkill, A2AResponse, TaskId, MessageId}
+  export a2a.{sendText, streamText}
+
+  // Macro annotations
+  export macros.{Tool, Param, description}
+
+  // ============================================================================
+  // Helper Functions
+  // ============================================================================
 
   /** Extract text content from an assistant message's content blocks */
   def extractText(msg: messages.ApiAssistantMessage): String =

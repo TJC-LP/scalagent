@@ -4,10 +4,6 @@ import zio.*
 import zio.stream.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.*
-import com.tjclp.scalagent.config.{AgentOptions, Model, PermissionMode}
-import com.tjclp.scalagent.messages.*
-import com.tjclp.scalagent.permissions.*
-import com.tjclp.scalagent.tools.ToolName
 
 /** Example demonstrating the permission callback system.
   *

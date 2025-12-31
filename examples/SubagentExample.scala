@@ -2,10 +2,6 @@ package com.tjclp.scalagent.examples
 
 import zio.*
 import com.tjclp.scalagent.*
-import com.tjclp.scalagent.config.*
-import com.tjclp.scalagent.errors.*
-import com.tjclp.scalagent.messages.*
-import com.tjclp.scalagent.tools.ToolName
 
 /** Example demonstrating custom subagent definitions.
   *

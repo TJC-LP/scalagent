@@ -3,10 +3,6 @@ package com.tjclp.scalagent.examples
 import zio.*
 import zio.stream.*
 import com.tjclp.scalagent.*
-import com.tjclp.scalagent.config.{AgentOptions, Model, PermissionMode}
-import com.tjclp.scalagent.errors.*
-import com.tjclp.scalagent.messages.*
-import com.tjclp.scalagent.session.*
 
 /** Example demonstrating the V2 Session API for multi-turn conversations.
   *
