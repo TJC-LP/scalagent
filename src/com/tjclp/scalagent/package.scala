@@ -19,8 +19,6 @@ import com.tjclp.scalagent.messages.*
   *
   * {{{
   * import com.tjclp.scalagent.*
-  * import com.tjclp.scalagent.config.*
-  * import com.tjclp.scalagent.messages.*
   * import zio.*
   *
   * object MyApp extends ZIOAppDefault:
@@ -74,6 +72,263 @@ package object scalagent {
 
   /** Convenience type alias for the main service */
   type ClaudeAgentService = ClaudeAgent
+
+  // ============================================================================
+  // Re-exports for single-import convenience
+  // Using type aliases and val references since Scala 3 export has limitations
+  // ============================================================================
+
+  // --- config package ---
+  type AgentDefinition = config.AgentDefinition
+  val AgentDefinition = config.AgentDefinition
+
+  type AgentModel = config.AgentModel
+  val AgentModel = config.AgentModel
+
+  type AgentOptions = config.AgentOptions
+  val AgentOptions = config.AgentOptions
+
+  type CommandName = config.CommandName
+  val CommandName = config.CommandName
+
+  type McpServerConfig = config.McpServerConfig
+  val McpServerConfig = config.McpServerConfig
+
+  type Model = config.Model
+  val Model = config.Model
+
+  type OutputFormat = config.OutputFormat
+  val OutputFormat = config.OutputFormat
+
+  type OutputStyle = config.OutputStyle
+  val OutputStyle = config.OutputStyle
+
+  type PermissionMode = config.PermissionMode
+  val PermissionMode = config.PermissionMode
+
+  type PluginConfig = config.PluginConfig
+  val PluginConfig = config.PluginConfig
+
+  type PluginError = config.PluginError
+  val PluginError = config.PluginError
+
+  type PositiveDouble = config.PositiveDouble
+  val PositiveDouble = config.PositiveDouble
+
+  type PositiveInt = config.PositiveInt
+  val PositiveInt = config.PositiveInt
+
+  type SandboxSettings = config.SandboxSettings
+  val SandboxSettings = config.SandboxSettings
+
+  type SessionMode = config.SessionMode
+  val SessionMode = config.SessionMode
+
+  type SettingSource = config.SettingSource
+  val SettingSource = config.SettingSource
+
+  type SkillName = config.SkillName
+  val SkillName = config.SkillName
+
+  type StructuredOutput[A] = config.StructuredOutput[A]
+  val StructuredOutput = config.StructuredOutput
+
+  type SystemPromptConfig = config.SystemPromptConfig
+  val SystemPromptConfig = config.SystemPromptConfig
+
+  type ToolsConfig = config.ToolsConfig
+  val ToolsConfig = config.ToolsConfig
+
+  // --- messages package ---
+  type AgentMessage = messages.AgentMessage
+  val AgentMessage = messages.AgentMessage
+
+  type ApiAssistantMessage = messages.ApiAssistantMessage
+  val ApiAssistantMessage = messages.ApiAssistantMessage
+
+  type ApiUserMessage = messages.ApiUserMessage
+  val ApiUserMessage = messages.ApiUserMessage
+
+  type ContentBlock = messages.ContentBlock
+  val ContentBlock = messages.ContentBlock
+
+  type ModelUsage = messages.ModelUsage
+  val ModelUsage = messages.ModelUsage
+
+  type ResultOutcome = messages.ResultOutcome
+  val ResultOutcome = messages.ResultOutcome
+
+  type Role = messages.Role
+  val Role = messages.Role
+
+  type StopReason = messages.StopReason
+  val StopReason = messages.StopReason
+
+  type StreamDelta = messages.StreamDelta
+  val StreamDelta = messages.StreamDelta
+
+  type RawStreamEvent = messages.RawStreamEvent
+  val RawStreamEvent = messages.RawStreamEvent
+
+  type SystemEvent = messages.SystemEvent
+  val SystemEvent = messages.SystemEvent
+
+  // ErrorReason is in messages package (in ResultOutcome.scala)
+  type ErrorReason = messages.ErrorReason
+  val ErrorReason = messages.ErrorReason
+
+  // --- errors package ---
+  type AgentError = errors.AgentError
+  val AgentError = errors.AgentError
+
+  // --- session package ---
+  // ClaudeSession takes type parameters, export the companion object only
+  val ClaudeSession = session.ClaudeSession
+
+  // SessionState is a sealed trait without a companion val
+  type SessionState = session.SessionState
+  type Open = session.Open
+  type Closed = session.Closed
+
+  // --- tools package ---
+  type ToolContent = tools.ToolContent
+  val ToolContent = tools.ToolContent
+
+  // ToolDef takes type parameters, export the companion object only
+  val ToolDef = tools.ToolDef
+
+  val ToolFiles = tools.ToolFiles
+
+  // ToolInput is a type class trait with companion
+  type ToolInput[A] = tools.ToolInput[A]
+  val ToolInput = tools.ToolInput
+
+  type ToolName = tools.ToolName
+  val ToolName = tools.ToolName
+
+  type ToolResult = tools.ToolResult
+  val ToolResult = tools.ToolResult
+
+  // --- types package ---
+  type SessionId = types.SessionId
+  val SessionId = types.SessionId
+
+  type ToolUseId = types.ToolUseId
+  val ToolUseId = types.ToolUseId
+
+  type MessageUuid = types.MessageUuid
+  val MessageUuid = types.MessageUuid
+
+  type SubagentId = types.SubagentId
+  val SubagentId = types.SubagentId
+
+  type ApiMessageId = types.ApiMessageId
+  val ApiMessageId = types.ApiMessageId
+
+  // --- hooks package ---
+  type CompactTrigger = hooks.CompactTrigger
+  val CompactTrigger = hooks.CompactTrigger
+
+  type HookCallback = hooks.HookCallback
+  val HookCallback = hooks.HookCallback
+
+  type HookEvent = hooks.HookEvent
+  val HookEvent = hooks.HookEvent
+
+  type HookInput = hooks.HookInput
+  val HookInput = hooks.HookInput
+
+  type HookOutput = hooks.HookOutput
+  val HookOutput = hooks.HookOutput
+
+  val HookPredicates = hooks.HookPredicates
+
+  // --- permissions package ---
+  type CanUseTool = permissions.CanUseTool
+  val CanUseTool = permissions.CanUseTool
+
+  type PermissionResult = permissions.PermissionResult
+  val PermissionResult = permissions.PermissionResult
+
+  type PermissionUpdate = permissions.PermissionUpdate
+  val PermissionUpdate = permissions.PermissionUpdate
+
+  type PermissionContext = permissions.PermissionContext
+  val PermissionContext = permissions.PermissionContext
+
+  // --- mcp package ---
+  // McpServer and McpTool are objects only (no types)
+  val McpServer = mcp.McpServer
+  val McpTool = mcp.McpTool
+
+  type McpToolName = mcp.McpToolName
+  val McpToolName = mcp.McpToolName
+
+  // --- a2a package ---
+  type A2AClient = a2a.A2AClient
+  val A2AClient = a2a.A2AClient
+
+  type A2AServer = a2a.A2AServer
+  val A2AServer = a2a.A2AServer
+
+  // These are objects only (no types)
+  val A2ATool = a2a.A2ATool
+  val A2ARequest = a2a.A2ARequest
+  val A2AResponse = a2a.A2AResponse
+
+  // Re-export A2AClient extension methods for convenience
+  export a2a.{sendText, streamText}
+
+  type A2AError = a2a.A2AError
+  val A2AError = a2a.A2AError
+
+  type A2AMessage = a2a.A2AMessage
+  val A2AMessage = a2a.A2AMessage
+
+  type A2ATask = a2a.A2ATask
+  val A2ATask = a2a.A2ATask
+
+  type AgentCard = a2a.AgentCard
+  val AgentCard = a2a.AgentCard
+
+  // A2A types from various files
+  type TaskId = a2a.TaskId
+  val TaskId = a2a.TaskId
+
+  type TaskState = a2a.TaskState
+  val TaskState = a2a.TaskState
+
+  type Part = a2a.Part
+  val Part = a2a.Part
+
+  type Artifact = a2a.Artifact
+  val Artifact = a2a.Artifact
+
+  type TaskStatus = a2a.TaskStatus
+  val TaskStatus = a2a.TaskStatus
+
+  type PushNotificationConfig = a2a.PushNotificationConfig
+  val PushNotificationConfig = a2a.PushNotificationConfig
+
+  type AgentCapabilities = a2a.AgentCapabilities
+  val AgentCapabilities = a2a.AgentCapabilities
+
+  type AgentProvider = a2a.AgentProvider
+  val AgentProvider = a2a.AgentProvider
+
+  type AgentSkill = a2a.AgentSkill
+  val AgentSkill = a2a.AgentSkill
+
+  // --- macros package ---
+  type Tool = macros.Tool
+  type Param = macros.Param
+  type description = macros.description
+
+  val ToolMacros = macros.ToolMacros
+
+  // ============================================================================
+  // Helper Functions
+  // ============================================================================
 
   /** Extract text content from an assistant message's content blocks */
   def extractText(msg: messages.ApiAssistantMessage): String =

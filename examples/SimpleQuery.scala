@@ -3,9 +3,6 @@ package com.tjclp.scalagent.examples
 import zio.*
 import zio.stream.*
 import com.tjclp.scalagent.*
-import com.tjclp.scalagent.config.{AgentOptions, Model, PermissionMode}
-import com.tjclp.scalagent.errors.*
-import com.tjclp.scalagent.messages.*
 
 /** Simple example demonstrating the simplified Claude entry point.
   *
