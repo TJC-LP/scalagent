@@ -114,8 +114,8 @@ object StructuredOutputMacros:
     '{
       Json.Obj(
         "type" -> Json.Str("object"),
-        "properties" -> Json.Obj($propertiesListExpr: _*),
-        "required" -> Json.Arr($requiredListExpr.map(Json.Str(_)): _*),
+        "properties" -> Json.Obj($propertiesListExpr*),
+        "required" -> Json.Arr($requiredListExpr.map(Json.Str(_))*),
         "additionalProperties" -> Json.Bool(false)
       )
     }
@@ -182,7 +182,7 @@ object StructuredOutputMacros:
       case t if t.typeSymbol.flags.is(Flags.Enum) =>
         val enumCases = t.typeSymbol.children.map(_.name)
         val casesExpr = Expr(enumCases)
-        '{ Json.Obj("type" -> Json.Str("string"), "enum" -> Json.Arr($casesExpr.map(Json.Str(_)): _*)) }
+        '{ Json.Obj("type" -> Json.Str("string"), "enum" -> Json.Arr($casesExpr.map(Json.Str(_))*)) }
 
       // Nested case class
       case t if t.typeSymbol.flags.is(Flags.Case) =>
@@ -217,5 +217,5 @@ object StructuredOutputMacros:
   def addDescription(schema: Json, description: String): Json =
     schema match
       case Json.Obj(fields) =>
-        Json.Obj(fields.toList :+ ("description" -> Json.Str(description)): _*)
+        Json.Obj(fields.toList :+ ("description" -> Json.Str(description))*)
       case other => other

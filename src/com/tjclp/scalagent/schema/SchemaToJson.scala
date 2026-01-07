@@ -140,8 +140,8 @@ object SchemaToJson:
       .filterNot(f => isOptional(f.schema))
       .map(_.name)
 
-    val propsObj = Json.Obj(properties.map((k, v) => (k, v)): _*)
-    val requiredArr = Json.Arr(required.map(Json.Str(_)): _*)
+    val propsObj = Json.Obj(properties.map((k, v) => (k, v))*)
+    val requiredArr = Json.Arr(required.map(Json.Str(_))*)
 
     Json.Obj(
       "type" -> Json.Str("object"),
@@ -161,5 +161,5 @@ object SchemaToJson:
     val cases = enumSchema.cases.map(_.id)
     Json.Obj(
       "type" -> Json.Str("string"),
-      "enum" -> Json.Arr(cases.map(Json.Str(_)): _*)
+      "enum" -> Json.Arr(cases.map(Json.Str(_))*)
     )
