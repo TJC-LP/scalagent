@@ -90,19 +90,20 @@ object examples extends ScalaJSModule {
 
   // Available examples - add new ones here
   val exampleClasses = Map(
-    "simple"     -> "com.tjclp.scalagent.examples.SimpleQuery",
-    "macro"      -> "com.tjclp.scalagent.examples.MacroToolExample",
-    "custom"     -> "com.tjclp.scalagent.examples.CustomToolExample",
-    "hook"       -> "com.tjclp.scalagent.examples.HookExample",
-    "permission" -> "com.tjclp.scalagent.examples.PermissionExample",
-    "session"    -> "com.tjclp.scalagent.examples.SessionExample",
+    "simple"       -> "com.tjclp.scalagent.examples.SimpleQuery",
+    "macro"        -> "com.tjclp.scalagent.examples.MacroToolExample",
+    "custom"       -> "com.tjclp.scalagent.examples.CustomToolExample",
+    "hook"         -> "com.tjclp.scalagent.examples.HookExample",
+    "permission"   -> "com.tjclp.scalagent.examples.PermissionExample",
+    "session"      -> "com.tjclp.scalagent.examples.SessionExample",
     // New examples for recent features
-    "structured" -> "com.tjclp.scalagent.examples.StructuredOutputExample",
-    "subagent"   -> "com.tjclp.scalagent.examples.SubagentExample",
-    "plugin"     -> "com.tjclp.scalagent.examples.PluginExample",
-    "prompt"     -> "com.tjclp.scalagent.examples.SystemPromptExample",
-    "command"    -> "com.tjclp.scalagent.examples.SlashCommandExample",
-    "a2a"        -> "com.tjclp.scalagent.examples.A2AExample"
+    "structured"   -> "com.tjclp.scalagent.examples.StructuredOutputExample",
+    "subagent"     -> "com.tjclp.scalagent.examples.SubagentExample",
+    "plugin"       -> "com.tjclp.scalagent.examples.PluginExample",
+    "prompt"       -> "com.tjclp.scalagent.examples.SystemPromptExample",
+    "command"      -> "com.tjclp.scalagent.examples.SlashCommandExample",
+    "a2a"          -> "com.tjclp.scalagent.examples.A2AExample",
+    "agent-hooks"  -> "com.tjclp.scalagent.examples.AgentHooksExample"
   )
 
   // List available examples
