@@ -235,6 +235,9 @@ package object scalagent {
   type HookEvent = hooks.HookEvent
   val HookEvent = hooks.HookEvent
 
+  type HookConfig = hooks.HookConfig
+  val HookConfig = hooks.HookConfig
+
   type HookInput = hooks.HookInput
   val HookInput = hooks.HookInput
 
