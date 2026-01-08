@@ -12,6 +12,11 @@ import com.tjclp.scalagent.hooks.{HookCallback, HookConfig, HookEvent}
   * Subagents provide context isolation, parallelization, and specialized expertise. They can have restricted tool
   * access and use different models than the main agent.
   *
+  * **Converting to JavaScript objects:**
+  *   - Use `toRaw` for agents without hooks (simpler, no Runtime needed)
+  *   - Use `toRawWithHooks(runtime)` for agents with hooks configured
+  *   - `toRaw` intentionally omits hooks to avoid requiring a Runtime parameter
+  *
   * Example:
   * {{{
   * val reviewer = AgentDefinition(
@@ -54,8 +59,9 @@ final case class AgentDefinition(
 ):
   /** Convert to raw JavaScript object for SDK.
     *
-    * Note: Hooks require a Runtime for conversion. Use `toRawWithHooks` when
-    * agent has hooks configured.
+    * **Important**: This method intentionally omits hooks to avoid requiring a Runtime.
+    * If this agent has hooks configured (`hasHooks == true`), use `toRawWithHooks(runtime)`
+    * instead to include them in the output.
     */
   def toRaw: js.Object =
     val obj = js.Dynamic.literal(
@@ -152,23 +158,23 @@ object AgentDefinition:
   // Shell hooks ARE serializable. Codecs handle both appropriately.
   given JsonEncoder[AgentDefinition] = JsonEncoder[zio.json.ast.Json].contramap { agent =>
     import zio.json.ast.Json
-    var fields: List[(String, Json)] = List(
+    val baseFields = List(
       "description" -> Json.Str(agent.description),
       "prompt" -> Json.Str(agent.prompt),
       "inheritMcpTools" -> Json.Bool(agent.inheritMcpTools)
     )
-    agent.tools.foreach(t => fields = fields :+ ("tools" -> Json.Arr(t.map(tn => Json.Str(tn.raw))*)))
-    agent.disallowedTools.foreach(dt =>
-      fields = fields :+ ("disallowedTools" -> Json.Arr(dt.map(tn => Json.Str(tn.raw))*))
-    )
-    agent.model.foreach(m => fields = fields :+ ("model" -> Json.Str(m.raw)))
-    agent.permissionMode.foreach(pm => fields = fields :+ ("permissionMode" -> Json.Str(pm.toRaw)))
+    val toolsField = agent.tools.map(t => "tools" -> Json.Arr(t.map(tn => Json.Str(tn.raw))*))
+    val disallowedField = agent.disallowedTools.map(dt => "disallowedTools" -> Json.Arr(dt.map(tn => Json.Str(tn.raw))*))
+    val modelField = agent.model.map(m => "model" -> Json.Str(m.raw))
+    val permissionField = agent.permissionMode.map(pm => "permissionMode" -> Json.Str(pm.toRaw))
     // Serialize hooks (shell hooks are fully serializable, callbacks get markers)
-    if agent.hooks.nonEmpty then
+    val hooksField = Option.when(agent.hooks.nonEmpty) {
       val hooksJson = agent.hooks.map { case (event, configs) =>
-        event.toRaw -> Json.Arr(configs.map(_.toJson.fromJson[Json].toOption.get)*)
+        event.toRaw -> Json.Arr(configs.flatMap(_.toJson.fromJson[Json].toOption)*)
       }
-      fields = fields :+ ("hooks" -> Json.Obj(zio.Chunk.fromIterable(hooksJson.toSeq)*))
+      "hooks" -> Json.Obj(zio.Chunk.fromIterable(hooksJson.toSeq)*)
+    }
+    val fields = baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField
     Json.Obj(zio.Chunk.fromIterable(fields)*)
   }
 

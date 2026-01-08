@@ -45,12 +45,16 @@ object HookConfig:
     *
     * This style is serializable and can be defined in config files.
     *
+    * **Security Warning**: Shell commands are executed without sanitization.
+    * Only use shell hooks with trusted command sources. Avoid interpolating
+    * user input directly into commands to prevent shell injection attacks.
+    *
     * @param matcher
     *   Regex pattern to match tool names (e.g., "Bash", "Edit|Write", ".*")
     * @param command
     *   Shell command to execute
     * @param timeout
-    *   Optional timeout in milliseconds
+    *   Optional timeout in milliseconds (must be positive if specified)
     * @param once
     *   If true, hook only runs once then is disabled (added in v2.1.0)
     */
@@ -99,61 +103,85 @@ object HookConfig:
 
   // Convenience constructors
 
-  /** Create a shell command hook */
+  /** Create a shell command hook.
+    *
+    * @throws IllegalArgumentException if matcher is empty, command is empty, or timeout is not positive
+    */
   def shell(
       matcher: String,
       command: String,
       timeout: Option[Int] = None,
       once: Boolean = false
-  ): HookConfig = Shell(matcher, command, timeout, once)
+  ): HookConfig =
+    require(matcher.nonEmpty, "matcher pattern cannot be empty")
+    require(command.nonEmpty, "command cannot be empty")
+    timeout.foreach(t => require(t > 0, s"timeout must be positive, got: $t"))
+    Shell(matcher, command, timeout, once)
 
   /** Create a callback hook that matches all tools */
   def callback(cb: HookCallback): HookConfig = Callback(cb)
 
-  /** Create a callback hook with a matcher pattern */
+  /** Create a callback hook with a matcher pattern.
+    *
+    * @throws IllegalArgumentException if matcher is empty
+    */
   def callback(matcher: String, cb: HookCallback): HookConfig =
+    require(matcher.nonEmpty, "matcher pattern cannot be empty")
     Callback(cb, matcher = Some(matcher))
 
-  /** Create a callback hook with all options */
+  /** Create a callback hook with all options.
+    *
+    * @throws IllegalArgumentException if matcher is empty or timeout is not positive
+    */
   def callback(
       matcher: String,
       cb: HookCallback,
       timeout: Option[Int] = None,
       once: Boolean = false
-  ): HookConfig = Callback(cb, Some(matcher), timeout, once)
+  ): HookConfig =
+    require(matcher.nonEmpty, "matcher pattern cannot be empty")
+    timeout.foreach(t => require(t > 0, s"timeout must be positive, got: $t"))
+    Callback(cb, Some(matcher), timeout, once)
 
-  /** Create a one-time shell hook */
+  /** Create a one-time shell hook.
+    *
+    * @throws IllegalArgumentException if matcher is empty or command is empty
+    */
   def shellOnce(matcher: String, command: String): HookConfig =
-    Shell(matcher, command, once = true)
+    shell(matcher, command, once = true)
 
   /** Create a one-time callback hook */
   def callbackOnce(cb: HookCallback): HookConfig =
     Callback(cb, once = true)
 
-  /** Create a one-time callback hook with matcher */
+  /** Create a one-time callback hook with matcher.
+    *
+    * @throws IllegalArgumentException if matcher is empty
+    */
   def callbackOnce(matcher: String, cb: HookCallback): HookConfig =
+    require(matcher.nonEmpty, "matcher pattern cannot be empty")
     Callback(cb, Some(matcher), once = true)
 
   // JSON codecs (only Shell hooks are serializable)
 
   given JsonEncoder[HookConfig] = JsonEncoder[Json].contramap {
     case Shell(matcher, command, timeout, once) =>
-      var fields: List[(String, Json)] = List(
+      val baseFields = List(
         "type" -> Json.Str("shell"),
         "matcher" -> Json.Str(matcher),
         "command" -> Json.Str(command)
       )
-      timeout.foreach(t => fields = fields :+ ("timeout" -> Json.Num(t)))
-      if once then fields = fields :+ ("once" -> Json.Bool(true))
-      Json.Obj(zio.Chunk.fromIterable(fields)*)
+      val timeoutField = timeout.map(t => "timeout" -> Json.Num(t))
+      val onceField = Option.when(once)("once" -> Json.Bool(true))
+      Json.Obj(zio.Chunk.fromIterable(baseFields ++ timeoutField ++ onceField)*)
 
     case Callback(_, matcher, timeout, once) =>
       // Callbacks serialize as a marker - they can't be fully restored
-      var fields: List[(String, Json)] = List("type" -> Json.Str("callback"))
-      matcher.foreach(m => fields = fields :+ ("matcher" -> Json.Str(m)))
-      timeout.foreach(t => fields = fields :+ ("timeout" -> Json.Num(t)))
-      if once then fields = fields :+ ("once" -> Json.Bool(true))
-      Json.Obj(zio.Chunk.fromIterable(fields)*)
+      val baseFields = List("type" -> Json.Str("callback"))
+      val matcherField = matcher.map(m => "matcher" -> Json.Str(m))
+      val timeoutField = timeout.map(t => "timeout" -> Json.Num(t))
+      val onceField = Option.when(once)("once" -> Json.Bool(true))
+      Json.Obj(zio.Chunk.fromIterable(baseFields ++ matcherField ++ timeoutField ++ onceField)*)
   }
 
   given JsonDecoder[HookConfig] = JsonDecoder[Json].mapOrFail {
