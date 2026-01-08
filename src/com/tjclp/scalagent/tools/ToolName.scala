@@ -59,6 +59,7 @@ enum ToolName(val raw: String):
   case McpGetLibraryDocs extends ToolName("mcp__context7__get-library-docs")
 
   // IDE integration
+  case LSP extends ToolName("LSP")
   case GetDiagnostics extends ToolName("mcp__ide__getDiagnostics")
 
   // Custom tools
@@ -107,6 +108,7 @@ object ToolName:
     case "mcp__context7__get-library-docs"   => McpGetLibraryDocs
 
     // IDE integration
+    case "LSP"                      => LSP
     case "mcp__ide__getDiagnostics" => GetDiagnostics
 
     // Unknown tools become Custom
@@ -124,8 +126,8 @@ object ToolName:
 
   /** Check if a tool name is read-only (no side effects) */
   def isReadOnly(tool: ToolName): Boolean = tool match
-    case Read | Glob | Grep | WebFetch | WebSearch | TaskOutput | GetDiagnostics => true
-    case _                                                                        => false
+    case Read | Glob | Grep | WebFetch | WebSearch | TaskOutput | LSP | GetDiagnostics => true
+    case _                                                                              => false
 
   // JSON codecs
   given JsonEncoder[ToolName] = JsonEncoder[String].contramap(_.raw)
