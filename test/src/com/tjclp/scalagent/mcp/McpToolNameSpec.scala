@@ -111,6 +111,28 @@ class McpToolNameSpec extends FunSuite:
       case other                => fail(s"Expected Custom, got $other")
 
   // ============================================
+  // Wildcard Patterns
+  // ============================================
+
+  test("McpToolName.wildcard creates server wildcard pattern"):
+    val pattern = McpToolName.wildcard("weather-api")
+    pattern match
+      case ToolName.Custom(raw) => assertEquals(raw, "mcp__weather-api__*")
+      case other                => fail(s"Expected Custom, got $other")
+
+  test("McpToolName.wildcardAll creates global MCP wildcard"):
+    val pattern = McpToolName.wildcardAll
+    pattern match
+      case ToolName.Custom(raw) => assertEquals(raw, "mcp__*")
+      case other                => fail(s"Expected Custom, got $other")
+
+  test("McpToolNames.wildcard creates server wildcard pattern"):
+    val pattern = TestTools.wildcard
+    pattern match
+      case ToolName.Custom(raw) => assertEquals(raw, "mcp__test-server__*")
+      case other                => fail(s"Expected Custom, got $other")
+
+  // ============================================
   // JSON Serialization
   // ============================================
 
