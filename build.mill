@@ -115,12 +115,12 @@ object examples extends ScalaJSModule {
     }
     println()
     println("Run with:")
-    println("  ./mill examples.run                   # runs 'macro' by default")
-    println("  EXAMPLE=simple ./mill examples.run    # run specific example")
-    println("  EXAMPLE=hook ./mill examples.run      # run hook example")
+    println("  EXAMPLE=simple ./mill examples.bun    # run specific example")
+    println("  EXAMPLE=hook ./mill examples.bun      # run hook example")
+    println("  ./mill examples.bun                   # runs 'macro' by default")
     println()
-    println("Or run any class directly:")
-    println("  ./mill examples.runMain com.tjclp.scalagent.examples.SimpleQuery")
+    println("Or run the compiled JS directly:")
+    println("  bun out/examples/fastLinkJS.dest/main.js")
   }
 
   // Dynamic mainClass based on environment or default
@@ -139,4 +139,16 @@ object examples extends ScalaJSModule {
   //
   // Or use runMain directly:
   //        ./mill examples.runMain com.tjclp.scalagent.examples.SimpleQuery
+
+  // Custom bun runner that properly invokes the compiled JS
+  // Usage: EXAMPLE=hook ./mill examples.bun
+  def bun() = Task.Command {
+    val jsFile = fastLinkJS().dest.path / "main.js"
+    println(s"Running: bun $jsFile")
+    os.proc("bun", jsFile).call(
+      stdin = os.Inherit,
+      stdout = os.Inherit,
+      stderr = os.Inherit
+    )
+  }
 }

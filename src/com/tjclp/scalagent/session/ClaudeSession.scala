@@ -150,11 +150,11 @@ private final class ClaudeSessionLive(
 
   override def send(message: String)(using Open =:= Open): ZStream[Any, AgentError, AgentMessage] =
     ZStream.unwrap {
-      // V2 API: send() returns Promise<void>, receive() returns AsyncGenerator
+      // V2 API: send() returns Promise<void>, stream() returns AsyncGenerator
       ZIO.fromPromiseJS(raw.send(message))
         .as {
-          // After sending, receive the response stream
-          val asyncIter = raw.receive().asInstanceOf[AsyncIterator[js.Dynamic]]
+          // After sending, stream the response
+          val asyncIter = raw.stream().asInstanceOf[AsyncIterator[js.Dynamic]]
           AsyncIteratorOps
             .toZStream(asyncIter)
             .map(MessageConverter.fromRaw)
@@ -215,8 +215,8 @@ private trait RawSession extends js.Object:
   def sessionId: String = js.native
   // send returns Promise<void>
   def send(message: String): js.Promise[Unit] = js.native
-  // receive returns AsyncGenerator<SDKMessage>
-  def receive(): js.Object = js.native
+  // stream returns AsyncGenerator<SDKMessage>
+  def stream(): js.Object = js.native
   // close returns void (synchronous)
   def close(): Unit = js.native
   // interrupt is synchronous
