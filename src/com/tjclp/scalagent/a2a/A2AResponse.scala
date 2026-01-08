@@ -15,10 +15,10 @@ object A2AResponse:
     given JsonEncoder[SendMessageResult] = JsonEncoder[Json].contramap {
       case MessageResult(msg) =>
         val base = msg.toJsonAST.toOption.get.asObject.get.toMap
-        Json.Obj(zio.Chunk.fromIterable((base + ("kind" -> Json.Str("message"))).toSeq): _*)
+        Json.Obj(zio.Chunk.fromIterable((base + ("kind" -> Json.Str("message"))).toSeq)*)
       case TaskResult(task) =>
         val base = task.toJsonAST.toOption.get.asObject.get.toMap
-        Json.Obj(zio.Chunk.fromIterable((base + ("kind" -> Json.Str("task"))).toSeq): _*)
+        Json.Obj(zio.Chunk.fromIterable((base + ("kind" -> Json.Str("task"))).toSeq)*)
     }
 
     given JsonDecoder[SendMessageResult] = JsonDecoder[Json].mapOrFail { json =>

@@ -7,21 +7,21 @@ import mainargs.arg
 
 // Main library module - sources in /src
 object agent extends ScalaJSModule with PublishModule {
-  def scalaVersion = "3.3.4"
-  def scalaJSVersion = "1.17.0"
+  def scalaVersion = "3.7.4"
+  def scalaJSVersion = "1.20.1"
 
   // Scala.js linker configuration
   override def moduleKind = ModuleKind.ESModule
 
   // Dependencies
   def mvnDeps = Seq(
-    mvn"dev.zio::zio::2.1.14",
-    mvn"dev.zio::zio-streams::2.1.14",
-    mvn"dev.zio::zio-json::0.7.3",
+    mvn"dev.zio::zio::2.1.24",
+    mvn"dev.zio::zio-streams::2.1.24",
+    mvn"dev.zio::zio-json::0.8.0",
     // zio-schema for JSON Schema derivation from case classes
-    mvn"dev.zio::zio-schema::1.5.0",
-    mvn"dev.zio::zio-schema-json::1.5.0",
-    mvn"dev.zio::zio-schema-derivation::1.5.0"
+    mvn"dev.zio::zio-schema::1.7.6",
+    mvn"dev.zio::zio-schema-json::1.7.6",
+    mvn"dev.zio::zio-schema-derivation::1.7.6"
   )
 
   // Source at project root /src
@@ -57,7 +57,7 @@ object agent extends ScalaJSModule with PublishModule {
 
   // Test module
   object test extends ScalaJSTests with TestModule.Munit {
-    def munitVersion = "1.0.3"
+    def munitVersion = "1.1.0"
   }
 }
 
@@ -80,8 +80,8 @@ object examples extends ScalaJSModule {
   }
 
   def mvnDeps = Seq(
-    mvn"dev.zio::zio::2.1.14",
-    mvn"dev.zio::zio-streams::2.1.14"
+    mvn"dev.zio::zio::2.1.24",
+    mvn"dev.zio::zio-streams::2.1.24"
   )
 
   // Sources in examples/
