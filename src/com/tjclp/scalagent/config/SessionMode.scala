@@ -1,6 +1,6 @@
 package com.tjclp.scalagent.config
 
-import com.tjclp.scalagent.types.SessionId
+import com.tjclp.scalagent.types.{SessionId, MessageUuid}
 
 /** Session mode for multi-turn conversations.
   *
@@ -48,7 +48,7 @@ enum SessionMode:
     * @param sessionId The session to resume
     * @param messageUuid The message UUID to resume at (from SDKAssistantMessage.uuid)
     */
-  case ResumeAt(sessionId: SessionId, messageUuid: com.tjclp.scalagent.types.MessageUuid)
+  case ResumeAt(sessionId: SessionId, messageUuid: MessageUuid)
 
 object SessionMode:
 
@@ -73,6 +73,6 @@ object SessionMode:
     case _ => None
 
   /** Extract message UUID if resuming at specific point */
-  def messageUuid(mode: SessionMode): Option[com.tjclp.scalagent.types.MessageUuid] = mode match
+  def messageUuid(mode: SessionMode): Option[MessageUuid] = mode match
     case ResumeAt(_, uuid) => Some(uuid)
     case _ => None
