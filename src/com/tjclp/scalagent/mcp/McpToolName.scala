@@ -30,6 +30,8 @@ object McpToolName:
   /** Create a wildcard pattern to allow all tools from a server.
     *
     * Use this in `allowedTools` to auto-approve all tools from an MCP server.
+    * Wildcard matching is performed by the Claude Code TypeScript SDK layer,
+    * which uses glob-style pattern matching on tool names.
     *
     * Example:
     * {{{
@@ -47,11 +49,12 @@ object McpToolName:
   /** Create a wildcard pattern to allow all MCP tools from all servers.
     *
     * Use with caution - this allows any MCP tool to execute without permission prompts.
+    * Wildcard matching is performed by the Claude Code TypeScript SDK layer.
     *
     * Example:
     * {{{
     * AgentOptions.default.withAllowedTools(McpToolName.wildcardAll)
-    * // Allows: all mcp__*__* tools
+    * // Allows: all tools matching mcp__* (any MCP tool)
     * }}}
     */
   def wildcardAll: ToolName =
