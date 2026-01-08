@@ -123,6 +123,18 @@ class AgentOptionsSpec extends FunSuite:
       case SessionMode.Resume(id) => assertEquals(id.value, "session-123")
       case other                  => fail(s"Expected Resume, got $other")
 
+  test("withResumeByName sets resume mode with human-readable name"):
+    val opts = AgentOptions.default.withResumeByName("my-feature-branch")
+    opts.sessionMode match
+      case SessionMode.Resume(id) => assertEquals(id.value, "my-feature-branch")
+      case other                  => fail(s"Expected Resume, got $other")
+
+  test("withForkByName sets fork mode with human-readable name"):
+    val opts = AgentOptions.default.withForkByName("my-feature-branch")
+    opts.sessionMode match
+      case SessionMode.Fork(id) => assertEquals(id.value, "my-feature-branch")
+      case other                => fail(s"Expected Fork, got $other")
+
   // ============================================
   // Builder Methods - Plugins and Agents
   // ============================================
@@ -274,3 +286,129 @@ class AgentOptionsSpec extends FunSuite:
     val opts = AgentOptions.default.withResume(SessionId("sess-123"))
     val raw = opts.toRaw.asInstanceOf[js.Dynamic]
     assertEquals(raw.resume.asInstanceOf[String], "sess-123")
+
+  // ============================================
+  // P1 Features - Session Forking
+  // ============================================
+
+  test("withFork sets fork session mode"):
+    import com.tjclp.scalagent.types.SessionId
+    val opts = AgentOptions.default.withFork(SessionId("sess-456"))
+    opts.sessionMode match
+      case SessionMode.Fork(id) => assertEquals(id.value, "sess-456")
+      case other => fail(s"Expected Fork, got $other")
+
+  test("toRaw handles fork session mode"):
+    import com.tjclp.scalagent.types.SessionId
+    val opts = AgentOptions.default.withFork(SessionId("sess-456"))
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.resume.asInstanceOf[String], "sess-456")
+    assertEquals(raw.forkSession.asInstanceOf[Boolean], true)
+
+  test("withResumeAt sets resume at specific message"):
+    import com.tjclp.scalagent.types.{SessionId, MessageUuid}
+    val opts = AgentOptions.default.withResumeAt(SessionId("sess-789"), MessageUuid("msg-abc"))
+    opts.sessionMode match
+      case SessionMode.ResumeAt(sessId, msgId) =>
+        assertEquals(sessId.value, "sess-789")
+        assertEquals(msgId.value, "msg-abc")
+      case other => fail(s"Expected ResumeAt, got $other")
+
+  test("toRaw handles resume at session mode"):
+    import com.tjclp.scalagent.types.{SessionId, MessageUuid}
+    val opts = AgentOptions.default.withResumeAt(SessionId("sess-789"), MessageUuid("msg-abc"))
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.resume.asInstanceOf[String], "sess-789")
+    assertEquals(raw.resumeSessionAt.asInstanceOf[String], "msg-abc")
+
+  // ============================================
+  // P1 Features - Session Persistence
+  // ============================================
+
+  test("default persistSession is true"):
+    val opts = AgentOptions.default
+    assertEquals(opts.persistSession, true)
+
+  test("withNoPersistence disables session persistence"):
+    val opts = AgentOptions.default.withNoPersistence
+    assertEquals(opts.persistSession, false)
+
+  test("toRaw includes persistSession false when disabled"):
+    val opts = AgentOptions.default.withNoPersistence
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.persistSession.asInstanceOf[Boolean], false)
+
+  test("toRaw omits persistSession when true (default)"):
+    val opts = AgentOptions.default
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assert(js.isUndefined(raw.persistSession))
+
+  // ============================================
+  // P1 Features - Custom Session ID
+  // ============================================
+
+  test("withCustomSessionId sets session-id in extraArgs"):
+    val opts = AgentOptions.default.withCustomSessionId("my-uuid-123")
+    assertEquals(opts.extraArgs.get("session-id"), Some(Some("my-uuid-123")))
+
+  test("toRaw includes extraArgs with custom session ID"):
+    val opts = AgentOptions.default.withCustomSessionId("my-uuid-123")
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    val extra = raw.extraArgs.asInstanceOf[js.Dictionary[js.Any]]
+    assertEquals(extra("session-id").asInstanceOf[String], "my-uuid-123")
+
+  // ============================================
+  // P1 Features - Fallback Model
+  // ============================================
+
+  test("withFallbackModel sets fallback model"):
+    val opts = AgentOptions.default.withFallbackModel(Model.Haiku4_5)
+    assertEquals(opts.fallbackModel, Some(Model.Haiku4_5))
+
+  test("toRaw includes fallbackModel when set"):
+    val opts = AgentOptions.default.withFallbackModel(Model.Haiku4_5)
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.fallbackModel.asInstanceOf[String], "claude-haiku-4-5-20251001")
+
+  // ============================================
+  // P1 Features - File Checkpointing
+  // ============================================
+
+  test("default enableFileCheckpointing is false"):
+    val opts = AgentOptions.default
+    assertEquals(opts.enableFileCheckpointing, false)
+
+  test("withFileCheckpointing enables file checkpointing"):
+    val opts = AgentOptions.default.withFileCheckpointing
+    assertEquals(opts.enableFileCheckpointing, true)
+
+  test("toRaw includes enableFileCheckpointing when true"):
+    val opts = AgentOptions.default.withFileCheckpointing
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.enableFileCheckpointing.asInstanceOf[Boolean], true)
+
+  test("toRaw omits enableFileCheckpointing when false"):
+    val opts = AgentOptions.default
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assert(js.isUndefined(raw.enableFileCheckpointing))
+
+  // ============================================
+  // P1 Features - Extra Args
+  // ============================================
+
+  test("withExtraArg adds argument with value"):
+    val opts = AgentOptions.default.withExtraArg("custom-flag", Some("value"))
+    assertEquals(opts.extraArgs.get("custom-flag"), Some(Some("value")))
+
+  test("withExtraArg adds boolean flag (None value)"):
+    val opts = AgentOptions.default.withExtraArg("some-flag", None)
+    assertEquals(opts.extraArgs.get("some-flag"), Some(None))
+
+  test("toRaw includes extraArgs"):
+    val opts = AgentOptions.default
+      .withExtraArg("key1", Some("val1"))
+      .withExtraArg("flag", None)
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    val extra = raw.extraArgs.asInstanceOf[js.Dictionary[js.Any]]
+    assertEquals(extra("key1").asInstanceOf[String], "val1")
+    assert(extra("flag") == null)

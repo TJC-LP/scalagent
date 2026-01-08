@@ -18,10 +18,34 @@ import zio.json.{JsonDecoder, JsonEncoder}
   * }}}
   */
 
-/** Unique identifier for a Claude session */
+/** Unique identifier for a Claude session.
+  *
+  * Can be either:
+  *   - A UUID (e.g., "550e8400-e29b-41d4-a716-446655440000")
+  *   - A human-readable name assigned via `/rename` command
+  *
+  * When used with `resume`, either format works. When used with `--session-id` CLI flag,
+  * only valid UUIDs are accepted.
+  *
+  * Example:
+  * {{{
+  * // Resume by UUID
+  * val byId = SessionId("550e8400-e29b-41d4-a716-446655440000")
+  *
+  * // Resume by human-readable name (assigned via /rename)
+  * val byName = SessionId("my-feature-branch")
+  * }}}
+  */
 opaque type SessionId = String
 object SessionId:
   def apply(s: String): SessionId = s
+
+  /** Create a SessionId from a human-readable name */
+  def fromName(name: String): SessionId = name
+
+  /** Create a SessionId from a UUID string */
+  def fromUuid(uuid: String): SessionId = uuid
+
   extension (id: SessionId)
     def value: String = id
     def isEmpty: Boolean = value.isEmpty

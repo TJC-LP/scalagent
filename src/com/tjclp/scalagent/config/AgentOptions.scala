@@ -39,6 +39,12 @@ final case class AgentOptions(
 
     // Session management
     sessionMode: SessionMode = SessionMode.New,
+    /** When false, disables session persistence to disk. Sessions will not be saved
+      * to ~/.claude/projects/ and cannot be resumed later. Useful for ephemeral
+      * or automated workflows where session history is not needed.
+      * Default: true (sessions are persisted)
+      */
+    persistSession: Boolean = true,
 
     // Output
     outputFormat: Option[OutputFormat] = None,
@@ -51,8 +57,17 @@ final case class AgentOptions(
     // Beta features (e.g., "context-1m-2025-08-07")
     betaFeatures: List[String] = Nil,
 
+    // Fallback model to use if primary fails
+    fallbackModel: Option[Model] = None,
+
+    // File checkpointing for rewind capability
+    enableFileCheckpointing: Boolean = false,
+
     // Sandbox settings
     sandboxSettings: Option[SandboxSettings] = None,
+
+    // Extra CLI arguments (for options not directly exposed)
+    extraArgs: Map[String, Option[String]] = Map.empty,
 
     // Hooks
     hooks: Map[HookEvent, List[HookCallback]] = Map.empty,
@@ -92,9 +107,24 @@ final case class AgentOptions(
 
     // Session mode handling
     sessionMode match
-      case SessionMode.New      => () // Default, no flag needed
+      case SessionMode.New => () // Default, no flag needed
       case SessionMode.Continue => obj.continue = true
       case SessionMode.Resume(id) => obj.resume = id.value
+      case SessionMode.Fork(id) =>
+        obj.resume = id.value
+        obj.forkSession = true
+      case SessionMode.ResumeAt(id, msgUuid) =>
+        obj.resume = id.value
+        obj.resumeSessionAt = msgUuid.value
+
+    // Session persistence (default is true, only set if false)
+    if !persistSession then obj.persistSession = false
+
+    // Fallback model
+    fallbackModel.foreach(m => obj.fallbackModel = m.id)
+
+    // File checkpointing
+    if enableFileCheckpointing then obj.enableFileCheckpointing = true
 
     outputFormat.foreach(of => obj.outputFormat = of.toRaw)
     if includePartialMessages then obj.includePartialMessages = true
@@ -109,6 +139,12 @@ final case class AgentOptions(
       obj.betaFeatures = betaFeatures.toJSArray
 
     sandboxSettings.foreach(ss => obj.sandbox = ss.toRaw)
+
+    // Extra CLI arguments
+    if extraArgs.nonEmpty then
+      obj.extraArgs = js.Dictionary(extraArgs.toSeq.map { case (k, v) =>
+        k -> v.map(_.asInstanceOf[js.Any]).getOrElse(null)
+      }*)
 
     if settingSources.nonEmpty then
       obj.settingSources = settingSources.map(_.raw).toJSArray
@@ -207,9 +243,77 @@ object AgentOptions:
     def withContinueSession: AgentOptions =
       opts.copy(sessionMode = SessionMode.Continue)
 
-    /** Resume a specific session by ID */
+    /** Resume a specific session by ID or name.
+      *
+      * @param sessionId Can be a UUID or a human-readable name assigned via `/rename`
+      */
     def withResume(sessionId: SessionId): AgentOptions =
       opts.copy(sessionMode = SessionMode.Resume(sessionId))
+
+    /** Resume a session by its human-readable name.
+      *
+      * Session names are assigned using the `/rename` command in Claude Code.
+      * This is equivalent to `withResume(SessionId.fromName(name))`.
+      *
+      * Example:
+      * {{{
+      * // Resume a session named "my-feature-branch"
+      * AgentOptions.default.withResumeByName("my-feature-branch")
+      * }}}
+      */
+    def withResumeByName(name: String): AgentOptions =
+      opts.copy(sessionMode = SessionMode.Resume(SessionId.fromName(name)))
+
+    /** Fork from an existing session, creating a new branch.
+      * The original session is preserved and a new session ID is created.
+      *
+      * @param sessionId Can be a UUID or a human-readable name assigned via `/rename`
+      */
+    def withFork(sessionId: SessionId): AgentOptions =
+      opts.copy(sessionMode = SessionMode.Fork(sessionId))
+
+    /** Fork a session by its human-readable name.
+      *
+      * Creates a new branch from the named session without modifying the original.
+      * Session names are assigned using the `/rename` command in Claude Code.
+      */
+    def withForkByName(name: String): AgentOptions =
+      opts.copy(sessionMode = SessionMode.Fork(SessionId.fromName(name)))
+
+    /** Resume a session from a specific message UUID.
+      * Only messages up to and including the specified message are restored.
+      */
+    def withResumeAt(sessionId: SessionId, messageUuid: com.tjclp.scalagent.types.MessageUuid): AgentOptions =
+      opts.copy(sessionMode = SessionMode.ResumeAt(sessionId, messageUuid))
+
+    /** Disable session persistence (sessions won't be saved to disk).
+      * Useful for ephemeral or automated workflows.
+      */
+    def withNoPersistence: AgentOptions =
+      opts.copy(persistSession = false)
+
+    /** Set a custom session ID (must be a valid UUID).
+      * Passed via extraArgs as --session-id.
+      */
+    def withCustomSessionId(uuid: String): AgentOptions =
+      opts.copy(extraArgs = opts.extraArgs + ("session-id" -> Some(uuid)))
+
+    /** Set a fallback model to use if the primary model fails. */
+    def withFallbackModel(m: Model): AgentOptions =
+      opts.copy(fallbackModel = Some(m))
+
+    /** Enable file checkpointing for rewind capability.
+      * When enabled, files can be rewound to their state at any user message.
+      */
+    def withFileCheckpointing: AgentOptions =
+      opts.copy(enableFileCheckpointing = true)
+
+    /** Add an extra CLI argument.
+      * Use None for boolean flags (e.g., `--some-flag`).
+      * Use Some(value) for arguments with values (e.g., `--key value`).
+      */
+    def withExtraArg(key: String, value: Option[String] = None): AgentOptions =
+      opts.copy(extraArgs = opts.extraArgs + (key -> value))
 
     def withSystemPrompt(prompt: SystemPromptConfig): AgentOptions =
       opts.copy(systemPrompt = Some(prompt))
