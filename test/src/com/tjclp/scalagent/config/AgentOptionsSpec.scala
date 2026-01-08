@@ -123,6 +123,18 @@ class AgentOptionsSpec extends FunSuite:
       case SessionMode.Resume(id) => assertEquals(id.value, "session-123")
       case other                  => fail(s"Expected Resume, got $other")
 
+  test("withResumeByName sets resume mode with human-readable name"):
+    val opts = AgentOptions.default.withResumeByName("my-feature-branch")
+    opts.sessionMode match
+      case SessionMode.Resume(id) => assertEquals(id.value, "my-feature-branch")
+      case other                  => fail(s"Expected Resume, got $other")
+
+  test("withForkByName sets fork mode with human-readable name"):
+    val opts = AgentOptions.default.withForkByName("my-feature-branch")
+    opts.sessionMode match
+      case SessionMode.Fork(id) => assertEquals(id.value, "my-feature-branch")
+      case other                => fail(s"Expected Fork, got $other")
+
   // ============================================
   // Builder Methods - Plugins and Agents
   // ============================================

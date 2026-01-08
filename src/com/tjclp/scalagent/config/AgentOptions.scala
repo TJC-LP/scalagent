@@ -243,15 +243,42 @@ object AgentOptions:
     def withContinueSession: AgentOptions =
       opts.copy(sessionMode = SessionMode.Continue)
 
-    /** Resume a specific session by ID */
+    /** Resume a specific session by ID or name.
+      *
+      * @param sessionId Can be a UUID or a human-readable name assigned via `/rename`
+      */
     def withResume(sessionId: SessionId): AgentOptions =
       opts.copy(sessionMode = SessionMode.Resume(sessionId))
 
+    /** Resume a session by its human-readable name.
+      *
+      * Session names are assigned using the `/rename` command in Claude Code.
+      * This is equivalent to `withResume(SessionId.fromName(name))`.
+      *
+      * Example:
+      * {{{
+      * // Resume a session named "my-feature-branch"
+      * AgentOptions.default.withResumeByName("my-feature-branch")
+      * }}}
+      */
+    def withResumeByName(name: String): AgentOptions =
+      opts.copy(sessionMode = SessionMode.Resume(SessionId.fromName(name)))
+
     /** Fork from an existing session, creating a new branch.
       * The original session is preserved and a new session ID is created.
+      *
+      * @param sessionId Can be a UUID or a human-readable name assigned via `/rename`
       */
     def withFork(sessionId: SessionId): AgentOptions =
       opts.copy(sessionMode = SessionMode.Fork(sessionId))
+
+    /** Fork a session by its human-readable name.
+      *
+      * Creates a new branch from the named session without modifying the original.
+      * Session names are assigned using the `/rename` command in Claude Code.
+      */
+    def withForkByName(name: String): AgentOptions =
+      opts.copy(sessionMode = SessionMode.Fork(SessionId.fromName(name)))
 
     /** Resume a session from a specific message UUID.
       * Only messages up to and including the specified message are restored.
