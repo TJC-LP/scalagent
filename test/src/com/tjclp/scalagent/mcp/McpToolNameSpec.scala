@@ -111,6 +111,28 @@ class McpToolNameSpec extends FunSuite:
       case other                => fail(s"Expected Custom, got $other")
 
   // ============================================
+  // Wildcard Patterns
+  // ============================================
+
+  test("McpToolName.wildcard creates server wildcard pattern"):
+    val pattern = McpToolName.wildcard("weather-api")
+    pattern match
+      case ToolName.Custom(raw) => assertEquals(raw, "mcp__weather-api__*")
+      case other                => fail(s"Expected Custom, got $other")
+
+  test("McpToolName.wildcardAll creates global MCP wildcard"):
+    val pattern = McpToolName.wildcardAll
+    pattern match
+      case ToolName.Custom(raw) => assertEquals(raw, "mcp__*")
+      case other                => fail(s"Expected Custom, got $other")
+
+  test("McpToolNames.wildcard creates server wildcard pattern"):
+    val pattern = TestTools.wildcard
+    pattern match
+      case ToolName.Custom(raw) => assertEquals(raw, "mcp__test-server__*")
+      case other                => fail(s"Expected Custom, got $other")
+
+  // ============================================
   // JSON Serialization
   // ============================================
 
@@ -156,3 +178,40 @@ class McpToolNameSpec extends FunSuite:
   test("Context7 tools match expected format"):
     assertEquals(Context7Tools.resolveLibraryId.value, "mcp__context7__resolve-library-id")
     assertEquals(Context7Tools.getLibraryDocs.value, "mcp__context7__get-library-docs")
+
+  // ============================================
+  // Integration with AgentOptions
+  // ============================================
+
+  test("wildcard patterns work with AgentOptions.withAllowedTools"):
+    import com.tjclp.scalagent.config.AgentOptions
+    val opts = AgentOptions.default.withAllowedTools(McpToolName.wildcard("weather-api"))
+    opts.allowedTools match
+      case Some(tools) =>
+        assertEquals(tools.size, 1)
+        tools.head match
+          case ToolName.Custom(raw) => assertEquals(raw, "mcp__weather-api__*")
+          case other                => fail(s"Expected Custom, got $other")
+      case None => fail("Expected allowedTools to be set")
+
+  test("McpToolNames.wildcard works with AgentOptions"):
+    import com.tjclp.scalagent.config.AgentOptions
+    val opts = AgentOptions.default.withAllowedTools(WeatherTools.wildcard)
+    opts.allowedTools match
+      case Some(tools) =>
+        assertEquals(tools.size, 1)
+        tools.head match
+          case ToolName.Custom(raw) => assertEquals(raw, "mcp__weather-api__*")
+          case other                => fail(s"Expected Custom, got $other")
+      case None => fail("Expected allowedTools to be set")
+
+  test("wildcardAll works with AgentOptions"):
+    import com.tjclp.scalagent.config.AgentOptions
+    val opts = AgentOptions.default.withAllowedTools(McpToolName.wildcardAll)
+    opts.allowedTools match
+      case Some(tools) =>
+        assertEquals(tools.size, 1)
+        tools.head match
+          case ToolName.Custom(raw) => assertEquals(raw, "mcp__*")
+          case other                => fail(s"Expected Custom, got $other")
+      case None => fail("Expected allowedTools to be set")

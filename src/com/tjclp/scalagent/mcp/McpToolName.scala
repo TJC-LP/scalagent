@@ -27,6 +27,39 @@ object McpToolName:
   def apply(serverName: String, toolName: String): McpToolName =
     s"mcp__${serverName}__$toolName"
 
+  /** Create a wildcard pattern to allow all tools from a server.
+    *
+    * Use this in `allowedTools` to auto-approve all tools from an MCP server.
+    * Wildcard matching is performed by the Claude Code TypeScript SDK layer,
+    * which uses glob-style pattern matching on tool names.
+    *
+    * Example:
+    * {{{
+    * AgentOptions.default
+    *   .withAllowedTools(McpToolName.wildcard("weather-api"))
+    *   // Allows: mcp__weather-api__get_weather, mcp__weather-api__get_forecast, etc.
+    * }}}
+    *
+    * @param serverName The MCP server name to allow all tools from
+    * @return A wildcard pattern like `mcp__weather-api__*`
+    */
+  def wildcard(serverName: String): ToolName =
+    ToolName.Custom(s"mcp__${serverName}__*")
+
+  /** Create a wildcard pattern to allow all MCP tools from all servers.
+    *
+    * Use with caution - this allows any MCP tool to execute without permission prompts.
+    * Wildcard matching is performed by the Claude Code TypeScript SDK layer.
+    *
+    * Example:
+    * {{{
+    * AgentOptions.default.withAllowedTools(McpToolName.wildcardAll)
+    * // Allows: all tools matching mcp__* (any MCP tool)
+    * }}}
+    */
+  def wildcardAll: ToolName =
+    ToolName.Custom("mcp__*")
+
   /** Parse an existing MCP tool name string */
   def fromString(s: String): Option[McpToolName] =
     if s.startsWith("mcp__") && s.count(_ == '_') >= 4 then Some(s)
@@ -96,3 +129,16 @@ abstract class McpToolNames(val serverName: String):
 
   /** Get all tools as ToolName for use in configurations */
   def allToolNames: List[ToolName] = allTools.map(_.toToolName)
+
+  /** Get a wildcard pattern to allow all tools from this server.
+    *
+    * Example:
+    * {{{
+    * object WeatherTools extends McpToolNames("weather-api"):
+    *   val getWeather = tool("get_weather")
+    *
+    * // Allow all weather tools without permission prompts
+    * AgentOptions.default.withAllowedTools(WeatherTools.wildcard)
+    * }}}
+    */
+  def wildcard: ToolName = McpToolName.wildcard(serverName)
