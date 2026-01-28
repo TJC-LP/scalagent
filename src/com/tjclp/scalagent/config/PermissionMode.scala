@@ -23,6 +23,9 @@ enum PermissionMode:
   /** Don't ask for permissions, deny if not pre-approved */
   case DontAsk
 
+  /** Delegate mode - used for subagent delegation */
+  case Delegate
+
   /** Custom/unknown permission mode for forward compatibility */
   case Custom(value: String)
 
@@ -33,6 +36,7 @@ enum PermissionMode:
     case BypassPermissions => "bypassPermissions"
     case Plan              => "plan"
     case DontAsk           => "dontAsk"
+    case Delegate          => "delegate"
     case Custom(v)         => v
 
 object PermissionMode:
@@ -46,4 +50,5 @@ object PermissionMode:
     case "bypassPermissions" => BypassPermissions
     case "plan"              => Plan
     case "dontAsk"           => DontAsk
+    case "delegate"          => Delegate
     case other               => Custom(other)

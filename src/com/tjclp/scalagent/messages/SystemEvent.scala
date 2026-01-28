@@ -34,11 +34,31 @@ enum SystemEvent:
 
   /** Hook response event */
   case HookResponse(
+      hookId: String,
       hookName: String,
       hookEvent: String,
       stdout: String,
       stderr: String,
-      exitCode: Option[Int]
+      output: String,
+      exitCode: Option[Int],
+      outcome: HookOutcome
+  )
+
+  /** Hook execution started */
+  case HookStarted(
+      hookId: String,
+      hookName: String,
+      hookEvent: String
+  )
+
+  /** Hook execution progress */
+  case HookProgress(
+      hookId: String,
+      hookName: String,
+      hookEvent: String,
+      stdout: String,
+      stderr: String,
+      output: String
   )
 
 object SystemEvent:
@@ -112,12 +132,37 @@ object ApiKeySource:
 final case class McpServerStatus(
     name: String,
     status: McpConnectionStatus,
-    serverInfo: Option[McpServerInfo]
+    serverInfo: Option[McpServerInfo],
+    error: Option[String] = None,
+    scope: Option[String] = None,
+    tools: Option[List[McpToolInfo]] = None
 )
 
 object McpServerStatus:
   given JsonDecoder[McpServerStatus] = DeriveJsonDecoder.gen[McpServerStatus]
   given JsonEncoder[McpServerStatus] = DeriveJsonEncoder.gen[McpServerStatus]
+
+/** MCP tool information from server status */
+final case class McpToolInfo(
+    name: String,
+    description: Option[String] = None,
+    annotations: Option[McpToolAnnotations] = None
+)
+
+object McpToolInfo:
+  given JsonDecoder[McpToolInfo] = DeriveJsonDecoder.gen[McpToolInfo]
+  given JsonEncoder[McpToolInfo] = DeriveJsonEncoder.gen[McpToolInfo]
+
+/** MCP tool annotations */
+final case class McpToolAnnotations(
+    readOnly: Option[Boolean] = None,
+    destructive: Option[Boolean] = None,
+    openWorld: Option[Boolean] = None
+)
+
+object McpToolAnnotations:
+  given JsonDecoder[McpToolAnnotations] = DeriveJsonDecoder.gen[McpToolAnnotations]
+  given JsonEncoder[McpToolAnnotations] = DeriveJsonEncoder.gen[McpToolAnnotations]
 
 /** MCP connection status */
 enum McpConnectionStatus:
@@ -125,13 +170,15 @@ enum McpConnectionStatus:
   case Failed
   case NeedsAuth
   case Pending
+  case Disabled
   case Custom(value: String)
 
   def toRaw: String = this match
     case Connected  => "connected"
     case Failed     => "failed"
-    case NeedsAuth  => "needs_auth"
+    case NeedsAuth  => "needs-auth"
     case Pending    => "pending"
+    case Disabled   => "disabled"
     case Custom(v)  => v
 
 object McpConnectionStatus:
@@ -139,11 +186,13 @@ object McpConnectionStatus:
   given JsonDecoder[McpConnectionStatus] = JsonDecoder[String].map(fromString)
 
   def fromString(s: String): McpConnectionStatus = s match
-    case "connected"  => Connected
-    case "failed"     => Failed
-    case "needs_auth" => NeedsAuth
-    case "pending"    => Pending
-    case other        => Custom(other)
+    case "connected"   => Connected
+    case "failed"      => Failed
+    case "needs-auth"  => NeedsAuth
+    case "needs_auth"  => NeedsAuth  // Legacy format support
+    case "pending"     => Pending
+    case "disabled"    => Disabled
+    case other         => Custom(other)
 
 /** MCP server information */
 final case class McpServerInfo(
@@ -164,3 +213,26 @@ final case class PluginInfo(
 object PluginInfo:
   given JsonDecoder[PluginInfo] = DeriveJsonDecoder.gen[PluginInfo]
   given JsonEncoder[PluginInfo] = DeriveJsonEncoder.gen[PluginInfo]
+
+/** Hook outcome values */
+enum HookOutcome:
+  case Success
+  case Error
+  case Cancelled
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Success    => "success"
+    case Error      => "error"
+    case Cancelled  => "cancelled"
+    case Custom(v)  => v
+
+object HookOutcome:
+  given JsonEncoder[HookOutcome] = JsonEncoder[String].contramap(_.toRaw)
+  given JsonDecoder[HookOutcome] = JsonDecoder[String].map(fromString)
+
+  def fromString(s: String): HookOutcome = s match
+    case "success"   => Success
+    case "error"     => Error
+    case "cancelled" => Cancelled
+    case other       => Custom(other)

@@ -412,3 +412,29 @@ class AgentOptionsSpec extends FunSuite:
     val extra = raw.extraArgs.asInstanceOf[js.Dictionary[js.Any]]
     assertEquals(extra("key1").asInstanceOf[String], "val1")
     assert(extra("flag") == null)
+
+  // ============================================
+  // v0.2.2 Features - Main Agent
+  // ============================================
+
+  test("withMainAgent sets main thread agent"):
+    val opts = AgentOptions.default
+      .withAgent("reviewer", AgentDefinition("Reviews code", "You are a reviewer"))
+      .withMainAgent("reviewer")
+    assertEquals(opts.agent, Some("reviewer"))
+
+  test("toRaw includes agent when set"):
+    val opts = AgentOptions.default.withMainAgent("my-agent")
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.agent.asInstanceOf[String], "my-agent")
+
+  test("toRaw omits agent when not set"):
+    val opts = AgentOptions.default
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assert(js.isUndefined(raw.agent))
+
+  test("PermissionMode.Delegate has correct raw value"):
+    assertEquals(PermissionMode.Delegate.toRaw, "delegate")
+
+  test("PermissionMode.fromString parses delegate"):
+    assertEquals(PermissionMode.fromString("delegate"), PermissionMode.Delegate)

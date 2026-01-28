@@ -298,3 +298,80 @@ object TestFixtures:
   /** An error conversation: user -> assistant -> error result */
   val errorConversation: List[AgentMessage] =
     List(userMessage, assistantMessage, resultError)
+
+  // ============================================
+  // Task Notification Messages
+  // ============================================
+
+  val taskNotification: AgentMessage.TaskNotification =
+    AgentMessage.TaskNotification(
+      taskId = "task-123",
+      status = TaskStatus.Completed,
+      outputFile = "/tmp/task-output.txt",
+      summary = "Task completed successfully",
+      uuid = testMessageUuid,
+      sessionId = testSessionId
+    )
+
+  val taskNotificationFailed: AgentMessage.TaskNotification =
+    AgentMessage.TaskNotification(
+      taskId = "task-456",
+      status = TaskStatus.Failed,
+      outputFile = "/tmp/task-output.txt",
+      summary = "Task failed due to permission error",
+      uuid = testMessageUuid,
+      sessionId = testSessionId
+    )
+
+  val toolUseSummary: AgentMessage.ToolUseSummary =
+    AgentMessage.ToolUseSummary(
+      summary = "Read 3 files successfully",
+      precedingToolUseIds = List(testToolUseId, ToolUseId("toolu_02DEF456")),
+      uuid = testMessageUuid,
+      sessionId = testSessionId
+    )
+
+  // ============================================
+  // Hook Events
+  // ============================================
+
+  val hookStarted: SystemEvent.HookStarted =
+    SystemEvent.HookStarted(
+      hookId = "hook-123",
+      hookName = "pre-commit",
+      hookEvent = "PreToolUse"
+    )
+
+  val hookProgress: SystemEvent.HookProgress =
+    SystemEvent.HookProgress(
+      hookId = "hook-123",
+      hookName = "pre-commit",
+      hookEvent = "PreToolUse",
+      stdout = "Running validation...",
+      stderr = "",
+      output = "Running validation..."
+    )
+
+  val hookResponse: SystemEvent.HookResponse =
+    SystemEvent.HookResponse(
+      hookId = "hook-123",
+      hookName = "pre-commit",
+      hookEvent = "PreToolUse",
+      stdout = "Validation passed",
+      stderr = "",
+      output = "Validation passed",
+      exitCode = Some(0),
+      outcome = HookOutcome.Success
+    )
+
+  val hookResponseError: SystemEvent.HookResponse =
+    SystemEvent.HookResponse(
+      hookId = "hook-456",
+      hookName = "lint",
+      hookEvent = "PostToolUse",
+      stdout = "",
+      stderr = "Lint failed",
+      output = "Lint failed",
+      exitCode = Some(1),
+      outcome = HookOutcome.Error
+    )

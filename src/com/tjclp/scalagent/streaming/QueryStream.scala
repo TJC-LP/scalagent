@@ -41,6 +41,21 @@ trait RawQuery extends AsyncGenerator[js.Any, Unit, Unit]:
   /** Stream additional input for multi-turn conversations */
   def streamInput(input: js.Any): js.Promise[Unit] = js.native
 
+  /** Forcefully close the query and terminate the process */
+  def close(): Unit = js.native
+
+  /** Reconnect an MCP server by name */
+  def reconnectMcpServer(serverName: String): js.Promise[Unit] = js.native
+
+  /** Enable or disable an MCP server */
+  def toggleMcpServer(serverName: String, enabled: Boolean): js.Promise[Unit] = js.native
+
+  /** Rewind tracked files to a previous state */
+  def rewindFiles(userMessageId: String, options: js.UndefOr[js.Dynamic]): js.Promise[js.Dynamic] = js.native
+
+  /** Dynamically set MCP servers for this session */
+  def setMcpServers(servers: js.Dictionary[js.Any]): js.Promise[js.Dynamic] = js.native
+
 /** Wrapper for SDK Query that provides ZIO/ZStream interface.
   *
   * This class wraps the raw JavaScript Query object and provides:
@@ -149,6 +164,67 @@ final class QueryStream private (rawQuery: RawQuery):
     )
     ZIO.fromPromiseJS(rawQuery.streamInput(userMsg))
 
+  /** Forcefully close the query and terminate the underlying process.
+    *
+    * This ends the query, cleaning up all resources including pending requests, MCP transports, and the CLI subprocess.
+    * After calling close(), no further messages will be received.
+    */
+  def close(): UIO[Unit] =
+    ZIO.succeed(rawQuery.close())
+
+  /** Reconnect an MCP server by name.
+    *
+    * @param serverName
+    *   The name of the MCP server to reconnect
+    */
+  def reconnectMcpServer(serverName: String): Task[Unit] =
+    ZIO.fromPromiseJS(rawQuery.reconnectMcpServer(serverName))
+
+  /** Enable or disable an MCP server by name.
+    *
+    * @param serverName
+    *   The name of the MCP server to toggle
+    * @param enabled
+    *   Whether the server should be enabled
+    */
+  def toggleMcpServer(serverName: String, enabled: Boolean): Task[Unit] =
+    ZIO.fromPromiseJS(rawQuery.toggleMcpServer(serverName, enabled))
+
+  /** Rewind tracked files to their state at a specific user message.
+    *
+    * Requires file checkpointing to be enabled via the `enableFileCheckpointing` option.
+    *
+    * @param userMessageId
+    *   UUID of the user message to rewind to
+    * @param dryRun
+    *   If true, preview changes without modifying files
+    * @return
+    *   Result containing rewind status and file change statistics
+    */
+  def rewindFiles(userMessageId: String, dryRun: Boolean = false): Task[RewindFilesResult] =
+    val options = if dryRun then js.Dynamic.literal(dryRun = true) else js.undefined
+    ZIO
+      .fromPromiseJS(rawQuery.rewindFiles(userMessageId, options))
+      .map(RewindFilesResult.fromRaw)
+
+  /** Dynamically set the MCP servers for this session.
+    *
+    * This replaces the current set of dynamically-added MCP servers. Servers that are removed will be disconnected, and
+    * new servers will be connected.
+    *
+    * Note: This only affects servers added dynamically via this method or the SDK. Servers configured via settings
+    * files are not affected.
+    *
+    * @param servers
+    *   Map of server name to configuration. Pass an empty map to remove all dynamic servers.
+    * @return
+    *   Information about which servers were added, removed, and any connection errors
+    */
+  def setMcpServers(servers: Map[String, js.Any]): Task[McpSetServersResult] =
+    ZIO
+      .fromPromiseJS(rawQuery.setMcpServers(servers.toJSDictionary))
+      .map(McpSetServersResult.fromRaw)
+
 object QueryStream:
 
   /** Create a QueryStream from a raw SDK Query object.
@@ -196,12 +272,16 @@ final case class McpServerStatusInfo(
     name: String,
     status: String,
     serverName: Option[String],
-    serverVersion: Option[String]
+    serverVersion: Option[String],
+    error: Option[String] = None,
+    scope: Option[String] = None,
+    tools: Option[List[McpToolStatusInfo]] = None
 )
 
 object McpServerStatusInfo:
   def fromRaw(obj: js.Dynamic): McpServerStatusInfo =
     val serverInfo = obj.serverInfo.asInstanceOf[js.UndefOr[js.Dynamic]]
+    val toolsArray = obj.tools.asInstanceOf[js.UndefOr[js.Array[js.Dynamic]]]
     McpServerStatusInfo(
       name = obj.name.asInstanceOf[String],
       status = obj.status.asInstanceOf[String],
@@ -210,7 +290,30 @@ object McpServerStatusInfo:
       ),
       serverVersion = serverInfo.toOption.flatMap(si =>
         si.version.asInstanceOf[js.UndefOr[String]].toOption
-      )
+      ),
+      error = obj.error.asInstanceOf[js.UndefOr[String]].toOption,
+      scope = obj.scope.asInstanceOf[js.UndefOr[String]].toOption,
+      tools = toolsArray.toOption.map(_.toList.map(McpToolStatusInfo.fromRaw))
+    )
+
+/** MCP tool status information */
+final case class McpToolStatusInfo(
+    name: String,
+    description: Option[String],
+    readOnly: Option[Boolean] = None,
+    destructive: Option[Boolean] = None,
+    openWorld: Option[Boolean] = None
+)
+
+object McpToolStatusInfo:
+  def fromRaw(obj: js.Dynamic): McpToolStatusInfo =
+    val annotations = obj.annotations.asInstanceOf[js.UndefOr[js.Dynamic]]
+    McpToolStatusInfo(
+      name = obj.name.asInstanceOf[String],
+      description = obj.description.asInstanceOf[js.UndefOr[String]].toOption,
+      readOnly = annotations.toOption.flatMap(a => a.readOnly.asInstanceOf[js.UndefOr[Boolean]].toOption),
+      destructive = annotations.toOption.flatMap(a => a.destructive.asInstanceOf[js.UndefOr[Boolean]].toOption),
+      openWorld = annotations.toOption.flatMap(a => a.openWorld.asInstanceOf[js.UndefOr[Boolean]].toOption)
     )
 
 /** Account information from the SDK */
@@ -230,4 +333,39 @@ object AccountInfo:
       subscriptionType = obj.subscriptionType.asInstanceOf[js.UndefOr[String]].toOption,
       tokenSource = obj.tokenSource.asInstanceOf[js.UndefOr[String]].toOption,
       apiKeySource = obj.apiKeySource.asInstanceOf[js.UndefOr[String]].toOption
+    )
+
+/** Result of a rewindFiles operation */
+final case class RewindFilesResult(
+    canRewind: Boolean,
+    error: Option[String],
+    filesChanged: Option[List[String]],
+    insertions: Option[Int],
+    deletions: Option[Int]
+)
+
+object RewindFilesResult:
+  def fromRaw(obj: js.Dynamic): RewindFilesResult =
+    RewindFilesResult(
+      canRewind = obj.canRewind.asInstanceOf[Boolean],
+      error = obj.error.asInstanceOf[js.UndefOr[String]].toOption,
+      filesChanged = obj.filesChanged.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList),
+      insertions = obj.insertions.asInstanceOf[js.UndefOr[Int]].toOption,
+      deletions = obj.deletions.asInstanceOf[js.UndefOr[Int]].toOption
+    )
+
+/** Result of a setMcpServers operation */
+final case class McpSetServersResult(
+    added: List[String],
+    removed: List[String],
+    errors: Map[String, String]
+)
+
+object McpSetServersResult:
+  def fromRaw(obj: js.Dynamic): McpSetServersResult =
+    val errorsDict = obj.errors.asInstanceOf[js.Dictionary[String]]
+    McpSetServersResult(
+      added = obj.added.asInstanceOf[js.Array[String]].toList,
+      removed = obj.removed.asInstanceOf[js.Array[String]].toList,
+      errors = errorsDict.toMap
     )

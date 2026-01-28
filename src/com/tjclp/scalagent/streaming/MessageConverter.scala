@@ -28,13 +28,15 @@ object MessageConverter:
     val msgType = obj.`type`.asInstanceOf[String]
 
     msgType match
-      case "assistant"     => parseAssistantMessage(obj)
-      case "user"          => parseUserMessage(obj)
-      case "result"        => parseResultMessage(obj)
-      case "system"        => parseSystemMessage(obj)
-      case "stream_event"  => parseStreamEvent(obj)
-      case "tool_progress" => parseToolProgress(obj)
-      case "auth_status"   => parseAuthStatus(obj)
+      case "assistant"        => parseAssistantMessage(obj)
+      case "user"             => parseUserMessage(obj)
+      case "result"           => parseResultMessage(obj)
+      case "system"           => parseSystemMessage(obj)
+      case "stream_event"     => parseStreamEvent(obj)
+      case "tool_progress"    => parseToolProgress(obj)
+      case "auth_status"      => parseAuthStatus(obj)
+      case "task_notification" => parseTaskNotification(obj)
+      case "tool_use_summary" => parseToolUseSummary(obj)
       case other => throw new IllegalArgumentException(s"Unknown message type: $other")
 
   private def parseAssistantMessage(obj: js.Dynamic): AgentMessage.Assistant =
@@ -110,6 +112,8 @@ object MessageConverter:
       case "compact_boundary" => parseCompactBoundaryEvent(obj)
       case "status"           => parseStatusEvent(obj)
       case "hook_response"    => parseHookResponseEvent(obj)
+      case "hook_started"     => parseHookStartedEvent(obj)
+      case "hook_progress"    => parseHookProgressEvent(obj)
       case other => throw new IllegalArgumentException(s"Unknown system event subtype: $other")
 
     AgentMessage.System(
@@ -184,6 +188,28 @@ object MessageConverter:
       isAuthenticating = obj.is_authenticating.asInstanceOf[Boolean],
       output = obj.output.asInstanceOf[js.Array[String]].toList,
       error = obj.error.asInstanceOf[js.UndefOr[String]].toOption,
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+    )
+
+  private def parseTaskNotification(obj: js.Dynamic): AgentMessage.TaskNotification =
+    AgentMessage.TaskNotification(
+      taskId = obj.task_id.asInstanceOf[String],
+      status = TaskStatus.fromString(obj.status.asInstanceOf[String]),
+      outputFile = obj.output_file.asInstanceOf[String],
+      summary = obj.summary.asInstanceOf[String],
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+    )
+
+  private def parseToolUseSummary(obj: js.Dynamic): AgentMessage.ToolUseSummary =
+    AgentMessage.ToolUseSummary(
+      summary = obj.summary.asInstanceOf[String],
+      precedingToolUseIds = obj.preceding_tool_use_ids
+        .asInstanceOf[js.UndefOr[js.Array[String]]]
+        .toOption
+        .map(_.toList.map(ToolUseId.apply))
+        .getOrElse(List.empty),
       uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
       sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
@@ -318,11 +344,31 @@ object MessageConverter:
 
   private def parseHookResponseEvent(obj: js.Dynamic): SystemEvent.HookResponse =
     SystemEvent.HookResponse(
+      hookId = obj.hook_id.asInstanceOf[String],
       hookName = obj.hook_name.asInstanceOf[String],
       hookEvent = obj.hook_event.asInstanceOf[String],
-      stdout = obj.stdout.asInstanceOf[String],
-      stderr = obj.stderr.asInstanceOf[String],
-      exitCode = obj.exit_code.asInstanceOf[js.UndefOr[Int]].toOption
+      stdout = obj.stdout.asInstanceOf[js.UndefOr[String]].getOrElse(""),
+      stderr = obj.stderr.asInstanceOf[js.UndefOr[String]].getOrElse(""),
+      output = obj.output.asInstanceOf[js.UndefOr[String]].getOrElse(""),
+      exitCode = obj.exit_code.asInstanceOf[js.UndefOr[Int]].toOption,
+      outcome = HookOutcome.fromString(obj.outcome.asInstanceOf[String])
+    )
+
+  private def parseHookStartedEvent(obj: js.Dynamic): SystemEvent.HookStarted =
+    SystemEvent.HookStarted(
+      hookId = obj.hook_id.asInstanceOf[String],
+      hookName = obj.hook_name.asInstanceOf[String],
+      hookEvent = obj.hook_event.asInstanceOf[String]
+    )
+
+  private def parseHookProgressEvent(obj: js.Dynamic): SystemEvent.HookProgress =
+    SystemEvent.HookProgress(
+      hookId = obj.hook_id.asInstanceOf[String],
+      hookName = obj.hook_name.asInstanceOf[String],
+      hookEvent = obj.hook_event.asInstanceOf[String],
+      stdout = obj.stdout.asInstanceOf[js.UndefOr[String]].getOrElse(""),
+      stderr = obj.stderr.asInstanceOf[js.UndefOr[String]].getOrElse(""),
+      output = obj.output.asInstanceOf[js.UndefOr[String]].getOrElse("")
     )
 
   private def parseMcpServers(arr: js.Dynamic): List[McpServerStatus] =
@@ -337,6 +383,23 @@ object MessageConverter:
               name = info.name.asInstanceOf[String],
               version = info.version.asInstanceOf[String]
             )
+          },
+          error = server.error.asInstanceOf[js.UndefOr[String]].toOption,
+          scope = server.scope.asInstanceOf[js.UndefOr[String]].toOption,
+          tools = server.tools.asInstanceOf[js.UndefOr[js.Array[js.Dynamic]]].toOption.map { toolsArr =>
+            toolsArr.toList.map { tool =>
+              McpToolInfo(
+                name = tool.name.asInstanceOf[String],
+                description = tool.description.asInstanceOf[js.UndefOr[String]].toOption,
+                annotations = tool.annotations.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.map { ann =>
+                  McpToolAnnotations(
+                    readOnly = ann.readOnly.asInstanceOf[js.UndefOr[Boolean]].toOption,
+                    destructive = ann.destructive.asInstanceOf[js.UndefOr[Boolean]].toOption,
+                    openWorld = ann.openWorld.asInstanceOf[js.UndefOr[Boolean]].toOption
+                  )
+                }
+              )
+            }
           }
         )
       }
