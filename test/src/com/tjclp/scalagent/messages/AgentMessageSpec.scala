@@ -226,3 +226,102 @@ class AgentMessageSpec extends FunSuite:
 
   test("Error tool result has isError true"):
     assertEquals(errorToolResultBlock.isError, true)
+
+  // ============================================
+  // TaskNotification Tests
+  // ============================================
+
+  test("TaskNotification stores task details"):
+    val msg = taskNotification
+    assertEquals(msg.taskId, "task-123")
+    assertEquals(msg.status, TaskStatus.Completed)
+    assertEquals(msg.outputFile, "/tmp/task-output.txt")
+    assertEquals(msg.sessionId, testSessionId)
+
+  test("isTaskNotification returns true for TaskNotification"):
+    assert(taskNotification.isTaskNotification)
+    assert(taskNotificationFailed.isTaskNotification)
+
+  test("isTaskNotification returns false for other messages"):
+    assert(!assistantMessage.isTaskNotification)
+    assert(!userMessage.isTaskNotification)
+    assert(!resultSuccess.isTaskNotification)
+
+  // ============================================
+  // ToolUseSummary Tests
+  // ============================================
+
+  test("ToolUseSummary stores summary details"):
+    val msg = toolUseSummary
+    assertEquals(msg.summary, "Read 3 files successfully")
+    assertEquals(msg.precedingToolUseIds.size, 2)
+    assertEquals(msg.precedingToolUseIds.head, testToolUseId)
+
+  test("isToolUseSummary returns true for ToolUseSummary"):
+    assert(toolUseSummary.isToolUseSummary)
+
+  test("isToolUseSummary returns false for other messages"):
+    assert(!assistantMessage.isToolUseSummary)
+    assert(!userMessage.isToolUseSummary)
+    assert(!resultSuccess.isToolUseSummary)
+
+  // ============================================
+  // TaskStatus Tests
+  // ============================================
+
+  test("TaskStatus.fromString parses known values"):
+    assertEquals(TaskStatus.fromString("completed"), TaskStatus.Completed)
+    assertEquals(TaskStatus.fromString("failed"), TaskStatus.Failed)
+    assertEquals(TaskStatus.fromString("stopped"), TaskStatus.Stopped)
+
+  test("TaskStatus.fromString returns Custom for unknown values"):
+    TaskStatus.fromString("custom_status") match
+      case TaskStatus.Custom(v) => assertEquals(v, "custom_status")
+      case other                => fail(s"Expected Custom, got $other")
+
+  test("TaskStatus.toRaw produces correct strings"):
+    assertEquals(TaskStatus.Completed.toRaw, "completed")
+    assertEquals(TaskStatus.Failed.toRaw, "failed")
+    assertEquals(TaskStatus.Stopped.toRaw, "stopped")
+    assertEquals(TaskStatus.Custom("xyz").toRaw, "xyz")
+
+  // ============================================
+  // HookOutcome Tests
+  // ============================================
+
+  test("HookOutcome.fromString parses known values"):
+    assertEquals(HookOutcome.fromString("success"), HookOutcome.Success)
+    assertEquals(HookOutcome.fromString("error"), HookOutcome.Error)
+    assertEquals(HookOutcome.fromString("cancelled"), HookOutcome.Cancelled)
+
+  test("HookOutcome.fromString returns Custom for unknown values"):
+    HookOutcome.fromString("custom_outcome") match
+      case HookOutcome.Custom(v) => assertEquals(v, "custom_outcome")
+      case other                 => fail(s"Expected Custom, got $other")
+
+  test("HookOutcome.toRaw produces correct strings"):
+    assertEquals(HookOutcome.Success.toRaw, "success")
+    assertEquals(HookOutcome.Error.toRaw, "error")
+    assertEquals(HookOutcome.Cancelled.toRaw, "cancelled")
+    assertEquals(HookOutcome.Custom("xyz").toRaw, "xyz")
+
+  // ============================================
+  // List Extension Methods - New Types
+  // ============================================
+
+  test("taskNotifications extracts task notifications from list"):
+    val messages = List(userMessage, taskNotification, assistantMessage, taskNotificationFailed)
+    val notifications = messages.taskNotifications
+    assertEquals(notifications.size, 2)
+    assertEquals(notifications.head.taskId, "task-123")
+    assertEquals(notifications(1).taskId, "task-456")
+
+  test("taskNotifications returns empty list when none present"):
+    val notifications = simpleConversation.taskNotifications
+    assert(notifications.isEmpty)
+
+  test("toolUseSummaries extracts tool use summaries from list"):
+    val messages = List(userMessage, toolUseSummary, assistantMessage)
+    val summaries = messages.toolUseSummaries
+    assertEquals(summaries.size, 1)
+    assertEquals(summaries.head.summary, "Read 3 files successfully")

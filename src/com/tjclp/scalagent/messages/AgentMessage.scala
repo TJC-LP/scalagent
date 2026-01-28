@@ -77,6 +77,24 @@ enum AgentMessage:
       sessionId: SessionId
   )
 
+  /** Task/subagent completion notification */
+  case TaskNotification(
+      taskId: String,
+      status: TaskStatus,
+      outputFile: String,
+      summary: String,
+      uuid: MessageUuid,
+      sessionId: SessionId
+  )
+
+  /** Tool use summary (aggregate info) */
+  case ToolUseSummary(
+      summary: String,
+      precedingToolUseIds: List[ToolUseId],
+      uuid: MessageUuid,
+      sessionId: SessionId
+  )
+
 object AgentMessage:
   given JsonDecoder[AgentMessage] = DeriveJsonDecoder.gen[AgentMessage]
   given JsonEncoder[AgentMessage] = DeriveJsonEncoder.gen[AgentMessage]
@@ -136,6 +154,16 @@ object AgentMessage:
       case _: User | _: UserReplay => true
       case _                       => false
 
+    /** Check if this is a task notification message */
+    def isTaskNotification: Boolean = msg match
+      case _: TaskNotification => true
+      case _                   => false
+
+    /** Check if this is a tool use summary message */
+    def isToolUseSummary: Boolean = msg match
+      case _: ToolUseSummary => true
+      case _                 => false
+
   // Extension methods for message lists
   extension (messages: List[AgentMessage])
     /** Extract all text from all messages */
@@ -164,6 +192,14 @@ object AgentMessage:
         case _: ResultOutcome.Success => true
         case _                        => false
       }
+
+    /** Extract all task notifications from messages */
+    def taskNotifications: List[AgentMessage.TaskNotification] =
+      messages.collect { case tn: AgentMessage.TaskNotification => tn }
+
+    /** Extract all tool use summaries from messages */
+    def toolUseSummaries: List[AgentMessage.ToolUseSummary] =
+      messages.collect { case tus: AgentMessage.ToolUseSummary => tus }
 
 /** API assistant message structure */
 final case class ApiAssistantMessage(
@@ -232,3 +268,26 @@ enum StreamDelta:
 object StreamDelta:
   given JsonDecoder[StreamDelta] = DeriveJsonDecoder.gen[StreamDelta]
   given JsonEncoder[StreamDelta] = DeriveJsonEncoder.gen[StreamDelta]
+
+/** Task status for task notifications */
+enum TaskStatus:
+  case Completed
+  case Failed
+  case Stopped
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Completed  => "completed"
+    case Failed     => "failed"
+    case Stopped    => "stopped"
+    case Custom(v)  => v
+
+object TaskStatus:
+  given JsonEncoder[TaskStatus] = JsonEncoder[String].contramap(_.toRaw)
+  given JsonDecoder[TaskStatus] = JsonDecoder[String].map(fromString)
+
+  def fromString(s: String): TaskStatus = s match
+    case "completed" => Completed
+    case "failed"    => Failed
+    case "stopped"   => Stopped
+    case other       => Custom(other)

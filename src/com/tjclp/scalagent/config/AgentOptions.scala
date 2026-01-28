@@ -82,7 +82,11 @@ final case class AgentOptions(
     plugins: List[PluginConfig] = List.empty,
 
     // Subagents
-    agents: Map[String, AgentDefinition] = Map.empty
+    agents: Map[String, AgentDefinition] = Map.empty,
+
+    // Agent name for the main thread (equivalent to --agent CLI flag)
+    // The agent must be defined in the `agents` option or in settings
+    agent: Option[String] = None
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -154,6 +158,8 @@ final case class AgentOptions(
 
     if agents.nonEmpty then
       obj.agents = js.Dictionary(agents.view.mapValues(_.toRaw).toSeq*)
+
+    agent.foreach(a => obj.agent = a)
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks
@@ -541,6 +547,26 @@ object AgentOptions:
         tools = Some(builtinTools ++ mcpTools.map(_.toToolName)),
         model = model
       )))
+
+    /** Set the main thread agent by name.
+      *
+      * The agent's system prompt, tool restrictions, and model will be applied to the main conversation.
+      * The agent must be defined either in the `agents` option or in settings.
+      *
+      * This is equivalent to the `--agent` CLI flag.
+      *
+      * Example:
+      * {{{
+      * AgentOptions.default
+      *   .withAgentDefinition("reviewer", AgentDefinition(
+      *     description = "Reviews code for best practices",
+      *     prompt = "You are a code reviewer..."
+      *   ))
+      *   .withMainAgent("reviewer")
+      * }}}
+      */
+    def withMainAgent(agentName: String): AgentOptions =
+      opts.copy(agent = Some(agentName))
 
     /** Configure structured output with type-safe schema derivation.
       *
