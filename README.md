@@ -172,6 +172,9 @@ val options = AgentOptions.default
 | `withBypassPermissions` | Bypass all permission checks (dangerous!) |
 | `withIncludePartialMessages` | Include streaming partial messages |
 | `withStructuredOutput[T]` | Enable structured output with type-safe parsing |
+| `withMainAgent(name)` | Set agent for main conversation thread |
+| `withFileCheckpointing` | Enable file rewind capability |
+| `withFallbackModel(m)` | Set fallback model if primary fails |
 
 ### Permission Modes
 
@@ -180,6 +183,7 @@ val options = AgentOptions.default
 - `BypassPermissions` - Skip all permission checks
 - `Plan` - Plan mode without execution
 - `DontAsk` - Deny unpermitted tools without prompting
+- `Delegate` - Delegated permission handling
 
 ## Message Types
 
@@ -193,6 +197,16 @@ enum AgentMessage:
   case System(event, uuid, sessionId)
   case StreamEvent(event, parentToolUseId, uuid, sessionId)
   case ToolProgress(toolUseId, toolName, parentToolUseId, elapsedTimeSeconds, uuid, sessionId)
+  case TaskNotification(taskId, status, outputFile, summary, uuid, sessionId)
+  case ToolUseSummary(summary, precedingToolUseIds, uuid, sessionId)
+```
+
+### Task Status
+
+```scala
+enum TaskStatus:
+  case Completed, Failed, Stopped
+  case Custom(value: String)
 ```
 
 ### Result Outcomes
@@ -218,6 +232,21 @@ for
   _ <- fiber.join
 yield ()
 ```
+
+### QueryStream Control Methods
+
+The `QueryStream` provides methods for runtime control:
+
+| Method | Description |
+|--------|-------------|
+| `close()` | Abort running query and terminate process |
+| `reconnectMcpServer(name)` | Reconnect a specific MCP server |
+| `toggleMcpServer(name, enabled)` | Enable/disable an MCP server |
+| `rewindFiles(messageId, dryRun)` | Restore files to previous state (requires `withFileCheckpointing`) |
+| `setMcpServers(servers)` | Dynamically configure MCP servers |
+| `mcpServerStatus()` | Get MCP server connection status |
+| `supportedModels()` | Get list of supported models |
+| `accountInfo()` | Get account information |
 
 ### Custom Tool Definitions (Type-Safe)
 
