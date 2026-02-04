@@ -55,6 +55,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-mill-
 
+      - name: Fetch annotated tags
+        run: git fetch --tags --force
+
       - name: Extract and validate version
         id: version
         run: |
