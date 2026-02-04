@@ -1,6 +1,6 @@
 {
   "name": "scalagent",
-  "version": "0.2.4",
+  "version": "0.2.5-SNAPSHOT",
   "private": true,
   "type": "module",
   "description": "Scalagent - Type-safe Scala.js SDK for Claude Code CLI",
