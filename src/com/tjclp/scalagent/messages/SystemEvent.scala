@@ -61,6 +61,15 @@ enum SystemEvent:
       output: String
   )
 
+  /** File persistence tracking event (SDK 0.2.31).
+    * Emitted when files are persisted or fail to persist.
+    */
+  case FilesPersisted(
+      files: List[PersistedFile],
+      failed: List[FailedFile],
+      processedAt: String
+  )
+
 object SystemEvent:
   given JsonDecoder[SystemEvent] = DeriveJsonDecoder.gen[SystemEvent]
   given JsonEncoder[SystemEvent] = DeriveJsonEncoder.gen[SystemEvent]
@@ -236,3 +245,23 @@ object HookOutcome:
     case "error"     => Error
     case "cancelled" => Cancelled
     case other       => Custom(other)
+
+/** Successfully persisted file info (SDK 0.2.31) */
+final case class PersistedFile(
+    filename: String,
+    fileId: String
+)
+
+object PersistedFile:
+  given JsonDecoder[PersistedFile] = DeriveJsonDecoder.gen[PersistedFile]
+  given JsonEncoder[PersistedFile] = DeriveJsonEncoder.gen[PersistedFile]
+
+/** Failed file persistence info (SDK 0.2.31) */
+final case class FailedFile(
+    filename: String,
+    error: String
+)
+
+object FailedFile:
+  given JsonDecoder[FailedFile] = DeriveJsonDecoder.gen[FailedFile]
+  given JsonEncoder[FailedFile] = DeriveJsonEncoder.gen[FailedFile]

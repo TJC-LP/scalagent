@@ -55,7 +55,11 @@ final case class AgentDefinition(
       * Supports both shell command hooks (serializable) and callback hooks (runtime-only).
       * Added in Claude Code 2.1.0.
       */
-    hooks: Map[HookEvent, List[HookConfig]] = Map.empty
+    hooks: Map[HookEvent, List[HookConfig]] = Map.empty,
+    /** Skill names to preload into the agent context.
+      * Added in SDK 0.2.31.
+      */
+    skills: List[String] = Nil
 ):
   /** Convert to raw JavaScript object for SDK.
     *
@@ -75,6 +79,7 @@ final case class AgentDefinition(
     // inheritMcpTools is SDK default behavior (true), no flag needed
     // When false, rely on explicit tools whitelist
     // Note: hooks are not included here - use toRawWithHooks when hooks are configured
+    if skills.nonEmpty then obj.skills = skills.toJSArray
     obj.asInstanceOf[js.Object]
 
   /** Convert to raw JavaScript object with hooks.
@@ -174,7 +179,10 @@ object AgentDefinition:
       }
       "hooks" -> Json.Obj(zio.Chunk.fromIterable(hooksJson.toSeq)*)
     }
-    val fields = baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField
+    val skillsField = Option.when(agent.skills.nonEmpty) {
+      "skills" -> Json.Arr(agent.skills.map(Json.Str(_))*)
+    }
+    val fields = baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField ++ skillsField
     Json.Obj(zio.Chunk.fromIterable(fields)*)
   }
 
@@ -197,6 +205,8 @@ object AgentDefinition:
             }
           case None => Map.empty
 
+        val skillsList = fields.get("skills").flatMap(_.asArray).map(_.flatMap(_.asString).toList).getOrElse(Nil)
+
         AgentDefinition(
           description = description,
           prompt = prompt,
@@ -206,7 +216,8 @@ object AgentDefinition:
           model = fields.get("model").flatMap(_.asString).map(AgentModel.fromString),
           inheritMcpTools = fields.get("inheritMcpTools").flatMap(_.asBoolean).getOrElse(true),
           permissionMode = fields.get("permissionMode").flatMap(_.asString).map(PermissionMode.fromString),
-          hooks = hooksMap
+          hooks = hooksMap,
+          skills = skillsList
         )
     case _ => Left("Expected JSON object")
   }
@@ -233,3 +244,16 @@ object AgentDefinition:
     /** Add a callback hook with matcher */
     def withCallbackHook(event: HookEvent, matcher: String, callback: HookCallback): AgentDefinition =
       withHooks(event, HookConfig.callback(matcher, callback))
+
+    /** Add skills to preload into the agent context.
+      *
+      * Skills are loaded at agent startup and made available during execution.
+      * Added in SDK 0.2.31.
+      *
+      * Example:
+      * {{{
+      * agent.withSkills("code-review", "testing")
+      * }}}
+      */
+    def withSkills(skillNames: String*): AgentDefinition =
+      agent.copy(skills = skillNames.toList)

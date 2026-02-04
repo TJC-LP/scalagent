@@ -56,6 +56,9 @@ trait RawQuery extends AsyncGenerator[js.Any, Unit, Unit]:
   /** Dynamically set MCP servers for this session */
   def setMcpServers(servers: js.Dictionary[js.Any]): js.Promise[js.Dynamic] = js.native
 
+  /** Get the full initialization result including commands, models, account info (SDK 0.2.31) */
+  def initializationResult(): js.Promise[js.Dynamic] = js.native
+
 /** Wrapper for SDK Query that provides ZIO/ZStream interface.
   *
   * This class wraps the raw JavaScript Query object and provides:
@@ -225,6 +228,22 @@ final class QueryStream private (rawQuery: RawQuery):
       .fromPromiseJS(rawQuery.setMcpServers(servers.toJSDictionary))
       .map(McpSetServersResult.fromRaw)
 
+  /** Get the full initialization result from the SDK (SDK 0.2.31).
+    *
+    * This provides access to the complete initialization response including:
+    * - Available slash commands
+    * - Output style configuration
+    * - Supported models
+    * - Account information
+    *
+    * @return
+    *   Full initialization result
+    */
+  def initializationResult: Task[InitializationResult] =
+    ZIO
+      .fromPromiseJS(rawQuery.initializationResult())
+      .map(InitializationResult.fromRaw)
+
 object QueryStream:
 
   /** Create a QueryStream from a raw SDK Query object.
@@ -368,4 +387,23 @@ object McpSetServersResult:
       added = obj.added.asInstanceOf[js.Array[String]].toList,
       removed = obj.removed.asInstanceOf[js.Array[String]].toList,
       errors = errorsDict.toMap
+    )
+
+/** Full initialization result from SDK control response (SDK 0.2.31) */
+final case class InitializationResult(
+    commands: List[SlashCommand],
+    outputStyle: String,
+    availableOutputStyles: List[String],
+    models: List[ModelInfo],
+    account: AccountInfo
+)
+
+object InitializationResult:
+  def fromRaw(obj: js.Dynamic): InitializationResult =
+    InitializationResult(
+      commands = obj.commands.asInstanceOf[js.Array[js.Dynamic]].toList.map(SlashCommand.fromRaw),
+      outputStyle = obj.output_style.asInstanceOf[String],
+      availableOutputStyles = obj.available_output_styles.asInstanceOf[js.Array[String]].toList,
+      models = obj.models.asInstanceOf[js.Array[js.Dynamic]].toList.map(ModelInfo.fromRaw),
+      account = AccountInfo.fromRaw(obj.account)
     )

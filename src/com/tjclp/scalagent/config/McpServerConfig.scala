@@ -35,6 +35,14 @@ enum McpServerConfig:
       rawServerConfig: js.Object
   )
 
+  /** Claude AI Proxy MCP server (SDK 0.2.31).
+    * Used for proxying to Claude.ai services.
+    */
+  case ClaudeAIProxy(
+      url: String,
+      id: String
+  )
+
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object = this match
     case Stdio(cmd, args, env) =>
@@ -56,6 +64,11 @@ enum McpServerConfig:
     case Sdk(_, _, rawConfig) =>
       // SDK server config is already in raw format
       rawConfig
+
+    case ClaudeAIProxy(url, id) =>
+      js.Dynamic
+        .literal(`type` = "claudeai-proxy", url = url, id = id)
+        .asInstanceOf[js.Object]
 
 object McpServerConfig:
   // Note: Sdk variant cannot be serialized to/from JSON because it contains js.Object
@@ -93,3 +106,7 @@ object McpServerConfig:
   /** Create an HTTP MCP server config with headers */
   def httpWithHeaders(url: String, headers: Map[String, String]): McpServerConfig =
     HTTP(url, headers)
+
+  /** Create a Claude AI Proxy MCP server config (SDK 0.2.31) */
+  def claudeAIProxy(url: String, id: String): McpServerConfig =
+    ClaudeAIProxy(url, id)

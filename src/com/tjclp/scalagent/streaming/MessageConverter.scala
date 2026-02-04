@@ -114,6 +114,7 @@ object MessageConverter:
       case "hook_response"    => parseHookResponseEvent(obj)
       case "hook_started"     => parseHookStartedEvent(obj)
       case "hook_progress"    => parseHookProgressEvent(obj)
+      case "files_persisted"  => parseFilesPersistedEvent(obj)
       case other => throw new IllegalArgumentException(s"Unknown system event subtype: $other")
 
     AgentMessage.System(
@@ -369,6 +370,23 @@ object MessageConverter:
       stdout = obj.stdout.asInstanceOf[js.UndefOr[String]].getOrElse(""),
       stderr = obj.stderr.asInstanceOf[js.UndefOr[String]].getOrElse(""),
       output = obj.output.asInstanceOf[js.UndefOr[String]].getOrElse("")
+    )
+
+  private def parseFilesPersistedEvent(obj: js.Dynamic): SystemEvent.FilesPersisted =
+    SystemEvent.FilesPersisted(
+      files = obj.files.asInstanceOf[js.Array[js.Dynamic]].toList.map { f =>
+        PersistedFile(
+          filename = f.filename.asInstanceOf[String],
+          fileId = f.file_id.asInstanceOf[String]
+        )
+      },
+      failed = obj.failed.asInstanceOf[js.Array[js.Dynamic]].toList.map { f =>
+        FailedFile(
+          filename = f.filename.asInstanceOf[String],
+          error = f.error.asInstanceOf[String]
+        )
+      },
+      processedAt = obj.processed_at.asInstanceOf[String]
     )
 
   private def parseMcpServers(arr: js.Dynamic): List[McpServerStatus] =
