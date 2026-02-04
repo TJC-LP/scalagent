@@ -20,14 +20,14 @@ A type-safe Scala.js SDK for the [`@anthropic-ai/claude-agent-sdk`](https://www.
 
 ```scala
 def ivyDeps = Seq(
-  mvn"com.tjclp::scalagent::0.2.2"
+  mvn"com.tjclp::scalagent::0.2.4"
 )
 ```
 
 ### SBT
 
 ```scala
-libraryDependencies += "com.tjclp" %%% "scalagent" % "0.2.2"
+libraryDependencies += "com.tjclp" %%% "scalagent" % "0.2.4"
 ```
 
 ### Maven
@@ -36,7 +36,7 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.2.2"
 <dependency>
   <groupId>com.tjclp</groupId>
   <artifactId>scalagent_sjs1_3</artifactId>
-  <version>0.2.2</version>
+  <version>0.2.4</version>
 </dependency>
 ```
 
