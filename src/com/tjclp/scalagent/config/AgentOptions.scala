@@ -86,7 +86,23 @@ final case class AgentOptions(
 
     // Agent name for the main thread (equivalent to --agent CLI flag)
     // The agent must be defined in the `agents` option or in settings
-    agent: Option[String] = None
+    agent: Option[String] = None,
+
+    // Debug controls (new in SDK 0.2.31)
+    /** Enable debug mode for the Claude Code process.
+      * When true, enables verbose debug logging (equivalent to `--debug` CLI flag).
+      */
+    debug: Boolean = false,
+
+    /** Write debug logs to a specific file path.
+      * Implicitly enables debug mode.
+      */
+    debugFile: Option[String] = None,
+
+    /** Enforce strict validation of MCP server configurations.
+      * When true, invalid configurations will cause errors instead of warnings.
+      */
+    strictMcpConfig: Boolean = false
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -160,6 +176,11 @@ final case class AgentOptions(
       obj.agents = js.Dictionary(agents.view.mapValues(_.toRaw).toSeq*)
 
     agent.foreach(a => obj.agent = a)
+
+    // Debug controls (new in SDK 0.2.31)
+    if debug then obj.debug = true
+    debugFile.foreach(df => obj.debugFile = df)
+    if strictMcpConfig then obj.strictMcpConfig = true
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks
@@ -599,6 +620,30 @@ object AgentOptions:
       */
     def withOutputFormat(format: OutputFormat): AgentOptions =
       opts.copy(outputFormat = Some(format))
+
+    /** Enable debug mode for verbose logging.
+      *
+      * @param enabled
+      *   Whether debug mode is enabled (default: true)
+      * @param file
+      *   Optional file path to write debug logs to
+      *
+      * Example:
+      * {{{
+      * options.withDebug()                          // Enable debug to stderr
+      * options.withDebug(file = Some("/tmp/debug.log"))  // Write to file
+      * }}}
+      */
+    def withDebug(enabled: Boolean = true, file: Option[String] = None): AgentOptions =
+      opts.copy(debug = enabled, debugFile = file)
+
+    /** Enable strict MCP server configuration validation.
+      *
+      * When enabled, invalid MCP server configurations will cause errors
+      * instead of warnings.
+      */
+    def withStrictMcpConfig: AgentOptions =
+      opts.copy(strictMcpConfig = true)
 
 /** System prompt configuration */
 enum SystemPromptConfig:

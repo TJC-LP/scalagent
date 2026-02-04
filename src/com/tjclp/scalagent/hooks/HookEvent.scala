@@ -43,6 +43,9 @@ enum HookEvent:
   /** Before context compaction */
   case PreCompact
 
+  /** Setup hook - triggered during initialization or maintenance (SDK 0.2.31) */
+  case Setup
+
   /** Convert to SDK string representation */
   def toRaw: String = this match
     case PreToolUse        => "PreToolUse"
@@ -57,6 +60,7 @@ enum HookEvent:
     case SubagentStart     => "SubagentStart"
     case SubagentStop      => "SubagentStop"
     case PreCompact        => "PreCompact"
+    case Setup             => "Setup"
 
 object HookEvent:
   given JsonEncoder[HookEvent] = JsonEncoder[String].contramap(_.toRaw)
@@ -73,6 +77,7 @@ object HookEvent:
     case "SubagentStart"     => Right(SubagentStart)
     case "SubagentStop"      => Right(SubagentStop)
     case "PreCompact"        => Right(PreCompact)
+    case "Setup"             => Right(Setup)
     case other               => Left(s"Unknown hook event: $other")
   }
 
@@ -89,4 +94,5 @@ object HookEvent:
     case "SubagentStart"     => SubagentStart
     case "SubagentStop"      => SubagentStop
     case "PreCompact"        => PreCompact
+    case "Setup"             => Setup
     case other => throw new IllegalArgumentException(s"Unknown hook event: $other")
