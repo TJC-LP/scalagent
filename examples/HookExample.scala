@@ -86,12 +86,12 @@ object HookExample extends ZIOAppDefault:
         if text.nonEmpty then Console.printLine(s"Claude: $text")
         else ZIO.unit
 
-      case AgentMessage.Result(ResultOutcome.Success(_, _, _, result, cost, _, _, _, _), _, _) =>
+      case AgentMessage.Result(ResultOutcome.Success(_, _, _, result, cost, _, _, _, _), _, _, _) =>
         Console.printLine(s"\n--- Result ---") *>
           Console.printLine(s"Output: $result") *>
           Console.printLine(s"Cost: $$${cost}")
 
-      case AgentMessage.Result(ResultOutcome.Error(reason, _, _, _, _, _, _, _, errors), _, _) =>
+      case AgentMessage.Result(ResultOutcome.Error(reason, _, _, _, _, _, _, _, errors), _, _, _) =>
         Console.printLine(s"\n--- Error: $reason ---") *>
           Console.printLine(s"Errors: ${errors.mkString(", ")}")
 

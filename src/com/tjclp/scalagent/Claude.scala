@@ -2,10 +2,12 @@ package com.tjclp.scalagent
 
 import zio.*
 import zio.stream.*
+import scala.scalajs.js
 import com.tjclp.scalagent.config.*
 import com.tjclp.scalagent.errors.*
 import com.tjclp.scalagent.messages.*
 import com.tjclp.scalagent.session.*
+import com.tjclp.scalagent.types.SessionId
 
 /** Simplified entry point for the Claude Agent SDK.
   *
@@ -184,3 +186,89 @@ object Claude:
     */
   def chat[A](f: ClaudeSession[Open] => IO[AgentError, A]): IO[AgentError, A] =
     conversation(AgentOptions.default)(f)
+
+  // ============================================================================
+  // Session History Operations
+  // ============================================================================
+
+  /** List available sessions for a project directory.
+    *
+    * @param dir
+    *   The project directory to list sessions for
+    * @param limit
+    *   Maximum number of sessions to return (default: 50)
+    * @return
+    *   A list of session info objects
+    */
+  def listSessions(dir: String, limit: Int = 50): IO[AgentError, List[SessionInfo]] =
+    ZIO
+      .fromPromiseJS(
+        SdkModule.listSessions(
+          js.Dynamic.literal(dir = dir, limit = limit)
+        )
+      )
+      .map(_.toList.map(SessionInfo.fromRaw))
+      .mapError(AgentError.fromThrowable)
+
+  /** Get the messages from a previous session's transcript.
+    *
+    * @param sessionId
+    *   The session ID to retrieve messages from
+    * @param dir
+    *   The project directory
+    * @return
+    *   A list of session messages
+    */
+  def getSessionMessages(sessionId: SessionId, dir: String): IO[AgentError, List[SessionMessage]] =
+    ZIO
+      .fromPromiseJS(
+        SdkModule.getSessionMessages(
+          js.Dynamic.literal(sessionId = sessionId.value, dir = dir)
+        )
+      )
+      .map(_.toList.map(SessionMessage.fromRaw))
+      .mapError(AgentError.fromThrowable)
+
+/** Session information from listSessions */
+final case class SessionInfo(
+    id: String,
+    name: Option[String],
+    model: Option[String],
+    createdAt: Option[String],
+    lastActiveAt: Option[String],
+    cwd: Option[String],
+    numTurns: Option[Int],
+    totalCostUsd: Option[Double]
+)
+
+object SessionInfo:
+  def fromRaw(obj: js.Dynamic): SessionInfo =
+    SessionInfo(
+      id = obj.id.asInstanceOf[String],
+      name = obj.name.asInstanceOf[js.UndefOr[String]].toOption,
+      model = obj.model.asInstanceOf[js.UndefOr[String]].toOption,
+      createdAt = obj.createdAt.asInstanceOf[js.UndefOr[String]].toOption,
+      lastActiveAt = obj.lastActiveAt.asInstanceOf[js.UndefOr[String]].toOption,
+      cwd = obj.cwd.asInstanceOf[js.UndefOr[String]].toOption,
+      numTurns = obj.numTurns.asInstanceOf[js.UndefOr[Int]].toOption,
+      totalCostUsd = obj.totalCostUsd.asInstanceOf[js.UndefOr[Double]].toOption
+    )
+
+/** Message from a session transcript */
+final case class SessionMessage(
+    role: String,
+    content: String,
+    timestamp: Option[String]
+)
+
+object SessionMessage:
+  def fromRaw(obj: js.Dynamic): SessionMessage =
+    val contentValue = obj.content
+    val contentStr =
+      if js.typeOf(contentValue) == "string" then contentValue.asInstanceOf[String]
+      else js.JSON.stringify(contentValue)
+    SessionMessage(
+      role = obj.role.asInstanceOf[String],
+      content = contentStr,
+      timestamp = obj.timestamp.asInstanceOf[js.UndefOr[String]].toOption
+    )

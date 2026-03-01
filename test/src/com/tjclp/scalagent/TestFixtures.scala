@@ -224,6 +224,7 @@ object TestFixtures:
   val resultSuccess: AgentMessage.Result =
     AgentMessage.Result(
       outcome = successOutcome,
+      fastModeState = None,
       uuid = testMessageUuid,
       sessionId = testSessionId
     )
@@ -231,6 +232,7 @@ object TestFixtures:
   val resultError: AgentMessage.Result =
     AgentMessage.Result(
       outcome = errorOutcome,
+      fastModeState = None,
       uuid = testMessageUuid,
       sessionId = testSessionId
     )
@@ -309,6 +311,8 @@ object TestFixtures:
       status = TaskStatus.Completed,
       outputFile = "/tmp/task-output.txt",
       summary = "Task completed successfully",
+      toolUseId = None,
+      usage = None,
       uuid = testMessageUuid,
       sessionId = testSessionId
     )
@@ -319,6 +323,8 @@ object TestFixtures:
       status = TaskStatus.Failed,
       outputFile = "/tmp/task-output.txt",
       summary = "Task failed due to permission error",
+      toolUseId = None,
+      usage = None,
       uuid = testMessageUuid,
       sessionId = testSessionId
     )

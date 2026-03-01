@@ -412,7 +412,7 @@ package object scalagent {
     def collectResult: ZIO[R, AgentError, QueryResult] =
       stream.runCollect.map { chunk =>
         val messages = chunk.toList
-        val outcome = messages.collectFirst { case AgentMessage.Result(o, _, _) => o }
+        val outcome = messages.collectFirst { case AgentMessage.Result(o, _, _, _) => o }
         QueryResult(
           messages,
           outcome.getOrElse(

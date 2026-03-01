@@ -16,16 +16,26 @@ package com.tjclp.scalagent.config
 enum Model(val id: String):
 
   // ============================================================================
-  // Claude 4.5 Family (Current Generation - Recommended)
+  // Claude 4.6 Family (Latest Generation)
   // ============================================================================
 
-  /** Claude Sonnet 4.5 - Recommended for most tasks, excellent for coding */
+  /** Claude Opus 4.6 - Most capable model with adaptive thinking */
+  case Opus4_6 extends Model("claude-opus-4-6")
+
+  /** Claude Sonnet 4.6 - Excellent balance of speed and capability */
+  case Sonnet4_6 extends Model("claude-sonnet-4-6")
+
+  // ============================================================================
+  // Claude 4.5 Family
+  // ============================================================================
+
+  /** Claude Sonnet 4.5 - Excellent for coding */
   case Sonnet4_5 extends Model("claude-sonnet-4-5-20250929")
 
   /** Claude Haiku 4.5 - Fast and efficient for simple tasks */
   case Haiku4_5 extends Model("claude-haiku-4-5-20251001")
 
-  /** Claude Opus 4.5 - Most capable model for complex reasoning */
+  /** Claude Opus 4.5 - Capable model for complex reasoning */
   case Opus4_5 extends Model("claude-opus-4-5-20251101")
 
   // ============================================================================
@@ -87,6 +97,9 @@ object Model:
     * Known model IDs are mapped to their enum variants. Unknown IDs become Custom.
     */
   def fromId(id: String): Model = id match
+    // Claude 4.6 Family
+    case "claude-opus-4-6"             => Opus4_6
+    case "claude-sonnet-4-6"           => Sonnet4_6
     // Claude 4.5 Family
     case "claude-sonnet-4-5-20250929"  => Sonnet4_5
     case "claude-haiku-4-5-20251001"   => Haiku4_5
@@ -106,9 +119,9 @@ object Model:
     case other                         => Custom(other)
 
   /** Default model for Claude Agent SDK - uses current recommended model */
-  val default: Model = Sonnet4_5
+  val default: Model = Sonnet4_6
 
   // Convenience aliases (point to current generation)
-  val opus: Model = Opus4_5
-  val sonnet: Model = Sonnet4_5
+  val opus: Model = Opus4_6
+  val sonnet: Model = Sonnet4_6
   val haiku: Model = Haiku4_5

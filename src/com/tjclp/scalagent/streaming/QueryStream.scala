@@ -56,7 +56,13 @@ trait RawQuery extends AsyncGenerator[js.Any, Unit, Unit]:
   /** Dynamically set MCP servers for this session */
   def setMcpServers(servers: js.Dictionary[js.Any]): js.Promise[js.Dynamic] = js.native
 
-  /** Get the full initialization result including commands, models, account info (SDK 0.2.31) */
+  /** Get the list of supported subagents */
+  def supportedAgents(): js.Promise[js.Array[js.Dynamic]] = js.native
+
+  /** Stop a running background task */
+  def stopTask(taskId: String): js.Promise[Unit] = js.native
+
+  /** Get the full initialization result including commands, models, account info */
   def initializationResult(): js.Promise[js.Dynamic] = js.native
 
 /** Wrapper for SDK Query that provides ZIO/ZStream interface.
@@ -228,7 +234,25 @@ final class QueryStream private (rawQuery: RawQuery):
       .fromPromiseJS(rawQuery.setMcpServers(servers.toJSDictionary))
       .map(McpSetServersResult.fromRaw)
 
-  /** Get the full initialization result from the SDK (SDK 0.2.31).
+  /** Get the list of supported subagents.
+    *
+    * @return
+    *   List of AgentInfo objects
+    */
+  def supportedAgents: Task[List[AgentInfo]] =
+    ZIO
+      .fromPromiseJS(rawQuery.supportedAgents())
+      .map(_.toList.map(AgentInfo.fromRaw))
+
+  /** Stop a running background task.
+    *
+    * @param taskId
+    *   The ID of the task to stop
+    */
+  def stopTask(taskId: String): Task[Unit] =
+    ZIO.fromPromiseJS(rawQuery.stopTask(taskId))
+
+  /** Get the full initialization result from the SDK.
     *
     * This provides access to the complete initialization response including:
     * - Available slash commands
@@ -275,7 +299,10 @@ object SlashCommand:
 final case class ModelInfo(
     id: String,
     name: String,
-    provider: String
+    provider: String,
+    supportsEffort: Boolean = false,
+    supportedEffortLevels: List[String] = Nil,
+    supportsAdaptiveThinking: Boolean = false
 )
 
 object ModelInfo:
@@ -283,7 +310,29 @@ object ModelInfo:
     ModelInfo(
       id = obj.id.asInstanceOf[String],
       name = obj.name.asInstanceOf[String],
-      provider = obj.provider.asInstanceOf[String]
+      provider = obj.provider.asInstanceOf[String],
+      supportsEffort = obj.supportsEffort.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false),
+      supportedEffortLevels = obj.supportedEffortLevels
+        .asInstanceOf[js.UndefOr[js.Array[String]]]
+        .toOption
+        .map(_.toList)
+        .getOrElse(Nil),
+      supportsAdaptiveThinking = obj.supportsAdaptiveThinking.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
+    )
+
+/** Information about a supported subagent */
+final case class AgentInfo(
+    name: String,
+    description: String,
+    model: Option[String]
+)
+
+object AgentInfo:
+  def fromRaw(obj: js.Dynamic): AgentInfo =
+    AgentInfo(
+      name = obj.name.asInstanceOf[String],
+      description = obj.description.asInstanceOf[String],
+      model = obj.model.asInstanceOf[js.UndefOr[String]].toOption
     )
 
 /** MCP server connection status */

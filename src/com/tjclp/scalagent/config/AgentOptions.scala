@@ -88,7 +88,28 @@ final case class AgentOptions(
     // The agent must be defined in the `agents` option or in settings
     agent: Option[String] = None,
 
-    // Debug controls (new in SDK 0.2.31)
+    // Thinking/reasoning configuration
+    /** Controls Claude's thinking/reasoning behavior.
+      * When set, takes precedence over the deprecated maxThinkingTokens.
+      */
+    thinking: Option[ThinkingConfig] = None,
+
+    /** Controls how much effort Claude puts into its response.
+      * Works with adaptive thinking to guide thinking depth.
+      */
+    effort: Option[Effort] = None,
+
+    /** Enable prompt suggestions. When true, the agent emits a prompt_suggestion
+      * message after each turn with a predicted next user prompt.
+      */
+    promptSuggestions: Boolean = false,
+
+    /** Use a specific session ID for the conversation instead of an auto-generated one.
+      * Must be a valid UUID.
+      */
+    sessionId: Option[String] = None,
+
+    // Debug controls
     /** Enable debug mode for the Claude Code process.
       * When true, enables verbose debug logging (equivalent to `--debug` CLI flag).
       */
@@ -177,7 +198,13 @@ final case class AgentOptions(
 
     agent.foreach(a => obj.agent = a)
 
-    // Debug controls (new in SDK 0.2.31)
+    // Thinking/reasoning
+    thinking.foreach(tc => obj.thinking = tc.toRaw)
+    effort.foreach(e => obj.effort = e.toRaw)
+    if promptSuggestions then obj.promptSuggestions = true
+    sessionId.foreach(sid => obj.sessionId = sid)
+
+    // Debug controls
     if debug then obj.debug = true
     debugFile.foreach(df => obj.debugFile = df)
     if strictMcpConfig then obj.strictMcpConfig = true
@@ -636,6 +663,42 @@ object AgentOptions:
       */
     def withDebug(enabled: Boolean = true, file: Option[String] = None): AgentOptions =
       opts.copy(debug = enabled, debugFile = file)
+
+    /** Set thinking configuration for Claude's reasoning behavior.
+      *
+      * Takes precedence over the deprecated maxThinkingTokens.
+      *
+      * Example:
+      * {{{
+      * options.withThinking(ThinkingConfig.adaptive)
+      * options.withThinking(ThinkingConfig.enabled(8192))
+      * }}}
+      */
+    def withThinking(config: ThinkingConfig): AgentOptions =
+      opts.copy(thinking = Some(config))
+
+    /** Enable adaptive thinking (Opus 4.6+). */
+    def withAdaptiveThinking: AgentOptions =
+      opts.copy(thinking = Some(ThinkingConfig.Adaptive))
+
+    /** Set the effort level for Claude's responses.
+      *
+      * Example:
+      * {{{
+      * options.withEffort(Effort.High)
+      * options.withEffort(Effort.Max)  // Opus 4.6 only
+      * }}}
+      */
+    def withEffort(e: Effort): AgentOptions =
+      opts.copy(effort = Some(e))
+
+    /** Enable prompt suggestions after each turn. */
+    def withPromptSuggestions: AgentOptions =
+      opts.copy(promptSuggestions = true)
+
+    /** Set a specific session ID (must be a valid UUID). */
+    def withSessionId(uuid: String): AgentOptions =
+      opts.copy(sessionId = Some(uuid))
 
     /** Enable strict MCP server configuration validation.
       *

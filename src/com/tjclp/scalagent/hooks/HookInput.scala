@@ -110,7 +110,8 @@ object HookInput:
       sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
-      reason: String
+      reason: String,
+      lastAssistantMessage: Option[String] = None
   ) extends HookInput
 
   /** Input for SubagentStart hook */
@@ -131,7 +132,8 @@ object HookInput:
       subagentId: SubagentId,
       subagentType: String,
       parentToolUseId: ToolUseId,
-      success: Boolean
+      success: Boolean,
+      lastAssistantMessage: Option[String] = None
   ) extends HookInput
 
   /** Input for PreCompact hook - before context compaction */
@@ -141,6 +143,69 @@ object HookInput:
       transcriptPath: String,
       currentTokens: Int,
       trigger: CompactTrigger
+  ) extends HookInput
+
+  /** Input for TeammateIdle hook - multi-agent coordination */
+  final case class TeammateIdle(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      teammateId: String
+  ) extends HookInput
+
+  /** Input for TaskCompleted hook */
+  final case class TaskCompleted(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      taskId: String,
+      success: Boolean,
+      summary: Option[String] = None
+  ) extends HookInput
+
+  /** Input for Elicitation hook - MCP elicitation request */
+  final case class Elicitation(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      serverId: String,
+      message: String
+  ) extends HookInput
+
+  /** Input for ElicitationResult hook */
+  final case class ElicitationResult(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      serverId: String,
+      accepted: Boolean
+  ) extends HookInput
+
+  /** Input for ConfigChange hook */
+  final case class ConfigChange(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      key: String,
+      value: Option[String] = None
+  ) extends HookInput
+
+  /** Input for WorktreeCreate hook */
+  final case class WorktreeCreate(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      worktreePath: String,
+      branch: String
+  ) extends HookInput
+
+  /** Input for WorktreeRemove hook */
+  final case class WorktreeRemove(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      worktreePath: String,
+      branch: String
   ) extends HookInput
 
 /** Permission suggestion from the SDK */

@@ -109,14 +109,14 @@ object PermissionExample extends ZIOAppDefault:
             ZIO.foreach(results)(r => Console.printLine(r)).unit
           case None => ZIO.unit
 
-      case AgentMessage.Result(ResultOutcome.Success(_, _, turns, result, cost, _, _, denials, _), _, _) =>
+      case AgentMessage.Result(ResultOutcome.Success(_, _, turns, result, cost, _, _, denials, _), _, _, _) =>
         Console.printLine(s"\n--- Completed in $turns turns ---") *>
           Console.printLine(s"Cost: $$${cost}") *>
           (if denials.nonEmpty then
              Console.printLine(s"Permission denials: ${denials.map(_.toolName).mkString(", ")}")
            else ZIO.unit)
 
-      case AgentMessage.Result(ResultOutcome.Error(reason, _, _, _, _, _, _, denials, errors), _, _) =>
+      case AgentMessage.Result(ResultOutcome.Error(reason, _, _, _, _, _, _, denials, errors), _, _, _) =>
         Console.printLine(s"\n--- Error: $reason ---") *>
           Console.printLine(s"Errors: ${errors.mkString(", ")}") *>
           (if denials.nonEmpty then

@@ -433,8 +433,6 @@ class AgentOptionsSpec extends FunSuite:
     val raw = opts.toRaw.asInstanceOf[js.Dynamic]
     assert(js.isUndefined(raw.agent))
 
-  test("PermissionMode.Delegate has correct raw value"):
-    assertEquals(PermissionMode.Delegate.toRaw, "delegate")
-
-  test("PermissionMode.fromString parses delegate"):
-    assertEquals(PermissionMode.fromString("delegate"), PermissionMode.Delegate)
+  test("PermissionMode.fromString parses unknown modes"):
+    val custom = PermissionMode.fromString("some-custom-mode")
+    assertEquals(custom.toRaw, "some-custom-mode")

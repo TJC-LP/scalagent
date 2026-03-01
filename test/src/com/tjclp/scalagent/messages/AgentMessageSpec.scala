@@ -204,7 +204,7 @@ class AgentMessageSpec extends FunSuite:
     val json = msg.toJson
     val parsed = json.fromJson[AgentMessage]
     parsed match
-      case Right(AgentMessage.Result(resultOutcome, _, _)) =>
+      case Right(AgentMessage.Result(resultOutcome, _, _, _)) =>
         assert(resultOutcome.isSuccess)
       case other => fail(s"Expected Right(Result), got $other")
 

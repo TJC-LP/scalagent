@@ -43,24 +43,52 @@ enum HookEvent:
   /** Before context compaction */
   case PreCompact
 
-  /** Setup hook - triggered during initialization or maintenance (SDK 0.2.31) */
+  /** Setup hook - triggered during initialization or maintenance */
   case Setup
+
+  /** Teammate idle hook - triggered in multi-agent coordination */
+  case TeammateIdle
+
+  /** Task completed hook - fired when a background task completes */
+  case TaskCompleted
+
+  /** MCP elicitation hook - triggered on elicitation requests */
+  case Elicitation
+
+  /** Elicitation result hook - triggered after elicitation completes */
+  case ElicitationResult
+
+  /** Configuration change hook */
+  case ConfigChange
+
+  /** Git worktree creation hook */
+  case WorktreeCreate
+
+  /** Git worktree removal hook */
+  case WorktreeRemove
 
   /** Convert to SDK string representation */
   def toRaw: String = this match
-    case PreToolUse        => "PreToolUse"
-    case PostToolUse       => "PostToolUse"
+    case PreToolUse         => "PreToolUse"
+    case PostToolUse        => "PostToolUse"
     case PostToolUseFailure => "PostToolUseFailure"
-    case PermissionRequest => "PermissionRequest"
-    case Notification      => "Notification"
-    case UserPromptSubmit  => "UserPromptSubmit"
-    case SessionStart      => "SessionStart"
-    case SessionEnd        => "SessionEnd"
-    case Stop              => "Stop"
-    case SubagentStart     => "SubagentStart"
-    case SubagentStop      => "SubagentStop"
-    case PreCompact        => "PreCompact"
-    case Setup             => "Setup"
+    case PermissionRequest  => "PermissionRequest"
+    case Notification       => "Notification"
+    case UserPromptSubmit   => "UserPromptSubmit"
+    case SessionStart       => "SessionStart"
+    case SessionEnd         => "SessionEnd"
+    case Stop               => "Stop"
+    case SubagentStart      => "SubagentStart"
+    case SubagentStop       => "SubagentStop"
+    case PreCompact         => "PreCompact"
+    case Setup              => "Setup"
+    case TeammateIdle       => "TeammateIdle"
+    case TaskCompleted      => "TaskCompleted"
+    case Elicitation        => "Elicitation"
+    case ElicitationResult  => "ElicitationResult"
+    case ConfigChange       => "ConfigChange"
+    case WorktreeCreate     => "WorktreeCreate"
+    case WorktreeRemove     => "WorktreeRemove"
 
 object HookEvent:
   given JsonEncoder[HookEvent] = JsonEncoder[String].contramap(_.toRaw)
@@ -78,6 +106,13 @@ object HookEvent:
     case "SubagentStop"      => Right(SubagentStop)
     case "PreCompact"        => Right(PreCompact)
     case "Setup"             => Right(Setup)
+    case "TeammateIdle"      => Right(TeammateIdle)
+    case "TaskCompleted"     => Right(TaskCompleted)
+    case "Elicitation"       => Right(Elicitation)
+    case "ElicitationResult" => Right(ElicitationResult)
+    case "ConfigChange"      => Right(ConfigChange)
+    case "WorktreeCreate"    => Right(WorktreeCreate)
+    case "WorktreeRemove"    => Right(WorktreeRemove)
     case other               => Left(s"Unknown hook event: $other")
   }
 
@@ -95,4 +130,11 @@ object HookEvent:
     case "SubagentStop"      => SubagentStop
     case "PreCompact"        => PreCompact
     case "Setup"             => Setup
+    case "TeammateIdle"      => TeammateIdle
+    case "TaskCompleted"     => TaskCompleted
+    case "Elicitation"       => Elicitation
+    case "ElicitationResult" => ElicitationResult
+    case "ConfigChange"      => ConfigChange
+    case "WorktreeCreate"    => WorktreeCreate
+    case "WorktreeRemove"    => WorktreeRemove
     case other => throw new IllegalArgumentException(s"Unknown hook event: $other")

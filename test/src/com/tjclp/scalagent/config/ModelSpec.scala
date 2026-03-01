@@ -93,12 +93,12 @@ class ModelSpec extends FunSuite:
   // ============================================
 
   test("convenience aliases point to current generation models"):
-    assertEquals(Model.opus, Model.Opus4_5)
-    assertEquals(Model.sonnet, Model.Sonnet4_5)
+    assertEquals(Model.opus, Model.Opus4_6)
+    assertEquals(Model.sonnet, Model.Sonnet4_6)
     assertEquals(Model.haiku, Model.Haiku4_5)
 
-  test("default model is Sonnet4_5"):
-    assertEquals(Model.default, Model.Sonnet4_5)
+  test("default model is Sonnet4_6"):
+    assertEquals(Model.default, Model.Sonnet4_6)
 
   // ============================================
   // JSON Serialization
