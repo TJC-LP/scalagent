@@ -1,6 +1,7 @@
 package com.tjclp.scalagent.config
 
 import scala.language.implicitConversions
+import scala.compiletime.error
 
 /** A positive integer (> 0).
   *
@@ -30,6 +31,14 @@ object PositiveInt:
 
   /** Create a PositiveInt without validation (for trusted/internal values) */
   def unsafe(n: Int): PositiveInt = n
+
+  /** Create a PositiveInt from a literal at compile time.
+    *
+    * This fails compilation when the literal is not strictly positive.
+    */
+  inline def literal(inline n: Int): PositiveInt =
+    inline if n > 0 then n
+    else error("PositiveInt literal must be > 0")
 
   /** Create from Option, returning None if validation fails */
   def fromOption(n: Option[Int]): Option[PositiveInt] =
