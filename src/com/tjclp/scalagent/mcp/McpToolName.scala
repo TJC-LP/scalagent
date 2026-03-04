@@ -1,7 +1,8 @@
 package com.tjclp.scalagent.mcp
 
-import zio.json.{JsonDecoder, JsonEncoder}
+import com.tjclp.scalagent.json.OpaqueStringJsonCodec
 import com.tjclp.scalagent.tools.ToolName
+import zio.json.{JsonDecoder, JsonEncoder}
 
 /** Type-safe MCP tool name with compile-time server/tool binding.
   *
@@ -91,9 +92,8 @@ object McpToolName:
 
   given Conversion[McpToolName, ToolName] = _.toToolName
 
-  // Opaque type is String at runtime, so cast is safe
-  given JsonEncoder[McpToolName] = JsonEncoder.string.asInstanceOf[JsonEncoder[McpToolName]]
-  given JsonDecoder[McpToolName] = JsonDecoder.string.asInstanceOf[JsonDecoder[McpToolName]]
+  given JsonEncoder[McpToolName] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[McpToolName] = OpaqueStringJsonCodec.decoder(unsafeFromString)
 
 /** Base class for defining type-safe MCP tool names for a server.
   *

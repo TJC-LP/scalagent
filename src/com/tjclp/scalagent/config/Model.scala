@@ -1,5 +1,7 @@
 package com.tjclp.scalagent.config
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
+
 /** Type-safe Claude model identifiers.
   *
   * Instead of error-prone string literals, use this enum for compile-time safety:
@@ -89,8 +91,8 @@ object Model:
   import zio.json.*
 
   // JSON codecs for serialization
-  given JsonEncoder[Model] = JsonEncoder[String].contramap(_.id)
-  given JsonDecoder[Model] = JsonDecoder[String].map(fromId)
+  given JsonEncoder[Model] = StringEnumJsonCodec.encoder(_.id)
+  given JsonDecoder[Model] = StringEnumJsonCodec.decoder(fromId)
 
   /** Parse a model ID string to the corresponding enum value.
     *

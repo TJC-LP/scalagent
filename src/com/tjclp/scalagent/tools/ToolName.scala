@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.tools
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
 /** Type-safe tool names for the Claude Agent SDK.
@@ -130,8 +131,8 @@ object ToolName:
     case _                                                                              => false
 
   // JSON codecs
-  given JsonEncoder[ToolName] = JsonEncoder[String].contramap(_.raw)
-  given JsonDecoder[ToolName] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[ToolName] = StringEnumJsonCodec.encoder(_.raw)
+  given JsonDecoder[ToolName] = StringEnumJsonCodec.decoder(fromString)
 
   // Extension methods
   extension (tool: ToolName)

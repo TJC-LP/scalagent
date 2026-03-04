@@ -1,8 +1,9 @@
 package com.tjclp.scalagent.a2a
 
+import com.tjclp.scalagent.json.{OpaqueStringJsonCodec, StringEnumJsonCodec}
+import zio.json.{JsonDecoder, JsonEncoder}
 import scala.scalajs.js
 import scala.scalajs.js.annotation.*
-import zio.json.{JsonDecoder, JsonEncoder}
 
 /** Type-safe opaque wrappers for A2A protocol identifiers.
   *
@@ -27,8 +28,8 @@ object TaskId:
     def isEmpty: Boolean = (id: String).isEmpty
     def nonEmpty: Boolean = !isEmpty
 
-  given JsonEncoder[TaskId] = JsonEncoder.string.asInstanceOf[JsonEncoder[TaskId]]
-  given JsonDecoder[TaskId] = JsonDecoder.string.asInstanceOf[JsonDecoder[TaskId]]
+  given JsonEncoder[TaskId] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[TaskId] = OpaqueStringJsonCodec.decoder(apply)
 
 /** Unique identifier for an A2A message */
 opaque type MessageId = String
@@ -41,8 +42,8 @@ object MessageId:
     def isEmpty: Boolean = (id: String).isEmpty
     def nonEmpty: Boolean = !isEmpty
 
-  given JsonEncoder[MessageId] = JsonEncoder.string.asInstanceOf[JsonEncoder[MessageId]]
-  given JsonDecoder[MessageId] = JsonDecoder.string.asInstanceOf[JsonDecoder[MessageId]]
+  given JsonEncoder[MessageId] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[MessageId] = OpaqueStringJsonCodec.decoder(apply)
 
 /** Unique identifier for a conversation context */
 opaque type ContextId = String
@@ -55,8 +56,8 @@ object ContextId:
     def isEmpty: Boolean = (id: String).isEmpty
     def nonEmpty: Boolean = !isEmpty
 
-  given JsonEncoder[ContextId] = JsonEncoder.string.asInstanceOf[JsonEncoder[ContextId]]
-  given JsonDecoder[ContextId] = JsonDecoder.string.asInstanceOf[JsonDecoder[ContextId]]
+  given JsonEncoder[ContextId] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[ContextId] = OpaqueStringJsonCodec.decoder(apply)
 
 /** A2A protocol version */
 object A2AProtocol:
@@ -68,13 +69,13 @@ enum A2ATransport:
   case JSONRPC
   case REST
 
-object A2ATransport:
-  given JsonEncoder[A2ATransport] = JsonEncoder.string.contramap {
-    case A2ATransport.JSONRPC => "JSONRPC"
-    case A2ATransport.REST    => "REST"
-  }
+  def toRaw: String = this match
+    case JSONRPC => "JSONRPC"
+    case REST    => "REST"
 
-  given JsonDecoder[A2ATransport] = JsonDecoder.string.mapOrFail {
+object A2ATransport:
+  given JsonEncoder[A2ATransport] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[A2ATransport] = StringEnumJsonCodec.decoderOrFail {
     case "JSONRPC" => Right(A2ATransport.JSONRPC)
     case "REST"    => Right(A2ATransport.REST)
     case other     => Left(s"Unknown transport: $other")

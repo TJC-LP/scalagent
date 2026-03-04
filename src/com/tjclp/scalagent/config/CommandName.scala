@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.config
 
+import com.tjclp.scalagent.json.OpaqueStringJsonCodec
 import zio.json.{JsonDecoder, JsonEncoder}
 
 /** Type-safe wrapper for slash command names.
@@ -41,6 +42,5 @@ object CommandName:
       case "compact" | "clear" | "help" => true
       case _                            => false
 
-  // Opaque type is String at runtime, so cast is safe
-  given JsonEncoder[CommandName] = JsonEncoder.string.asInstanceOf[JsonEncoder[CommandName]]
-  given JsonDecoder[CommandName] = JsonDecoder.string.asInstanceOf[JsonDecoder[CommandName]]
+  given JsonEncoder[CommandName] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[CommandName] = OpaqueStringJsonCodec.decoder(apply)

@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.a2a
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 import zio.json.ast.Json
 
@@ -106,7 +107,7 @@ enum TaskState:
     case _                                        => false
 
 object TaskState:
-  given JsonEncoder[TaskState] = JsonEncoder.string.contramap {
+  given JsonEncoder[TaskState] = StringEnumJsonCodec.encoder {
     case Submitted     => "submitted"
     case Working       => "working"
     case InputRequired => "input-required"
@@ -118,7 +119,7 @@ object TaskState:
     case Unknown       => "unknown"
   }
 
-  given JsonDecoder[TaskState] = JsonDecoder.string.mapOrFail {
+  given JsonDecoder[TaskState] = StringEnumJsonCodec.decoderOrFail {
     case "submitted"      => Right(Submitted)
     case "working"        => Right(Working)
     case "input-required" => Right(InputRequired)
