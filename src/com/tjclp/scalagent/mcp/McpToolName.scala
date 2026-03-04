@@ -93,7 +93,9 @@ object McpToolName:
   given Conversion[McpToolName, ToolName] = _.toToolName
 
   given JsonEncoder[McpToolName] = OpaqueStringJsonCodec.encoder(_.value)
-  given JsonDecoder[McpToolName] = OpaqueStringJsonCodec.decoder(unsafeFromString)
+  given JsonDecoder[McpToolName] = OpaqueStringJsonCodec.decoderOrFail { raw =>
+    fromString(raw).toRight(s"Invalid MCP tool name format: $raw")
+  }
 
 /** Base class for defining type-safe MCP tool names for a server.
   *

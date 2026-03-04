@@ -13,3 +13,6 @@ object OpaqueStringJsonCodec:
 
   inline def decoder[A](wrap: String => A): JsonDecoder[A] =
     JsonDecoder.string.map(wrap)
+
+  inline def decoderOrFail[A](wrap: String => Either[String, A]): JsonDecoder[A] =
+    JsonDecoder.string.mapOrFail(wrap)

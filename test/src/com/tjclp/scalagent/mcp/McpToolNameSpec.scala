@@ -147,6 +147,11 @@ class McpToolNameSpec extends FunSuite:
       case Right(name) => assertEquals(name.value, "mcp__test__mytool")
       case Left(err)   => fail(s"Parse failed: $err")
 
+  test("McpToolName decoder rejects invalid format"):
+    val json = """"Read""""
+    val result = json.fromJson[McpToolName]
+    assert(result.isLeft)
+
   test("JSON round-trip preserves McpToolName"):
     val original = McpToolName("weather-api", "get_forecast")
     val json = original.toJson
