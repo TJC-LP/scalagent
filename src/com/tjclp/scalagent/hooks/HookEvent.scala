@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.hooks
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
 /** Hook event types supported by the Claude Agent SDK.
@@ -91,8 +92,8 @@ enum HookEvent:
     case WorktreeRemove     => "WorktreeRemove"
 
 object HookEvent:
-  given JsonEncoder[HookEvent] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[HookEvent] = JsonDecoder[String].mapOrFail {
+  given JsonEncoder[HookEvent] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[HookEvent] = StringEnumJsonCodec.decoderOrFail {
     case "PreToolUse"        => Right(PreToolUse)
     case "PostToolUse"       => Right(PostToolUse)
     case "PostToolUseFailure" => Right(PostToolUseFailure)

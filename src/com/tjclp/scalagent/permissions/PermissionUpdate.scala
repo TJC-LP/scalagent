@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.permissions
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import zio.json.*
@@ -289,8 +290,8 @@ enum PermissionUpdateDestination:
     case CliArg          => "cliArg"
 
 object PermissionUpdateDestination:
-  given JsonEncoder[PermissionUpdateDestination] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[PermissionUpdateDestination] = JsonDecoder[String].mapOrFail {
+  given JsonEncoder[PermissionUpdateDestination] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[PermissionUpdateDestination] = StringEnumJsonCodec.decoderOrFail {
     case "userSettings"    => Right(PermissionUpdateDestination.UserSettings)
     case "projectSettings" => Right(PermissionUpdateDestination.ProjectSettings)
     case "localSettings"   => Right(PermissionUpdateDestination.LocalSettings)

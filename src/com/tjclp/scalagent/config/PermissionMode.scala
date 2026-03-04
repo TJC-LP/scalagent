@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.config
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import scala.scalajs.js
 import zio.json.*
 
@@ -37,8 +38,8 @@ enum PermissionMode:
 
 object PermissionMode:
   // JSON codecs using string conversion (not derived - handles raw strings properly)
-  given JsonEncoder[PermissionMode] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[PermissionMode] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[PermissionMode] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[PermissionMode] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): PermissionMode = s match
     case "default"           => Default

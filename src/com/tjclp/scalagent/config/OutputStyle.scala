@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.config
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
 /** Output format style for Claude Agent SDK responses.
@@ -31,8 +32,8 @@ enum OutputStyle:
     case Custom(v)  => v
 
 object OutputStyle:
-  given JsonEncoder[OutputStyle] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[OutputStyle] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[OutputStyle] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[OutputStyle] = StringEnumJsonCodec.decoder(fromString)
 
   /** Parse an output style from string, returning the appropriate enum case. */
   def fromString(s: String): OutputStyle = s match

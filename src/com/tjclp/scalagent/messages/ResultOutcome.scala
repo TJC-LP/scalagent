@@ -3,6 +3,7 @@ package com.tjclp.scalagent.messages
 import zio.json.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.config.StructuredOutput
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.ToolUseId
 
@@ -148,8 +149,8 @@ enum ErrorReason:
     case Custom(v)                => v
 
 object ErrorReason:
-  given JsonEncoder[ErrorReason] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[ErrorReason] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[ErrorReason] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[ErrorReason] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): ErrorReason = s match
     case "error_during_execution"              => DuringExecution
