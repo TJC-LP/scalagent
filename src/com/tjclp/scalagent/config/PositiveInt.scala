@@ -1,5 +1,7 @@
 package com.tjclp.scalagent.config
 
+import scala.language.implicitConversions
+
 /** A positive integer (> 0).
   *
   * Use this for configuration fields that must be positive, like maxTurns.

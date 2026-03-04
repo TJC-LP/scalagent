@@ -2,6 +2,7 @@ package com.tjclp.scalagent.mcp
 
 import com.tjclp.scalagent.json.OpaqueStringJsonCodec
 import com.tjclp.scalagent.tools.ToolName
+import scala.language.implicitConversions
 import zio.json.{JsonDecoder, JsonEncoder}
 
 /** Type-safe MCP tool name with compile-time server/tool binding.
