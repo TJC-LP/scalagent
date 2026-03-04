@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.messages
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
 /** Message role in the conversation.
@@ -28,8 +29,8 @@ enum Role:
 
 object Role:
   // JSON codecs
-  given JsonEncoder[Role] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[Role] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[Role] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[Role] = StringEnumJsonCodec.decoder(fromString)
 
   /** Parse a role from string, returning the appropriate enum case. */
   def fromString(s: String): Role = s match

@@ -2,6 +2,7 @@ package com.tjclp.scalagent.messages
 
 import zio.json.*
 import com.tjclp.scalagent.config.FastModeState
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{ApiMessageId, MessageUuid, SessionId, ToolUseId}
 
@@ -350,8 +351,8 @@ enum TaskStatus:
     case Custom(v)  => v
 
 object TaskStatus:
-  given JsonEncoder[TaskStatus] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[TaskStatus] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[TaskStatus] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[TaskStatus] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): TaskStatus = s match
     case "completed" => Completed

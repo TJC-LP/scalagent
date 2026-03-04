@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.messages
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
 /** Reason why the assistant stopped generating a response.
@@ -32,8 +33,8 @@ enum StopReason:
 
 object StopReason:
   // JSON codecs
-  given JsonEncoder[StopReason] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[StopReason] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[StopReason] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[StopReason] = StringEnumJsonCodec.decoder(fromString)
 
   /** Parse a stop reason from string, returning the appropriate enum case. */
   def fromString(s: String): StopReason = s match

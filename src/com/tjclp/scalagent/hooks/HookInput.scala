@@ -1,10 +1,11 @@
 package com.tjclp.scalagent.hooks
 
-import zio.json.*
-import zio.json.ast.Json
 import com.tjclp.scalagent.config.PermissionMode
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{SessionId, SubagentId, ToolUseId}
+import zio.json.*
+import zio.json.ast.Json
 
 /** Input payloads for different hook event types.
   *
@@ -277,8 +278,8 @@ enum PermissionBehavior:
     case Ask   => "ask"
 
 object PermissionBehavior:
-  given JsonEncoder[PermissionBehavior] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[PermissionBehavior] = JsonDecoder[String].mapOrFail {
+  given JsonEncoder[PermissionBehavior] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[PermissionBehavior] = StringEnumJsonCodec.decoderOrFail {
     case "allow" => Right(Allow)
     case "deny"  => Right(Deny)
     case "ask"   => Right(Ask)
@@ -299,8 +300,8 @@ enum ExitReason:
     case Custom(v)                  => v
 
 object ExitReason:
-  given JsonEncoder[ExitReason] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[ExitReason] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[ExitReason] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[ExitReason] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): ExitReason = s match
     case "clear"                       => Clear
@@ -323,8 +324,8 @@ enum SessionStartSource:
     case Custom(v) => v
 
 object SessionStartSource:
-  given JsonEncoder[SessionStartSource] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[SessionStartSource] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[SessionStartSource] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[SessionStartSource] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): SessionStartSource = s match
     case "startup" => Startup
@@ -344,8 +345,8 @@ enum SetupTrigger:
     case Custom(v)   => v
 
 object SetupTrigger:
-  given JsonEncoder[SetupTrigger] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[SetupTrigger] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[SetupTrigger] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[SetupTrigger] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): SetupTrigger = s match
     case "init"        => Init
@@ -363,8 +364,8 @@ enum CompactTrigger:
     case Custom(v) => v
 
 object CompactTrigger:
-  given JsonEncoder[CompactTrigger] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[CompactTrigger] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[CompactTrigger] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[CompactTrigger] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): CompactTrigger = s match
     case "manual" => Manual
@@ -382,8 +383,8 @@ enum ElicitationMode:
     case Custom(v) => v
 
 object ElicitationMode:
-  given JsonEncoder[ElicitationMode] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[ElicitationMode] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[ElicitationMode] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[ElicitationMode] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): ElicitationMode = s match
     case "form" => Form
@@ -402,8 +403,8 @@ enum ElicitationAction:
     case Custom(v) => v
 
 object ElicitationAction:
-  given JsonEncoder[ElicitationAction] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[ElicitationAction] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[ElicitationAction] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[ElicitationAction] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): ElicitationAction = s match
     case "accept"  => Accept
@@ -425,8 +426,8 @@ enum ConfigChangeSource:
     case Custom(v)       => v
 
 object ConfigChangeSource:
-  given JsonEncoder[ConfigChangeSource] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[ConfigChangeSource] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[ConfigChangeSource] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[ConfigChangeSource] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): ConfigChangeSource = s match
     case "user_settings"    => UserSettings
