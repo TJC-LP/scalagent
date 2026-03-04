@@ -177,7 +177,7 @@ final case class AgentOptions(
       obj.env = js.Dictionary(env.toSeq*)
 
     if betaFeatures.nonEmpty then
-      obj.betaFeatures = betaFeatures.toJSArray
+      obj.betas = betaFeatures.toJSArray
 
     sandboxSettings.foreach(ss => obj.sandbox = ss.toRaw)
 
@@ -218,12 +218,28 @@ final case class AgentOptions(
     *
     * This requires a Runtime to bridge ZIO callbacks to JS functions.
     */
-  def hooksToRaw(runtime: Runtime[Any]): js.Dictionary[js.Array[js.Function1[js.Dynamic, js.Promise[js.Object]]]] =
+  def hooksToRaw(runtime: Runtime[Any]): js.Dictionary[js.Array[js.Object]] =
     if hooks.isEmpty then js.Dictionary()
     else
       js.Dictionary(
         hooks.toSeq.map { case (event, callbacks) =>
-          event.toRaw -> callbacks.map(cb => HookCallback.toRawJs(cb, runtime)).toJSArray
+          val matcher = js.Dynamic.literal(
+            hooks = callbacks.map(cb => HookCallback.toRawJs(cb, runtime)).toJSArray
+          )
+          event.toRaw -> js.Array(matcher.asInstanceOf[js.Object])
+        }*
+      )
+
+  /** Convert agent definitions to raw JavaScript format, including runtime hooks when present. */
+  def agentsToRaw(runtime: Runtime[Any]): js.Dictionary[js.Object] =
+    if agents.isEmpty then js.Dictionary()
+    else
+      js.Dictionary(
+        agents.toSeq.map { case (name, agentDef) =>
+          val raw =
+            if agentDef.hasHooks then agentDef.toRawWithHooks(runtime)
+            else agentDef.toRaw
+          name -> raw
         }*
       )
 

@@ -71,26 +71,35 @@ class MessageConverterSpec extends FunSuite:
       case other =>
         fail(s"Expected PromptSuggestion, got: $other")
 
-  test("parses rate_limit message"):
+  test("parses rate_limit_event message"):
     val raw = js.Dynamic.literal(
-      `type` = "rate_limit",
-      retry_after_ms = 3500,
-      model = "claude-sonnet-4-5-20250929",
+      `type` = "rate_limit_event",
+      rate_limit_info = js.Dynamic.literal(
+        status = "allowed_warning",
+        resetsAt = 12345,
+        rateLimitType = "five_hour",
+        utilization = 0.8
+      ),
       uuid = "msg-4",
       session_id = "session-1"
     )
 
     MessageConverter.fromRaw(raw) match
-      case AgentMessage.RateLimitEvent(retryAfterMs, model, _, _) =>
-        assertEquals(retryAfterMs, 3500L)
-        assertEquals(model, "claude-sonnet-4-5-20250929")
+      case AgentMessage.RateLimitEvent(retryAfterMs, model, status, resetsAt, rateLimitType, utilization, _, _) =>
+        assertEquals(retryAfterMs, None)
+        assertEquals(model, None)
+        assertEquals(status, Some("allowed_warning"))
+        assertEquals(resetsAt, Some(12345L))
+        assertEquals(rateLimitType, Some("five_hour"))
+        assertEquals(utilization, Some(0.8))
       case other =>
         fail(s"Expected RateLimitEvent, got: $other")
 
   test("parses local_command_output message"):
     val raw = js.Dynamic.literal(
-      `type` = "local_command_output",
-      output = "command output",
+      `type` = "system",
+      subtype = "local_command_output",
+      content = "command output",
       uuid = "msg-5",
       session_id = "session-1"
     )
@@ -103,7 +112,8 @@ class MessageConverterSpec extends FunSuite:
 
   test("parses elicitation_complete message"):
     val raw = js.Dynamic.literal(
-      `type` = "elicitation_complete",
+      `type` = "system",
+      subtype = "elicitation_complete",
       mcp_server_name = "mcp-server",
       elicitation_id = "elic-789",
       uuid = "msg-6",
@@ -119,7 +129,8 @@ class MessageConverterSpec extends FunSuite:
 
   test("parses task_started message"):
     val raw = js.Dynamic.literal(
-      `type` = "task_started",
+      `type` = "system",
+      subtype = "task_started",
       task_id = "task-1",
       description = "Running code review",
       uuid = "msg-7",
@@ -135,9 +146,10 @@ class MessageConverterSpec extends FunSuite:
 
   test("parses task_progress message"):
     val raw = js.Dynamic.literal(
-      `type` = "task_progress",
+      `type` = "system",
+      subtype = "task_progress",
       task_id = "task-1",
-      progress = "50%",
+      description = "50% complete",
       uuid = "msg-8",
       session_id = "session-1"
     )
@@ -145,6 +157,6 @@ class MessageConverterSpec extends FunSuite:
     MessageConverter.fromRaw(raw) match
       case AgentMessage.TaskProgress(taskId, progress, _, _) =>
         assertEquals(taskId, "task-1")
-        assertEquals(progress, "50%")
+        assertEquals(progress, "50% complete")
       case other =>
         fail(s"Expected TaskProgress, got: $other")

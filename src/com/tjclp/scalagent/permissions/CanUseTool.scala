@@ -5,7 +5,6 @@ import scala.scalajs.js.JSConverters.*
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
-import com.tjclp.scalagent.hooks.{PermissionSuggestion, PermissionBehavior}
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{SubagentId, ToolUseId}
 
@@ -38,16 +37,12 @@ type CanUseTool = (ToolName, Json, PermissionContext) => Task[PermissionResult]
   *   Subagent ID if running in a subagent
   */
 final case class PermissionContext(
-    suggestions: List[PermissionSuggestion] = Nil,
+    suggestions: List[PermissionUpdate] = Nil,
     blockedPath: Option[String] = None,
     decisionReason: Option[String] = None,
     toolUseId: ToolUseId,
     agentId: Option[SubagentId] = None
 )
-
-object PermissionContext:
-  given JsonDecoder[PermissionContext] = DeriveJsonDecoder.gen[PermissionContext]
-  given JsonEncoder[PermissionContext] = DeriveJsonEncoder.gen[PermissionContext]
 
 object CanUseTool:
   import scala.concurrent.ExecutionContext.Implicits.global
@@ -114,21 +109,8 @@ object CanUseTool:
       agentId = options.agentID.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
     )
 
-  private def parseSuggestions(raw: js.Any): List[PermissionSuggestion] =
+  private def parseSuggestions(raw: js.Any): List[PermissionUpdate] =
     if js.isUndefined(raw) || raw == null then Nil
     else
       val arr = raw.asInstanceOf[js.Array[js.Dynamic]]
-      arr.toList.map { s =>
-        PermissionSuggestion(
-          toolName = ToolName(s.toolName.asInstanceOf[String]),
-          behavior = parseBehavior(s.behavior.asInstanceOf[String]),
-          prefix = s.prefix.asInstanceOf[js.UndefOr[String]].toOption
-        )
-      }
-
-  private def parseBehavior(raw: String): PermissionBehavior =
-    raw match
-      case "allow" => PermissionBehavior.Allow
-      case "deny"  => PermissionBehavior.Deny
-      case "ask"   => PermissionBehavior.Ask
-      case _       => PermissionBehavior.Ask
+      arr.toList.flatMap(PermissionUpdate.fromRaw)

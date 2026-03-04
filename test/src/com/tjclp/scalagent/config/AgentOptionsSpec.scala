@@ -447,6 +447,5 @@ class AgentOptionsSpec extends FunSuite:
     val custom = PermissionMode.fromString("some-custom-mode")
     assertEquals(custom.toRaw, "some-custom-mode")
 
-  test("PermissionMode.Delegate round-trips"):
-    assertEquals(PermissionMode.Delegate.toRaw, "delegate")
-    assertEquals(PermissionMode.fromString("delegate"), PermissionMode.Delegate)
+  test("PermissionMode handles unsupported delegate as Custom"):
+    assertEquals(PermissionMode.fromString("delegate"), PermissionMode.Custom("delegate"))

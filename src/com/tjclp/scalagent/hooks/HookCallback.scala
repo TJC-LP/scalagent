@@ -82,8 +82,11 @@ object HookCallback:
     *
     * This bridges the ZIO-based callback to the SDK's expected JavaScript function format.
     */
-  def toRawJs(callback: HookCallback, runtime: Runtime[Any]): js.Function1[js.Dynamic, js.Promise[js.Object]] =
-    (rawInput: js.Dynamic) => {
+  def toRawJs(
+      callback: HookCallback,
+      runtime: Runtime[Any]
+  ): js.Function3[js.Dynamic, js.UndefOr[String], js.Dynamic, js.Promise[js.Object]] =
+    (rawInput: js.Dynamic, _toolUseId: js.UndefOr[String], _options: js.Dynamic) => {
       val input = parseHookInput(rawInput)
       val effect = callback(input).map(_.toRaw)
       Unsafe.unsafe { implicit unsafe =>

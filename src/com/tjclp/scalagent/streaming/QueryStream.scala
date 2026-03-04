@@ -171,7 +171,26 @@ final class QueryStream private (rawQuery: RawQuery):
       role = "user",
       content = message
     )
-    ZIO.fromPromiseJS(rawQuery.streamInput(userMsg))
+    ZIO.fromPromiseJS(rawQuery.streamInput(singleMessageStream(userMsg)))
+
+  private def singleMessageStream(userMsg: js.Dynamic): js.Any =
+    val iterator = js.Dynamic.literal()
+    var emitted = false
+    iterator.next = () =>
+      if !emitted then
+        emitted = true
+        js.Promise.resolve(
+          js.Dynamic.literal(
+            value = userMsg,
+            done = false
+          )
+        )
+      else
+        js.Promise.resolve(js.Dynamic.literal(done = true))
+
+    val stream = js.Dynamic.literal()
+    js.Dynamic.global.Reflect.set(stream, js.Symbol.asyncIterator, () => iterator)
+    stream
 
   /** Forcefully close the query and terminate the underlying process.
     *

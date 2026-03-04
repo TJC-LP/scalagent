@@ -172,6 +172,10 @@ private final class ClaudeAgentLive extends ClaudeAgent:
         if options.hooks.nonEmpty then
           rawOptions.hooks = options.hooksToRaw(runtime)
 
+        // Wire up subagents with runtime hook callbacks if present
+        if options.agents.nonEmpty then
+          rawOptions.agents = options.agentsToRaw(runtime)
+
         // Wire up canUseTool permission handler if configured
         options.canUseToolToRaw(runtime).foreach { handler =>
           rawOptions.canUseTool = handler
@@ -194,5 +198,8 @@ private final class ClaudeAgentLive extends ClaudeAgent:
 @JSImport("@anthropic-ai/claude-agent-sdk", JSImport.Namespace)
 private[scalagent] object SdkModule extends js.Object:
   def query(params: js.Dynamic): js.Object = js.native
-  def listSessions(options: js.Dynamic): js.Promise[js.Array[js.Dynamic]] = js.native
-  def getSessionMessages(options: js.Dynamic): js.Promise[js.Array[js.Dynamic]] = js.native
+  def listSessions(options: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Array[js.Dynamic]] = js.native
+  def getSessionMessages(
+      sessionId: String,
+      options: js.UndefOr[js.Dynamic] = js.undefined
+  ): js.Promise[js.Array[js.Dynamic]] = js.native

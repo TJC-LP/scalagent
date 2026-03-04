@@ -29,7 +29,7 @@ class HookCallbackSpec extends FunSuite:
       }
     HookCallback
       .toRawJs(callback, runtime)
-      .apply(raw)
+      .apply(raw, js.undefined, js.Dynamic.literal())
       .toFuture
       .map(_ => parsed.getOrElse(fail("Expected hook input to be parsed")))
 
@@ -42,7 +42,7 @@ class HookCallbackSpec extends FunSuite:
       case input: HookInput.TeammateIdle =>
         assertEquals(input.teammateName, "researcher")
         assertEquals(input.teamName, "my-team")
-        assertEquals(input.permissionMode, Some(PermissionMode.Delegate))
+        assertEquals(input.permissionMode, Some(PermissionMode.Custom("delegate")))
       case other => fail(s"Expected TeammateIdle, got: $other")
     }
 
@@ -133,6 +133,6 @@ class HookCallbackSpec extends FunSuite:
     parseInput(raw).map {
       case input: HookInput.Setup =>
         assertEquals(input.trigger, SetupTrigger.Init)
-        assertEquals(input.permissionMode, Some(PermissionMode.Delegate))
+        assertEquals(input.permissionMode, Some(PermissionMode.Custom("delegate")))
       case other => fail(s"Expected Setup, got: $other")
     }

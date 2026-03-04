@@ -98,6 +98,10 @@ object ClaudeSession:
         if options.hooks.nonEmpty then
           rawOptions.hooks = options.hooksToRaw(runtime)
 
+        // Wire up subagents with runtime hook callbacks if present
+        if options.agents.nonEmpty then
+          rawOptions.agents = options.agentsToRaw(runtime)
+
         // Wire up canUseTool permission handler if configured
         options.canUseToolToRaw(runtime).foreach { handler =>
           rawOptions.canUseTool = handler
@@ -127,6 +131,10 @@ object ClaudeSession:
         // Wire up hooks if any are configured
         if options.hooks.nonEmpty then
           rawOptions.hooks = options.hooksToRaw(runtime)
+
+        // Wire up subagents with runtime hook callbacks if present
+        if options.agents.nonEmpty then
+          rawOptions.agents = options.agentsToRaw(runtime)
 
         // Wire up canUseTool permission handler if configured
         options.canUseToolToRaw(runtime).foreach { handler =>
@@ -172,7 +180,12 @@ private final class ClaudeSessionLive(
     }
 
   override def interrupt(using Open =:= Open): IO[AgentError, Unit] =
-    ZIO.attempt(raw.interrupt()).mapError(AgentError.fromThrowable)
+    ZIO
+      .attempt {
+        val dyn = raw.asInstanceOf[js.Dynamic]
+        dyn.interrupt.asInstanceOf[js.UndefOr[js.Function0[Unit]]].toOption.foreach(_.apply())
+      }
+      .mapError(AgentError.fromThrowable)
 
   override def close(using Open =:= Open): IO[AgentError, ClaudeSession[Closed]] =
     // V2 API: close() returns void (synchronous)
@@ -219,8 +232,6 @@ private trait RawSession extends js.Object:
   def stream(): js.Object = js.native
   // close returns void (synchronous)
   def close(): Unit = js.native
-  // interrupt is synchronous
-  def interrupt(): Unit = js.native
 
 /** JavaScript module binding for the V2 session SDK functions.
   *

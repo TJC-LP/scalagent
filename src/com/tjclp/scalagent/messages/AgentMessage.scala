@@ -109,8 +109,12 @@ enum AgentMessage:
 
   /** Rate limit event */
   case RateLimitEvent(
-      retryAfterMs: Long,
-      model: String,
+      retryAfterMs: Option[Long],
+      model: Option[String],
+      status: Option[String],
+      resetsAt: Option[Long],
+      rateLimitType: Option[String],
+      utilization: Option[Double],
       uuid: MessageUuid,
       sessionId: SessionId
   )
