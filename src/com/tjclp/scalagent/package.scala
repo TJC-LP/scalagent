@@ -229,6 +229,15 @@ package object scalagent {
   type CompactTrigger = hooks.CompactTrigger
   val CompactTrigger = hooks.CompactTrigger
 
+  type ExitReason = hooks.ExitReason
+  val ExitReason = hooks.ExitReason
+
+  type SessionStartSource = hooks.SessionStartSource
+  val SessionStartSource = hooks.SessionStartSource
+
+  type SetupTrigger = hooks.SetupTrigger
+  val SetupTrigger = hooks.SetupTrigger
+
   type HookCallback = hooks.HookCallback
   val HookCallback = hooks.HookCallback
 

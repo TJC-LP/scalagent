@@ -73,9 +73,9 @@ final case class QueryResult(
 ):
   /** Get the final text result, or fail with AgentError if not successful */
   def text: Either[AgentError, String] = outcome match
-    case ResultOutcome.Success(_, _, _, result, _, _, _, _, _) => Right(result)
-    case ResultOutcome.Error(reason, _, _, _, _, _, _, denials, errors) =>
-      Left(AgentError.ApiError(500, reason.toString, Some(errors.mkString("; "))))
+    case s: ResultOutcome.Success => Right(s.result)
+    case e: ResultOutcome.Error =>
+      Left(AgentError.ApiError(500, e.reason.toString, Some(e.errors.mkString("; "))))
 
   /** Get the final text result as a ZIO effect */
   def textOrFail: IO[AgentError, String] = ZIO.fromEither(text)

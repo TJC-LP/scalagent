@@ -5,6 +5,7 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import zio.*
 import zio.json.ast.Json
+import com.tjclp.scalagent.config.PermissionMode
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{SessionId, SubagentId, ToolUseId}
 
@@ -99,6 +100,7 @@ object HookCallback:
     val cwd = raw.cwd.asInstanceOf[String]
     val transcriptPath = raw.transcript_path.asInstanceOf[String]
     val hookEvent = raw.hook_event.asInstanceOf[String]
+    val permissionMode = raw.permissionMode.asInstanceOf[js.UndefOr[String]].toOption.map(PermissionMode.fromString)
 
     hookEvent match
       case "PreToolUse" =>
@@ -109,7 +111,8 @@ object HookCallback:
           toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
           toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
+          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply),
+          permissionMode = permissionMode
         )
 
       case "PostToolUse" =>
@@ -121,7 +124,8 @@ object HookCallback:
           toolInput = parseJson(raw.tool_input),
           toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
           toolResponse = raw.tool_response.asInstanceOf[String],
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
+          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply),
+          permissionMode = permissionMode
         )
 
       case "PostToolUseFailure" =>
@@ -133,7 +137,9 @@ object HookCallback:
           toolInput = parseJson(raw.tool_input),
           toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
           error = raw.error.asInstanceOf[String],
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
+          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply),
+          isInterrupt = raw.is_interrupt.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false),
+          permissionMode = permissionMode
         )
 
       case "PermissionRequest" =>
@@ -143,8 +149,12 @@ object HookCallback:
           transcriptPath = transcriptPath,
           toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
-          toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
+          permissionSuggestions = raw.permission_suggestions
+            .asInstanceOf[js.UndefOr[js.Array[js.Any]]]
+            .toOption
+            .map(_.toList.map(parseJson))
+            .getOrElse(Nil),
+          permissionMode = permissionMode
         )
 
       case "Notification" =>
@@ -152,7 +162,10 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          message = raw.message.asInstanceOf[String]
+          message = raw.message.asInstanceOf[String],
+          title = raw.title.asInstanceOf[js.UndefOr[String]].toOption,
+          notificationType = raw.notification_type.asInstanceOf[js.UndefOr[String]].getOrElse("info"),
+          permissionMode = permissionMode
         )
 
       case "UserPromptSubmit" =>
@@ -160,7 +173,8 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          prompt = raw.prompt.asInstanceOf[String]
+          prompt = raw.prompt.asInstanceOf[String],
+          permissionMode = permissionMode
         )
 
       case "SessionStart" =>
@@ -168,7 +182,12 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          isResume = raw.is_resume.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
+          source = SessionStartSource.fromString(
+            raw.source.asInstanceOf[js.UndefOr[String]].getOrElse("startup")
+          ),
+          agentType = raw.agent_type.asInstanceOf[js.UndefOr[String]].toOption,
+          model = raw.model.asInstanceOf[js.UndefOr[String]].toOption,
+          permissionMode = permissionMode
         )
 
       case "SessionEnd" =>
@@ -176,8 +195,8 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          reason = parseSessionEndReason(raw.reason.asInstanceOf[js.UndefOr[String]].toOption),
-          totalCostUsd = raw.total_cost_usd.asInstanceOf[js.UndefOr[Double]].toOption
+          reason = ExitReason.fromString(raw.reason.asInstanceOf[js.UndefOr[String]].getOrElse("other")),
+          permissionMode = permissionMode
         )
 
       case "Stop" =>
@@ -185,7 +204,8 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          reason = raw.reason.asInstanceOf[js.UndefOr[String]].getOrElse("unknown")
+          stopHookActive = raw.stop_hook_active.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false),
+          permissionMode = permissionMode
         )
 
       case "SubagentStart" =>
@@ -193,9 +213,9 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          subagentId = SubagentId(raw.subagent_id.asInstanceOf[String]),
-          subagentType = raw.subagent_type.asInstanceOf[String],
-          parentToolUseId = ToolUseId(raw.parent_tool_use_id.asInstanceOf[String])
+          agentId = raw.agent_id.asInstanceOf[String],
+          agentType = raw.agent_type.asInstanceOf[String],
+          permissionMode = permissionMode
         )
 
       case "SubagentStop" =>
@@ -203,10 +223,11 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          subagentId = SubagentId(raw.subagent_id.asInstanceOf[String]),
-          subagentType = raw.subagent_type.asInstanceOf[String],
-          parentToolUseId = ToolUseId(raw.parent_tool_use_id.asInstanceOf[String]),
-          success = raw.success.asInstanceOf[js.UndefOr[Boolean]].getOrElse(true)
+          stopHookActive = raw.stop_hook_active.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false),
+          agentId = raw.agent_id.asInstanceOf[String],
+          agentTranscriptPath = raw.agent_transcript_path.asInstanceOf[js.UndefOr[String]].getOrElse(""),
+          agentType = raw.agent_type.asInstanceOf[String],
+          permissionMode = permissionMode
         )
 
       case "PreCompact" =>
@@ -214,8 +235,22 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          currentTokens = raw.current_tokens.asInstanceOf[Int],
-          trigger = CompactTrigger.Auto
+          trigger = CompactTrigger.fromString(
+            raw.trigger.asInstanceOf[js.UndefOr[String]].getOrElse("auto")
+          ),
+          customInstructions = raw.custom_instructions.asInstanceOf[js.UndefOr[String]].toOption,
+          permissionMode = permissionMode
+        )
+
+      case "Setup" =>
+        HookInput.Setup(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          trigger = SetupTrigger.fromString(
+            raw.trigger.asInstanceOf[js.UndefOr[String]].getOrElse("init")
+          ),
+          permissionMode = permissionMode
         )
 
       case other =>
@@ -224,7 +259,8 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          message = s"Unknown hook event: $other"
+          message = s"Unknown hook event: $other",
+          permissionMode = permissionMode
         )
 
   private def parseJson(value: js.Any): Json =
@@ -232,14 +268,6 @@ object HookCallback:
     val jsonStr = js.JSON.stringify(value)
     jsonStr.fromJson[Json].getOrElse(Json.Null)
 
-  private def parseSessionEndReason(raw: Option[String]): SessionEndReason =
-    raw match
-      case Some("success")     => SessionEndReason.Success
-      case Some("error")       => SessionEndReason.Error
-      case Some("interrupted") => SessionEndReason.Interrupted
-      case Some("max_turns")   => SessionEndReason.MaxTurns
-      case Some("max_budget")  => SessionEndReason.MaxBudget
-      case _                   => SessionEndReason.Success
 
   // ============================================================================
   // Hook Combinator Extension Methods

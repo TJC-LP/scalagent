@@ -20,6 +20,9 @@ enum PermissionMode:
   /** Plan mode - generate plans without execution */
   case Plan
 
+  /** Delegate permission decisions to hooks */
+  case Delegate
+
   /** Don't ask for permissions, deny if not pre-approved */
   case DontAsk
 
@@ -32,6 +35,7 @@ enum PermissionMode:
     case AcceptEdits       => "acceptEdits"
     case BypassPermissions => "bypassPermissions"
     case Plan              => "plan"
+    case Delegate          => "delegate"
     case DontAsk           => "dontAsk"
     case Custom(v)         => v
 
@@ -45,5 +49,6 @@ object PermissionMode:
     case "acceptEdits"       => AcceptEdits
     case "bypassPermissions" => BypassPermissions
     case "plan"              => Plan
+    case "delegate"          => Delegate
     case "dontAsk"           => DontAsk
     case other               => Custom(other)

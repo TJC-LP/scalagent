@@ -31,7 +31,7 @@ enum SystemEvent:
   )
 
   /** Status update */
-  case Status(status: Option[SdkStatus])
+  case Status(status: Option[SdkStatus], permissionMode: Option[PermissionMode] = None)
 
   /** Hook response event */
   case HookResponse(

@@ -77,6 +77,8 @@ object MessageConverter:
   private def parseResultMessage(obj: js.Dynamic): AgentMessage.Result =
     val subtype = obj.subtype.asInstanceOf[String]
 
+    val stopReason = obj.stop_reason.asInstanceOf[js.UndefOr[String]].toOption
+
     val outcome =
       if subtype == "success" then
         ResultOutcome.Success(
@@ -88,7 +90,8 @@ object MessageConverter:
           usage = parseModelUsage(obj.usage),
           modelUsage = parseModelUsageMap(obj.modelUsage),
           permissionDenials = parsePermissionDenials(obj.permission_denials),
-          structuredOutput = obj.structured_output.asInstanceOf[js.UndefOr[js.Any]].toOption.map(jsToJson)
+          structuredOutput = obj.structured_output.asInstanceOf[js.UndefOr[js.Any]].toOption.map(jsToJson),
+          stopReason = stopReason
         )
       else
         ResultOutcome.Error(
@@ -100,7 +103,8 @@ object MessageConverter:
           usage = parseModelUsage(obj.usage),
           modelUsage = parseModelUsageMap(obj.modelUsage),
           permissionDenials = parsePermissionDenials(obj.permission_denials),
-          errors = obj.errors.asInstanceOf[js.Array[String]].toList
+          errors = obj.errors.asInstanceOf[js.Array[String]].toList,
+          stopReason = stopReason
         )
 
     val fastModeState = obj.fast_mode_state
@@ -359,7 +363,8 @@ object MessageConverter:
             v.cacheCreationInputTokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
           webSearchRequests = v.webSearchRequests.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
           costUSD = v.costUSD.asInstanceOf[Double],
-          contextWindow = v.contextWindow.asInstanceOf[Int]
+          contextWindow = v.contextWindow.asInstanceOf[Int],
+          maxOutputTokens = v.maxOutputTokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0)
         )
       }
 
@@ -405,7 +410,8 @@ object MessageConverter:
 
   private def parseStatusEvent(obj: js.Dynamic): SystemEvent.Status =
     SystemEvent.Status(
-      status = obj.status.asInstanceOf[js.UndefOr[String]].toOption.map(SdkStatus.fromString)
+      status = obj.status.asInstanceOf[js.UndefOr[String]].toOption.map(SdkStatus.fromString),
+      permissionMode = obj.permissionMode.asInstanceOf[js.UndefOr[String]].toOption.map(PermissionMode.fromString)
     )
 
   private def parseHookResponseEvent(obj: js.Dynamic): SystemEvent.HookResponse =

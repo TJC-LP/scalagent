@@ -297,27 +297,17 @@ object SlashCommand:
 
 /** Information about a supported model */
 final case class ModelInfo(
-    id: String,
-    name: String,
-    provider: String,
-    supportsEffort: Boolean = false,
-    supportedEffortLevels: List[String] = Nil,
-    supportsAdaptiveThinking: Boolean = false
+    value: String,
+    displayName: String,
+    description: String
 )
 
 object ModelInfo:
   def fromRaw(obj: js.Dynamic): ModelInfo =
     ModelInfo(
-      id = obj.id.asInstanceOf[String],
-      name = obj.name.asInstanceOf[String],
-      provider = obj.provider.asInstanceOf[String],
-      supportsEffort = obj.supportsEffort.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false),
-      supportedEffortLevels = obj.supportedEffortLevels
-        .asInstanceOf[js.UndefOr[js.Array[String]]]
-        .toOption
-        .map(_.toList)
-        .getOrElse(Nil),
-      supportsAdaptiveThinking = obj.supportsAdaptiveThinking.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
+      value = obj.value.asInstanceOf[String],
+      displayName = obj.displayName.asInstanceOf[String],
+      description = obj.description.asInstanceOf[js.UndefOr[String]].getOrElse("")
     )
 
 /** Information about a supported subagent */
