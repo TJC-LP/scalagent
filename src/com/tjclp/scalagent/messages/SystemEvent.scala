@@ -8,7 +8,7 @@ import com.tjclp.scalagent.tools.ToolName
 enum SystemEvent:
   /** Initial system event with session info */
   case Init(
-      apiKeySource: String, // Descriptive string like "/login managed key" or "ANTHROPIC_API_KEY"
+      apiKeySource: ApiKeySource,
       claudeCodeVersion: String,
       cwd: String,
       tools: List[ToolName],

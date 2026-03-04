@@ -132,12 +132,12 @@ object HookInput:
       sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
-      agentId: String,
+      agentId: SubagentId,
       agentType: String,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput:
     @deprecated("Use agentId", "0.2.63")
-    def subagentId: SubagentId = SubagentId(agentId)
+    def subagentId: SubagentId = agentId
 
     @deprecated("Use agentType", "0.2.63")
     def subagentType: String = agentType
@@ -148,13 +148,13 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       stopHookActive: Boolean = false,
-      agentId: String,
+      agentId: SubagentId,
       agentTranscriptPath: String,
       agentType: String,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput:
     @deprecated("Use agentId", "0.2.63")
-    def subagentId: SubagentId = SubagentId(agentId)
+    def subagentId: SubagentId = agentId
 
     @deprecated("Use agentType", "0.2.63")
     def subagentType: String = agentType
@@ -183,7 +183,8 @@ object HookInput:
       sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
-      teammateId: String,
+      teammateName: String,
+      teamName: String,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -193,8 +194,10 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       taskId: String,
-      success: Boolean,
-      summary: Option[String] = None,
+      taskSubject: String,
+      taskDescription: Option[String] = None,
+      teammateName: Option[String] = None,
+      teamName: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -203,8 +206,12 @@ object HookInput:
       sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
-      serverId: String,
+      mcpServerName: String,
       message: String,
+      mode: Option[ElicitationMode] = None,
+      url: Option[String] = None,
+      elicitationId: Option[String] = None,
+      requestedSchema: Option[Json] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -213,8 +220,11 @@ object HookInput:
       sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
-      serverId: String,
-      accepted: Boolean,
+      mcpServerName: String,
+      action: ElicitationAction,
+      elicitationId: Option[String] = None,
+      mode: Option[ElicitationMode] = None,
+      content: Option[Json] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -223,8 +233,8 @@ object HookInput:
       sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
-      key: String,
-      value: Option[String] = None,
+      source: ConfigChangeSource,
+      filePath: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -233,8 +243,7 @@ object HookInput:
       sessionId: SessionId,
       cwd: String,
       transcriptPath: String,
-      worktreePath: String,
-      branch: String,
+      name: String,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -244,7 +253,6 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       worktreePath: String,
-      branch: String,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -362,3 +370,68 @@ object CompactTrigger:
     case "manual" => Manual
     case "auto"   => Auto
     case other    => Custom(other)
+
+/** Elicitation mode */
+enum ElicitationMode:
+  case Form, Url
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Form      => "form"
+    case Url       => "url"
+    case Custom(v) => v
+
+object ElicitationMode:
+  given JsonEncoder[ElicitationMode] = JsonEncoder[String].contramap(_.toRaw)
+  given JsonDecoder[ElicitationMode] = JsonDecoder[String].map(fromString)
+
+  def fromString(s: String): ElicitationMode = s match
+    case "form" => Form
+    case "url"  => Url
+    case other  => Custom(other)
+
+/** Elicitation action result */
+enum ElicitationAction:
+  case Accept, Decline, Cancel
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Accept    => "accept"
+    case Decline   => "decline"
+    case Cancel    => "cancel"
+    case Custom(v) => v
+
+object ElicitationAction:
+  given JsonEncoder[ElicitationAction] = JsonEncoder[String].contramap(_.toRaw)
+  given JsonDecoder[ElicitationAction] = JsonDecoder[String].map(fromString)
+
+  def fromString(s: String): ElicitationAction = s match
+    case "accept"  => Accept
+    case "decline" => Decline
+    case "cancel"  => Cancel
+    case other     => Custom(other)
+
+/** Source of a configuration change */
+enum ConfigChangeSource:
+  case UserSettings, ProjectSettings, LocalSettings, PolicySettings, Skills
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case UserSettings    => "user_settings"
+    case ProjectSettings => "project_settings"
+    case LocalSettings   => "local_settings"
+    case PolicySettings  => "policy_settings"
+    case Skills          => "skills"
+    case Custom(v)       => v
+
+object ConfigChangeSource:
+  given JsonEncoder[ConfigChangeSource] = JsonEncoder[String].contramap(_.toRaw)
+  given JsonDecoder[ConfigChangeSource] = JsonDecoder[String].map(fromString)
+
+  def fromString(s: String): ConfigChangeSource = s match
+    case "user_settings"    => UserSettings
+    case "project_settings" => ProjectSettings
+    case "local_settings"   => LocalSettings
+    case "policy_settings"  => PolicySettings
+    case "skills"           => Skills
+    case other              => Custom(other)

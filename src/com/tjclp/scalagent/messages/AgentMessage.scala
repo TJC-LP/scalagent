@@ -124,8 +124,8 @@ enum AgentMessage:
 
   /** Elicitation complete */
   case ElicitationComplete(
-      serverId: String,
-      accepted: Boolean,
+      mcpServerName: String,
+      elicitationId: String,
       uuid: MessageUuid,
       sessionId: SessionId
   )

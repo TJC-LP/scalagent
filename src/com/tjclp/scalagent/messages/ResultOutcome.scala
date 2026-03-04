@@ -3,6 +3,7 @@ package com.tjclp.scalagent.messages
 import zio.json.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.config.StructuredOutput
+import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.ToolUseId
 
 /** Result outcome from a completed query */
@@ -18,7 +19,7 @@ enum ResultOutcome:
       modelUsage: Map[String, PerModelUsage],
       permissionDenials: List[PermissionDenial],
       structuredOutput: Option[zio.json.ast.Json],
-      stopReason: Option[String] = None
+      stopReason: Option[StopReason] = None
   )
 
   /** Query terminated with error */
@@ -32,7 +33,7 @@ enum ResultOutcome:
       modelUsage: Map[String, PerModelUsage],
       permissionDenials: List[PermissionDenial],
       errors: List[String],
-      stopReason: Option[String] = None
+      stopReason: Option[StopReason] = None
   )
 
 object ResultOutcome:
@@ -105,7 +106,7 @@ object ResultOutcome:
       case _: Error   => None
 
     /** Get the stop reason if available */
-    def stopReason: Option[String] = outcome match
+    def stopReason: Option[StopReason] = outcome match
       case s: Success => s.stopReason
       case e: Error   => e.stopReason
 
@@ -189,7 +190,7 @@ object PerModelUsage:
 
 /** Record of a permission denial during query execution */
 final case class PermissionDenial(
-    toolName: String,
+    toolName: ToolName,
     toolUseId: ToolUseId,
     toolInput: zio.json.ast.Json
 )

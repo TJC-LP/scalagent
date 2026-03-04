@@ -77,7 +77,7 @@ object MessageConverter:
   private def parseResultMessage(obj: js.Dynamic): AgentMessage.Result =
     val subtype = obj.subtype.asInstanceOf[String]
 
-    val stopReason = normalizeOptionalString(obj.stop_reason.asInstanceOf[js.UndefOr[String]])
+    val stopReason = normalizeOptionalString(obj.stop_reason.asInstanceOf[js.UndefOr[String]]).map(StopReason.fromString)
 
     val outcome =
       if subtype == "success" then
@@ -163,7 +163,7 @@ object MessageConverter:
         case "tool_use" =>
           ContentBlock.ToolUse(
             id = ToolUseId(raw.id.asInstanceOf[String]),
-            name = raw.name.asInstanceOf[String],
+            name = ToolName.fromString(raw.name.asInstanceOf[String]),
             input = jsToJson(raw.input)
           )
         case "thinking" =>
@@ -258,8 +258,8 @@ object MessageConverter:
 
   private def parseElicitationComplete(obj: js.Dynamic): AgentMessage.ElicitationComplete =
     AgentMessage.ElicitationComplete(
-      serverId = obj.server_id.asInstanceOf[String],
-      accepted = obj.accepted.asInstanceOf[Boolean],
+      mcpServerName = obj.mcp_server_name.asInstanceOf[String],
+      elicitationId = obj.elicitation_id.asInstanceOf[String],
       uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
       sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
@@ -308,7 +308,7 @@ object MessageConverter:
         case "tool_use" =>
           ContentBlock.ToolUse(
             id = ToolUseId(block.id.asInstanceOf[String]),
-            name = block.name.asInstanceOf[String],
+            name = ToolName.fromString(block.name.asInstanceOf[String]),
             input = jsToJson(block.input)
           )
         case "tool_result" =>
@@ -373,7 +373,7 @@ object MessageConverter:
     else
       arr.asInstanceOf[js.Array[js.Dynamic]].toList.map { denial =>
         PermissionDenial(
-          toolName = denial.tool_name.asInstanceOf[String],
+          toolName = ToolName.fromString(denial.tool_name.asInstanceOf[String]),
           toolUseId = ToolUseId(denial.tool_use_id.asInstanceOf[String]),
           toolInput = jsToJson(denial.tool_input)
         )
@@ -381,7 +381,7 @@ object MessageConverter:
 
   private def parseInitEvent(obj: js.Dynamic): SystemEvent.Init =
     SystemEvent.Init(
-      apiKeySource = obj.apiKeySource.asInstanceOf[String],
+      apiKeySource = ApiKeySource.fromString(obj.apiKeySource.asInstanceOf[String]),
       claudeCodeVersion = obj.claude_code_version.asInstanceOf[String],
       cwd = obj.cwd.asInstanceOf[String],
       tools = obj.tools.asInstanceOf[js.Array[String]].toList.map(ToolName.fromString),

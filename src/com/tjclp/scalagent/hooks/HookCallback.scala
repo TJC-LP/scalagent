@@ -215,7 +215,7 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          agentId = firstString(raw, "agent_id", "agentId").getOrElse(""),
+          agentId = SubagentId(firstString(raw, "agent_id", "agentId").getOrElse("")),
           agentType = firstString(raw, "agent_type", "agentType").getOrElse(""),
           permissionMode = permissionMode
         )
@@ -226,7 +226,7 @@ object HookCallback:
           cwd = cwd,
           transcriptPath = transcriptPath,
           stopHookActive = optionalBoolean(raw, "stop_hook_active").getOrElse(false),
-          agentId = firstString(raw, "agent_id", "agentId").getOrElse(""),
+          agentId = SubagentId(firstString(raw, "agent_id", "agentId").getOrElse("")),
           agentTranscriptPath = firstString(raw, "agent_transcript_path", "agentTranscriptPath").getOrElse(""),
           agentType = firstString(raw, "agent_type", "agentType").getOrElse(""),
           permissionMode = permissionMode
@@ -260,7 +260,8 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          teammateId = firstString(raw, "teammate_id", "teammateId").getOrElse(""),
+          teammateName = firstString(raw, "teammate_name", "teammateName").getOrElse(""),
+          teamName = firstString(raw, "team_name", "teamName").getOrElse(""),
           permissionMode = permissionMode
         )
 
@@ -270,8 +271,10 @@ object HookCallback:
           cwd = cwd,
           transcriptPath = transcriptPath,
           taskId = firstString(raw, "task_id", "taskId").getOrElse(""),
-          success = optionalBoolean(raw, "success").getOrElse(false),
-          summary = firstString(raw, "summary"),
+          taskSubject = firstString(raw, "task_subject", "taskSubject").getOrElse(""),
+          taskDescription = firstString(raw, "task_description", "taskDescription"),
+          teammateName = firstString(raw, "teammate_name", "teammateName"),
+          teamName = firstString(raw, "team_name", "teamName"),
           permissionMode = permissionMode
         )
 
@@ -280,8 +283,12 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          serverId = firstString(raw, "server_id", "serverId").getOrElse(""),
+          mcpServerName = firstString(raw, "mcp_server_name", "mcpServerName").getOrElse(""),
           message = firstString(raw, "message").getOrElse(""),
+          mode = firstString(raw, "mode").map(ElicitationMode.fromString),
+          url = firstString(raw, "url"),
+          elicitationId = firstString(raw, "elicitation_id", "elicitationId"),
+          requestedSchema = optionalJsValue(raw, "requested_schema").map(parseJson),
           permissionMode = permissionMode
         )
 
@@ -290,8 +297,11 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          serverId = firstString(raw, "server_id", "serverId").getOrElse(""),
-          accepted = optionalBoolean(raw, "accepted").getOrElse(false),
+          mcpServerName = firstString(raw, "mcp_server_name", "mcpServerName").getOrElse(""),
+          action = ElicitationAction.fromString(firstString(raw, "action").getOrElse("cancel")),
+          elicitationId = firstString(raw, "elicitation_id", "elicitationId"),
+          mode = firstString(raw, "mode").map(ElicitationMode.fromString),
+          content = optionalJsValue(raw, "content").map(parseJson),
           permissionMode = permissionMode
         )
 
@@ -300,8 +310,8 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          key = firstString(raw, "key").getOrElse(""),
-          value = firstString(raw, "value"),
+          source = ConfigChangeSource.fromString(firstString(raw, "source").getOrElse("user_settings")),
+          filePath = firstString(raw, "file_path", "filePath"),
           permissionMode = permissionMode
         )
 
@@ -310,8 +320,7 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          worktreePath = firstString(raw, "worktree_path", "worktreePath").getOrElse(""),
-          branch = firstString(raw, "branch").getOrElse(""),
+          name = firstString(raw, "name").getOrElse(""),
           permissionMode = permissionMode
         )
 
@@ -321,7 +330,6 @@ object HookCallback:
           cwd = cwd,
           transcriptPath = transcriptPath,
           worktreePath = firstString(raw, "worktree_path", "worktreePath").getOrElse(""),
-          branch = firstString(raw, "branch").getOrElse(""),
           permissionMode = permissionMode
         )
 
@@ -356,8 +364,7 @@ object HookCallback:
         if js.typeOf(value) == "string" then Some(value.asInstanceOf[String])
         else None
       }
-      .toSeq
-      .headOption
+      .nextOption()
 
   private def optionalBoolean(raw: js.Dynamic, field: String): Option[Boolean] =
     optionalJsValue(raw, field).flatMap { value =>
@@ -372,8 +379,7 @@ object HookCallback:
         if js.typeOf(value) == "number" then Some(value.asInstanceOf[Double])
         else None
       }
-      .toSeq
-      .headOption
+      .nextOption()
 
 
   // ============================================================================

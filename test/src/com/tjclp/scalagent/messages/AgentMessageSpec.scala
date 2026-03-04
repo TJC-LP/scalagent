@@ -4,6 +4,7 @@ import munit.FunSuite
 import zio.json._
 import com.tjclp.scalagent.TestFixtures
 import com.tjclp.scalagent.TestFixtures._
+import com.tjclp.scalagent.tools.ToolName
 
 class AgentMessageSpec extends FunSuite:
 
@@ -62,7 +63,7 @@ class AgentMessageSpec extends FunSuite:
   test("toolCalls extracts tool use from Assistant message"):
     val calls = assistantMessageWithToolUse.toolCalls
     assertEquals(calls.size, 1)
-    assertEquals(calls.head.name, "Read")
+    assertEquals(calls.head.name, ToolName.Read)
 
   test("toolCalls returns empty for message without tools"):
     val calls = assistantMessage.toolCalls
@@ -217,7 +218,7 @@ class AgentMessageSpec extends FunSuite:
 
   test("ContentBlock.ToolUse stores tool details"):
     assertEquals(toolUseBlock.id, testToolUseId)
-    assertEquals(toolUseBlock.name, "Read")
+    assertEquals(toolUseBlock.name, ToolName.Read)
 
   test("ContentBlock.ToolResult stores result details"):
     assertEquals(toolResultBlock.toolUseId, testToolUseId)

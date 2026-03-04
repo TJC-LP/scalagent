@@ -104,16 +104,16 @@ class MessageConverterSpec extends FunSuite:
   test("parses elicitation_complete message"):
     val raw = js.Dynamic.literal(
       `type` = "elicitation_complete",
-      server_id = "mcp-server",
-      accepted = true,
+      mcp_server_name = "mcp-server",
+      elicitation_id = "elic-789",
       uuid = "msg-6",
       session_id = "session-1"
     )
 
     MessageConverter.fromRaw(raw) match
-      case AgentMessage.ElicitationComplete(serverId, accepted, _, _) =>
-        assertEquals(serverId, "mcp-server")
-        assertEquals(accepted, true)
+      case AgentMessage.ElicitationComplete(mcpServerName, elicitationId, _, _) =>
+        assertEquals(mcpServerName, "mcp-server")
+        assertEquals(elicitationId, "elic-789")
       case other =>
         fail(s"Expected ElicitationComplete, got: $other")
 

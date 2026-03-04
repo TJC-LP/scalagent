@@ -35,11 +35,13 @@ class HookCallbackSpec extends FunSuite:
 
   test("parseHookInput handles TeammateIdle"):
     val raw = baseInput("TeammateIdle")
-    raw.teammate_id = "teammate-42"
+    raw.teammate_name = "researcher"
+    raw.team_name = "my-team"
 
     parseInput(raw).map {
       case input: HookInput.TeammateIdle =>
-        assertEquals(input.teammateId, "teammate-42")
+        assertEquals(input.teammateName, "researcher")
+        assertEquals(input.teamName, "my-team")
         assertEquals(input.permissionMode, Some(PermissionMode.Delegate))
       case other => fail(s"Expected TeammateIdle, got: $other")
     }
@@ -47,73 +49,90 @@ class HookCallbackSpec extends FunSuite:
   test("parseHookInput handles TaskCompleted"):
     val raw = baseInput("TaskCompleted")
     raw.task_id = "task-99"
-    raw.success = true
-    raw.summary = "Finished background task"
+    raw.task_subject = "Implement feature X"
+    raw.task_description = "Detailed description"
+    raw.teammate_name = "coder"
+    raw.team_name = "dev-team"
 
     parseInput(raw).map {
       case input: HookInput.TaskCompleted =>
         assertEquals(input.taskId, "task-99")
-        assertEquals(input.success, true)
-        assertEquals(input.summary, Some("Finished background task"))
+        assertEquals(input.taskSubject, "Implement feature X")
+        assertEquals(input.taskDescription, Some("Detailed description"))
+        assertEquals(input.teammateName, Some("coder"))
+        assertEquals(input.teamName, Some("dev-team"))
       case other => fail(s"Expected TaskCompleted, got: $other")
     }
 
   test("parseHookInput handles Elicitation"):
     val raw = baseInput("Elicitation")
-    raw.server_id = "mcp-server"
+    raw.mcp_server_name = "mcp-server"
     raw.message = "Approve this request?"
+    raw.mode = "form"
+    raw.elicitation_id = "elic-123"
 
     parseInput(raw).map {
       case input: HookInput.Elicitation =>
-        assertEquals(input.serverId, "mcp-server")
+        assertEquals(input.mcpServerName, "mcp-server")
         assertEquals(input.message, "Approve this request?")
+        assertEquals(input.mode, Some(ElicitationMode.Form))
+        assertEquals(input.elicitationId, Some("elic-123"))
       case other => fail(s"Expected Elicitation, got: $other")
     }
 
   test("parseHookInput handles ElicitationResult"):
     val raw = baseInput("ElicitationResult")
-    raw.server_id = "mcp-server"
-    raw.accepted = false
+    raw.mcp_server_name = "mcp-server"
+    raw.action = "decline"
+    raw.elicitation_id = "elic-456"
 
     parseInput(raw).map {
       case input: HookInput.ElicitationResult =>
-        assertEquals(input.serverId, "mcp-server")
-        assertEquals(input.accepted, false)
+        assertEquals(input.mcpServerName, "mcp-server")
+        assertEquals(input.action, ElicitationAction.Decline)
+        assertEquals(input.elicitationId, Some("elic-456"))
       case other => fail(s"Expected ElicitationResult, got: $other")
     }
 
   test("parseHookInput handles ConfigChange"):
     val raw = baseInput("ConfigChange")
-    raw.key = "model"
-    raw.value = "claude-sonnet-4-5"
+    raw.source = "project_settings"
+    raw.file_path = "/path/to/settings.json"
 
     parseInput(raw).map {
       case input: HookInput.ConfigChange =>
-        assertEquals(input.key, "model")
-        assertEquals(input.value, Some("claude-sonnet-4-5"))
+        assertEquals(input.source, ConfigChangeSource.ProjectSettings)
+        assertEquals(input.filePath, Some("/path/to/settings.json"))
       case other => fail(s"Expected ConfigChange, got: $other")
     }
 
   test("parseHookInput handles WorktreeCreate"):
     val raw = baseInput("WorktreeCreate")
-    raw.worktree_path = "/tmp/worktree-a"
-    raw.branch = "feature/a"
+    raw.name = "feature-branch"
 
     parseInput(raw).map {
       case input: HookInput.WorktreeCreate =>
-        assertEquals(input.worktreePath, "/tmp/worktree-a")
-        assertEquals(input.branch, "feature/a")
+        assertEquals(input.name, "feature-branch")
       case other => fail(s"Expected WorktreeCreate, got: $other")
     }
 
   test("parseHookInput handles WorktreeRemove"):
     val raw = baseInput("WorktreeRemove")
     raw.worktree_path = "/tmp/worktree-b"
-    raw.branch = "feature/b"
 
     parseInput(raw).map {
       case input: HookInput.WorktreeRemove =>
         assertEquals(input.worktreePath, "/tmp/worktree-b")
-        assertEquals(input.branch, "feature/b")
       case other => fail(s"Expected WorktreeRemove, got: $other")
+    }
+
+  test("parseHookInput handles Setup"):
+    val raw = baseInput("Setup")
+    raw.trigger = "init"
+
+    parseInput(raw).map {
+      case input: HookInput.Setup =>
+        assertEquals(input.trigger, SetupTrigger.Init)
+        assertEquals(input.permissionMode, Some(PermissionMode.Delegate))
+      case other => fail(s"Expected Setup, got: $other")
     }

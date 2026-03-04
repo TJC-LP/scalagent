@@ -238,9 +238,10 @@ final case class AgentOptions(
 
 object AgentOptions:
   private val uuidPattern = "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+  private val uuidRegex   = uuidPattern.r
 
   private def isValidUuid(value: String): Boolean =
-    value.matches(uuidPattern)
+    uuidRegex.matches(value)
 
   /** Default options (empty configuration) */
   val default: AgentOptions = AgentOptions()
@@ -351,9 +352,10 @@ object AgentOptions:
     def withNoPersistence: AgentOptions =
       opts.copy(persistSession = false)
 
-    /** Set a custom session ID (must be a valid UUID).
-      * Passed via extraArgs as --session-id.
+    /** Set a custom session ID via extraArgs.
+      * @deprecated Use [[withSessionId]] which validates UUID format and uses the proper sessionId field.
       */
+    @deprecated("Use withSessionId which validates UUID format", "0.2.63")
     def withCustomSessionId(uuid: String): AgentOptions =
       opts.copy(extraArgs = opts.extraArgs + ("session-id" -> Some(uuid)))
 

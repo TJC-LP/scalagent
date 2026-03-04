@@ -238,6 +238,15 @@ package object scalagent {
   type SetupTrigger = hooks.SetupTrigger
   val SetupTrigger = hooks.SetupTrigger
 
+  type ElicitationMode = hooks.ElicitationMode
+  val ElicitationMode = hooks.ElicitationMode
+
+  type ElicitationAction = hooks.ElicitationAction
+  val ElicitationAction = hooks.ElicitationAction
+
+  type ConfigChangeSource = hooks.ConfigChangeSource
+  val ConfigChangeSource = hooks.ConfigChangeSource
+
   type HookCallback = hooks.HookCallback
   val HookCallback = hooks.HookCallback
 

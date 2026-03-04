@@ -71,8 +71,8 @@ object ThinkingConfig:
   /** Enabled with a specific budget */
   def enabled(budgetTokens: Int): ThinkingConfig = Enabled(Some(budgetTokens))
 
-  /** Enabled with default budget */
-  val enabled: ThinkingConfig = Enabled(None)
+  /** Enabled with no fixed budget (model decides) */
+  val enabledDefault: ThinkingConfig = Enabled(None)
 
   /** Disabled */
   val disabled: ThinkingConfig = Disabled

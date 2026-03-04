@@ -4,6 +4,7 @@ import zio.json.ast.Json
 import com.tjclp.scalagent.config._
 import com.tjclp.scalagent.errors._
 import com.tjclp.scalagent.messages._
+import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types._
 
 /** Common test fixtures for Claude Agent SDK tests.
@@ -31,7 +32,7 @@ object TestFixtures:
   val toolUseBlock: ContentBlock.ToolUse =
     ContentBlock.ToolUse(
       id = testToolUseId,
-      name = "Read",
+      name = ToolName.Read,
       input = Json.Obj("file_path" -> Json.Str("/tmp/test.txt"))
     )
 
