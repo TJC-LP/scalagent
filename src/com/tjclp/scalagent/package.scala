@@ -213,6 +213,9 @@ package object scalagent {
   type SessionId = types.SessionId
   val SessionId = types.SessionId
 
+  type SessionUuid = types.SessionUuid
+  val SessionUuid = types.SessionUuid
+
   type ToolUseId = types.ToolUseId
   val ToolUseId = types.ToolUseId
 

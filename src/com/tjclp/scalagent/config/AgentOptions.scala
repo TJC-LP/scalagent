@@ -9,7 +9,7 @@ import com.tjclp.scalagent.hooks.*
 import com.tjclp.scalagent.mcp.McpToolName
 import com.tjclp.scalagent.permissions.*
 import com.tjclp.scalagent.tools.ToolName
-import com.tjclp.scalagent.types.SessionId
+import com.tjclp.scalagent.types.{SessionId, SessionUuid}
 
 /** Configuration options for Claude Agent queries.
   *
@@ -254,12 +254,6 @@ final case class AgentOptions(
     canUseTool.map(handler => CanUseTool.toRawJs(handler, runtime)).orUndefined
 
 object AgentOptions:
-  private val uuidPattern = "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-  private val uuidRegex   = uuidPattern.r
-
-  private def isValidUuid(value: String): Boolean =
-    uuidRegex.matches(value)
-
   private def requirePositiveInt(field: String, value: Int): PositiveInt =
     PositiveInt(value) match
       case Right(valid) => valid
@@ -746,8 +740,16 @@ object AgentOptions:
 
     /** Set a specific session ID (must be a valid UUID). */
     def withSessionId(uuid: String): AgentOptions =
-      require(AgentOptions.isValidUuid(uuid), s"sessionId must be a valid UUID, got: $uuid")
-      opts.copy(sessionId = Some(uuid))
+      withSessionId(
+        SessionUuid(uuid) match
+          case Right(valid) => valid
+          case Left(message) => throw new IllegalArgumentException(message)
+      )
+
+    /** Set a specific session ID using a validated UUID wrapper. */
+    @targetName("withSessionIdValidated")
+    def withSessionId(uuid: SessionUuid): AgentOptions =
+      opts.copy(sessionId = Some(uuid.value))
 
     /** Enable strict MCP server configuration validation.
       *

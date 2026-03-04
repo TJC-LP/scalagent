@@ -368,6 +368,12 @@ class AgentOptionsSpec extends FunSuite:
     val opts = AgentOptions.default.withSessionId(uuid)
     assertEquals(opts.sessionId, Some(uuid))
 
+  test("withSessionId accepts SessionUuid"):
+    import com.tjclp.scalagent.types.SessionUuid
+    val uuid = SessionUuid("123e4567-e89b-12d3-a456-426614174000").toOption.get
+    val opts = AgentOptions.default.withSessionId(uuid)
+    assertEquals(opts.sessionId, Some(uuid.value))
+
   test("withSessionId rejects invalid UUID"):
     intercept[IllegalArgumentException] {
       AgentOptions.default.withSessionId("not-a-uuid")

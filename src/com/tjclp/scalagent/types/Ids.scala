@@ -55,6 +55,31 @@ object SessionId:
   given JsonEncoder[SessionId] = OpaqueStringJsonCodec.encoder(_.value)
   given JsonDecoder[SessionId] = OpaqueStringJsonCodec.decoder(apply)
 
+/** Canonical UUID identifier for explicit session ID assignment.
+  *
+  * This is stricter than [[SessionId]], which can also represent human-readable
+  * names assigned via `/rename`.
+  */
+opaque type SessionUuid = String
+object SessionUuid:
+  private val uuidPattern = "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+  private val uuidRegex   = uuidPattern.r
+
+  def apply(uuid: String): Either[String, SessionUuid] =
+    if isValid(uuid) then Right(uuid)
+    else Left(s"sessionId must be a valid UUID, got: $uuid")
+
+  def unsafe(uuid: String): SessionUuid = uuid
+
+  def isValid(uuid: String): Boolean =
+    uuidRegex.matches(uuid)
+
+  extension (uuid: SessionUuid)
+    def value: String = uuid
+
+  given JsonEncoder[SessionUuid] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[SessionUuid] = OpaqueStringJsonCodec.decoderOrFail(apply)
+
 /** Unique identifier for a tool use request */
 opaque type ToolUseId = String
 object ToolUseId:
