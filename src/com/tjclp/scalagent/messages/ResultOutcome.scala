@@ -3,6 +3,7 @@ package com.tjclp.scalagent.messages
 import zio.json.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.config.StructuredOutput
+import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.ToolUseId
 
 /** Result outcome from a completed query */
@@ -17,7 +18,8 @@ enum ResultOutcome:
       usage: ModelUsage,
       modelUsage: Map[String, PerModelUsage],
       permissionDenials: List[PermissionDenial],
-      structuredOutput: Option[zio.json.ast.Json]
+      structuredOutput: Option[zio.json.ast.Json],
+      stopReason: Option[StopReason] = None
   )
 
   /** Query terminated with error */
@@ -30,7 +32,8 @@ enum ResultOutcome:
       usage: ModelUsage,
       modelUsage: Map[String, PerModelUsage],
       permissionDenials: List[PermissionDenial],
-      errors: List[String]
+      errors: List[String],
+      stopReason: Option[StopReason] = None
   )
 
 object ResultOutcome:
@@ -41,38 +44,38 @@ object ResultOutcome:
   extension (outcome: ResultOutcome)
     /** Get permission denials from either Success or Error */
     def permissionDenials: List[PermissionDenial] = outcome match
-      case Success(_, _, _, _, _, _, _, denials, _) => denials
-      case Error(_, _, _, _, _, _, _, denials, _)   => denials
+      case s: Success => s.permissionDenials
+      case e: Error   => e.permissionDenials
 
     /** Get total cost in USD from either Success or Error */
     def totalCostUsd: Double = outcome match
-      case Success(_, _, _, _, cost, _, _, _, _) => cost
-      case Error(_, _, _, _, cost, _, _, _, _)   => cost
+      case s: Success => s.totalCostUsd
+      case e: Error   => e.totalCostUsd
 
     /** Get number of turns from either Success or Error */
     def numTurns: Int = outcome match
-      case Success(_, _, turns, _, _, _, _, _, _) => turns
-      case Error(_, _, _, turns, _, _, _, _, _)   => turns
+      case s: Success => s.numTurns
+      case e: Error   => e.numTurns
 
     /** Get duration in milliseconds from either Success or Error */
     def durationMs: Long = outcome match
-      case Success(duration, _, _, _, _, _, _, _, _) => duration
-      case Error(_, duration, _, _, _, _, _, _, _)   => duration
+      case s: Success => s.durationMs
+      case e: Error   => e.durationMs
 
     /** Get API duration in milliseconds from either Success or Error */
     def durationApiMs: Long = outcome match
-      case Success(_, apiDuration, _, _, _, _, _, _, _) => apiDuration
-      case Error(_, _, apiDuration, _, _, _, _, _, _)   => apiDuration
+      case s: Success => s.durationApiMs
+      case e: Error   => e.durationApiMs
 
     /** Get token usage from either Success or Error */
     def usage: ModelUsage = outcome match
-      case Success(_, _, _, _, _, u, _, _, _) => u
-      case Error(_, _, _, _, _, u, _, _, _)   => u
+      case s: Success => s.usage
+      case e: Error   => e.usage
 
     /** Get per-model usage from either Success or Error */
     def modelUsage: Map[String, PerModelUsage] = outcome match
-      case Success(_, _, _, _, _, _, mu, _, _) => mu
-      case Error(_, _, _, _, _, _, mu, _, _)   => mu
+      case s: Success => s.modelUsage
+      case e: Error   => e.modelUsage
 
     /** Check if this is a successful outcome */
     def isSuccess: Boolean = outcome match
@@ -84,23 +87,28 @@ object ResultOutcome:
 
     /** Get the result text if successful */
     def resultText: Option[String] = outcome match
-      case Success(_, _, _, result, _, _, _, _, _) => Some(result)
-      case _: Error                                => None
+      case s: Success => Some(s.result)
+      case _: Error   => None
 
     /** Get error details if this is an error outcome */
     def errors: List[String] = outcome match
-      case Error(_, _, _, _, _, _, _, _, errs) => errs
-      case _: Success                          => Nil
+      case e: Error   => e.errors
+      case _: Success => Nil
 
     /** Get the error reason if this is an error outcome */
     def errorReason: Option[ErrorReason] = outcome match
-      case Error(reason, _, _, _, _, _, _, _, _) => Some(reason)
-      case _: Success                            => None
+      case e: Error   => Some(e.reason)
+      case _: Success => None
 
     /** Get structured output JSON if available (Success only) */
     def structuredOutput: Option[Json] = outcome match
-      case Success(_, _, _, _, _, _, _, _, so) => so
-      case _: Error                            => None
+      case s: Success => s.structuredOutput
+      case _: Error   => None
+
+    /** Get the stop reason if available */
+    def stopReason: Option[StopReason] = outcome match
+      case s: Success => s.stopReason
+      case e: Error   => e.stopReason
 
     /** Parse structured output to a typed value.
       *
@@ -172,7 +180,8 @@ final case class PerModelUsage(
     cacheCreationInputTokens: Int,
     webSearchRequests: Int,
     costUSD: Double,
-    contextWindow: Int
+    contextWindow: Int,
+    maxOutputTokens: Int = 0
 )
 
 object PerModelUsage:
@@ -181,7 +190,7 @@ object PerModelUsage:
 
 /** Record of a permission denial during query execution */
 final case class PermissionDenial(
-    toolName: String,
+    toolName: ToolName,
     toolUseId: ToolUseId,
     toolInput: zio.json.ast.Json
 )

@@ -1,6 +1,7 @@
 # Mill build output
 out/
 .mill-version
+.mill-jvm-opts
 
 # Scala
 *.class

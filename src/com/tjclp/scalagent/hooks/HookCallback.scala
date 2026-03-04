@@ -5,6 +5,7 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import zio.*
 import zio.json.ast.Json
+import com.tjclp.scalagent.config.PermissionMode
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{SessionId, SubagentId, ToolUseId}
 
@@ -98,7 +99,8 @@ object HookCallback:
     val sessionId = SessionId(raw.session_id.asInstanceOf[String])
     val cwd = raw.cwd.asInstanceOf[String]
     val transcriptPath = raw.transcript_path.asInstanceOf[String]
-    val hookEvent = raw.hook_event.asInstanceOf[String]
+    val hookEvent = firstString(raw, "hook_event", "hook_event_name").getOrElse("Unknown")
+    val permissionMode = firstString(raw, "permission_mode", "permissionMode").map(PermissionMode.fromString)
 
     hookEvent match
       case "PreToolUse" =>
@@ -109,7 +111,8 @@ object HookCallback:
           toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
           toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
+          agentId = firstString(raw, "agent_id", "agentId").map(SubagentId.apply),
+          permissionMode = permissionMode
         )
 
       case "PostToolUse" =>
@@ -121,7 +124,8 @@ object HookCallback:
           toolInput = parseJson(raw.tool_input),
           toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
           toolResponse = raw.tool_response.asInstanceOf[String],
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
+          agentId = firstString(raw, "agent_id", "agentId").map(SubagentId.apply),
+          permissionMode = permissionMode
         )
 
       case "PostToolUseFailure" =>
@@ -133,7 +137,9 @@ object HookCallback:
           toolInput = parseJson(raw.tool_input),
           toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
           error = raw.error.asInstanceOf[String],
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
+          agentId = firstString(raw, "agent_id", "agentId").map(SubagentId.apply),
+          isInterrupt = optionalBoolean(raw, "is_interrupt").getOrElse(false),
+          permissionMode = permissionMode
         )
 
       case "PermissionRequest" =>
@@ -143,8 +149,13 @@ object HookCallback:
           transcriptPath = transcriptPath,
           toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
-          toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
-          agentId = raw.agent_id.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply)
+          permissionSuggestions = optionalJsValue(raw, "permission_suggestions")
+            .filter(js.Array.isArray(_))
+            .map(_.asInstanceOf[js.Array[js.Any]].toList.map(parseJson))
+            .getOrElse(Nil),
+          permissionMode = permissionMode,
+          toolUseId = firstString(raw, "tool_use_id", "toolUseId").map(ToolUseId.apply),
+          agentId = firstString(raw, "agent_id", "agentId").map(SubagentId.apply)
         )
 
       case "Notification" =>
@@ -152,7 +163,10 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          message = raw.message.asInstanceOf[String]
+          message = raw.message.asInstanceOf[String],
+          title = firstString(raw, "title"),
+          notificationType = firstString(raw, "notification_type", "notificationType").getOrElse("info"),
+          permissionMode = permissionMode
         )
 
       case "UserPromptSubmit" =>
@@ -160,7 +174,8 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          prompt = raw.prompt.asInstanceOf[String]
+          prompt = raw.prompt.asInstanceOf[String],
+          permissionMode = permissionMode
         )
 
       case "SessionStart" =>
@@ -168,7 +183,12 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          isResume = raw.is_resume.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
+          source = SessionStartSource.fromString(
+            firstString(raw, "source").getOrElse("startup")
+          ),
+          agentType = firstString(raw, "agent_type", "agentType"),
+          model = firstString(raw, "model"),
+          permissionMode = permissionMode
         )
 
       case "SessionEnd" =>
@@ -176,8 +196,9 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          reason = parseSessionEndReason(raw.reason.asInstanceOf[js.UndefOr[String]].toOption),
-          totalCostUsd = raw.total_cost_usd.asInstanceOf[js.UndefOr[Double]].toOption
+          reason = ExitReason.fromString(firstString(raw, "reason").getOrElse("other")),
+          permissionMode = permissionMode,
+          totalCostUsd = optionalDouble(raw, "total_cost_usd", "totalCostUsd")
         )
 
       case "Stop" =>
@@ -185,7 +206,8 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          reason = raw.reason.asInstanceOf[js.UndefOr[String]].getOrElse("unknown")
+          stopHookActive = optionalBoolean(raw, "stop_hook_active").getOrElse(false),
+          permissionMode = permissionMode
         )
 
       case "SubagentStart" =>
@@ -193,9 +215,9 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          subagentId = SubagentId(raw.subagent_id.asInstanceOf[String]),
-          subagentType = raw.subagent_type.asInstanceOf[String],
-          parentToolUseId = ToolUseId(raw.parent_tool_use_id.asInstanceOf[String])
+          agentId = SubagentId(firstString(raw, "agent_id", "agentId").getOrElse("")),
+          agentType = firstString(raw, "agent_type", "agentType").getOrElse(""),
+          permissionMode = permissionMode
         )
 
       case "SubagentStop" =>
@@ -203,10 +225,11 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          subagentId = SubagentId(raw.subagent_id.asInstanceOf[String]),
-          subagentType = raw.subagent_type.asInstanceOf[String],
-          parentToolUseId = ToolUseId(raw.parent_tool_use_id.asInstanceOf[String]),
-          success = raw.success.asInstanceOf[js.UndefOr[Boolean]].getOrElse(true)
+          stopHookActive = optionalBoolean(raw, "stop_hook_active").getOrElse(false),
+          agentId = SubagentId(firstString(raw, "agent_id", "agentId").getOrElse("")),
+          agentTranscriptPath = firstString(raw, "agent_transcript_path", "agentTranscriptPath").getOrElse(""),
+          agentType = firstString(raw, "agent_type", "agentType").getOrElse(""),
+          permissionMode = permissionMode
         )
 
       case "PreCompact" =>
@@ -214,8 +237,100 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          currentTokens = raw.current_tokens.asInstanceOf[Int],
-          trigger = CompactTrigger.Auto
+          trigger = CompactTrigger.fromString(
+            firstString(raw, "trigger").getOrElse("auto")
+          ),
+          customInstructions = firstString(raw, "custom_instructions", "customInstructions"),
+          permissionMode = permissionMode
+        )
+
+      case "Setup" =>
+        HookInput.Setup(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          trigger = SetupTrigger.fromString(
+            firstString(raw, "trigger").getOrElse("init")
+          ),
+          permissionMode = permissionMode
+        )
+
+      case "TeammateIdle" =>
+        HookInput.TeammateIdle(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          teammateName = firstString(raw, "teammate_name", "teammateName").getOrElse(""),
+          teamName = firstString(raw, "team_name", "teamName").getOrElse(""),
+          permissionMode = permissionMode
+        )
+
+      case "TaskCompleted" =>
+        HookInput.TaskCompleted(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          taskId = firstString(raw, "task_id", "taskId").getOrElse(""),
+          taskSubject = firstString(raw, "task_subject", "taskSubject").getOrElse(""),
+          taskDescription = firstString(raw, "task_description", "taskDescription"),
+          teammateName = firstString(raw, "teammate_name", "teammateName"),
+          teamName = firstString(raw, "team_name", "teamName"),
+          permissionMode = permissionMode
+        )
+
+      case "Elicitation" =>
+        HookInput.Elicitation(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          mcpServerName = firstString(raw, "mcp_server_name", "mcpServerName").getOrElse(""),
+          message = firstString(raw, "message").getOrElse(""),
+          mode = firstString(raw, "mode").map(ElicitationMode.fromString),
+          url = firstString(raw, "url"),
+          elicitationId = firstString(raw, "elicitation_id", "elicitationId"),
+          requestedSchema = optionalJsValue(raw, "requested_schema").map(parseJson),
+          permissionMode = permissionMode
+        )
+
+      case "ElicitationResult" =>
+        HookInput.ElicitationResult(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          mcpServerName = firstString(raw, "mcp_server_name", "mcpServerName").getOrElse(""),
+          action = ElicitationAction.fromString(firstString(raw, "action").getOrElse("cancel")),
+          elicitationId = firstString(raw, "elicitation_id", "elicitationId"),
+          mode = firstString(raw, "mode").map(ElicitationMode.fromString),
+          content = optionalJsValue(raw, "content").map(parseJson),
+          permissionMode = permissionMode
+        )
+
+      case "ConfigChange" =>
+        HookInput.ConfigChange(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          source = ConfigChangeSource.fromString(firstString(raw, "source").getOrElse("user_settings")),
+          filePath = firstString(raw, "file_path", "filePath"),
+          permissionMode = permissionMode
+        )
+
+      case "WorktreeCreate" =>
+        HookInput.WorktreeCreate(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          name = firstString(raw, "name").getOrElse(""),
+          permissionMode = permissionMode
+        )
+
+      case "WorktreeRemove" =>
+        HookInput.WorktreeRemove(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          worktreePath = firstString(raw, "worktree_path", "worktreePath").getOrElse(""),
+          permissionMode = permissionMode
         )
 
       case other =>
@@ -224,22 +339,48 @@ object HookCallback:
           sessionId = sessionId,
           cwd = cwd,
           transcriptPath = transcriptPath,
-          message = s"Unknown hook event: $other"
+          message = s"Unknown hook event: $other",
+          permissionMode = permissionMode
         )
 
   private def parseJson(value: js.Any): Json =
     import zio.json.*
-    val jsonStr = js.JSON.stringify(value)
-    jsonStr.fromJson[Json].getOrElse(Json.Null)
+    if value == null || js.isUndefined(value) then Json.Null
+    else
+      val jsonStr = js.JSON.stringify(value)
+      jsonStr.fromJson[Json].getOrElse(Json.Null)
 
-  private def parseSessionEndReason(raw: Option[String]): SessionEndReason =
-    raw match
-      case Some("success")     => SessionEndReason.Success
-      case Some("error")       => SessionEndReason.Error
-      case Some("interrupted") => SessionEndReason.Interrupted
-      case Some("max_turns")   => SessionEndReason.MaxTurns
-      case Some("max_budget")  => SessionEndReason.MaxBudget
-      case _                   => SessionEndReason.Success
+  private def optionalJsValue(raw: js.Dynamic, field: String): Option[js.Any] =
+    raw
+      .selectDynamic(field)
+      .asInstanceOf[js.UndefOr[js.Any]]
+      .toOption
+      .filter(v => v != null && !js.isUndefined(v))
+
+  private def firstString(raw: js.Dynamic, fields: String*): Option[String] =
+    fields.iterator
+      .flatMap(field => optionalJsValue(raw, field))
+      .flatMap { value =>
+        if js.typeOf(value) == "string" then Some(value.asInstanceOf[String])
+        else None
+      }
+      .nextOption()
+
+  private def optionalBoolean(raw: js.Dynamic, field: String): Option[Boolean] =
+    optionalJsValue(raw, field).flatMap { value =>
+      if js.typeOf(value) == "boolean" then Some(value.asInstanceOf[Boolean])
+      else None
+    }
+
+  private def optionalDouble(raw: js.Dynamic, fields: String*): Option[Double] =
+    fields.iterator
+      .flatMap(field => optionalJsValue(raw, field))
+      .flatMap { value =>
+        if js.typeOf(value) == "number" then Some(value.asInstanceOf[Double])
+        else None
+      }
+      .nextOption()
+
 
   // ============================================================================
   // Hook Combinator Extension Methods

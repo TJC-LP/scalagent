@@ -30,6 +30,8 @@ import zio.json.*
   *   Commands that are excluded from sandboxing
   * @param ripgrep
   *   Custom ripgrep configuration for sandbox
+  * @param filesystem
+  *   Filesystem configuration for sandbox (allowWrite, denyWrite, denyRead)
   */
 final case class SandboxSettings(
     enabled: Boolean = true,
@@ -39,7 +41,8 @@ final case class SandboxSettings(
     ignoreViolations: Map[String, List[String]] = Map.empty,
     enableWeakerNestedSandbox: Boolean = false,
     excludedCommands: List[String] = Nil,
-    ripgrep: Option[RipgrepConfig] = None
+    ripgrep: Option[RipgrepConfig] = None,
+    filesystem: Option[SandboxFilesystemConfig] = None
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -61,6 +64,7 @@ final case class SandboxSettings(
       obj.excludedCommands = excludedCommands.toJSArray
 
     ripgrep.foreach(rg => obj.ripgrep = rg.toRaw)
+    filesystem.foreach(fs => obj.filesystem = fs.toRaw)
 
     obj.asInstanceOf[js.Object]
 
@@ -100,10 +104,15 @@ object SandboxSettings:
     def withIgnoreViolations(violations: Map[String, List[String]]): SandboxSettings =
       ss.copy(ignoreViolations = violations)
 
+    def withFilesystem(config: SandboxFilesystemConfig): SandboxSettings =
+      ss.copy(filesystem = Some(config))
+
 /** Network configuration for sandbox.
   *
   * @param allowedDomains
   *   Domains allowed for network access
+  * @param allowManagedDomainsOnly
+  *   Only allow managed domains
   * @param allowUnixSockets
   *   Specific Unix socket paths to allow
   * @param allowAllUnixSockets
@@ -117,6 +126,7 @@ object SandboxSettings:
   */
 final case class SandboxNetworkConfig(
     allowedDomains: List[String] = Nil,
+    allowManagedDomainsOnly: Boolean = false,
     allowUnixSockets: List[String] = Nil,
     allowAllUnixSockets: Boolean = false,
     allowLocalBinding: Boolean = false,
@@ -128,6 +138,8 @@ final case class SandboxNetworkConfig(
 
     if allowedDomains.nonEmpty then
       obj.allowedDomains = allowedDomains.toJSArray
+
+    if allowManagedDomainsOnly then obj.allowManagedDomainsOnly = true
 
     if allowUnixSockets.nonEmpty then
       obj.allowUnixSockets = allowUnixSockets.toJSArray
@@ -155,6 +167,31 @@ object SandboxNetworkConfig:
   /** Network config with Docker socket access */
   def withDockerSocket: SandboxNetworkConfig =
     SandboxNetworkConfig(allowUnixSockets = List("/var/run/docker.sock"))
+
+/** Filesystem configuration for sandbox.
+  *
+  * @param allowWrite
+  *   Paths/patterns to allow write access
+  * @param denyWrite
+  *   Paths/patterns to deny write access
+  * @param denyRead
+  *   Paths/patterns to deny read access
+  */
+final case class SandboxFilesystemConfig(
+    allowWrite: List[String] = Nil,
+    denyWrite: List[String] = Nil,
+    denyRead: List[String] = Nil
+):
+  def toRaw: js.Object =
+    val obj = js.Dynamic.literal()
+    if allowWrite.nonEmpty then obj.allowWrite = allowWrite.toJSArray
+    if denyWrite.nonEmpty then obj.denyWrite = denyWrite.toJSArray
+    if denyRead.nonEmpty then obj.denyRead = denyRead.toJSArray
+    obj.asInstanceOf[js.Object]
+
+object SandboxFilesystemConfig:
+  given JsonDecoder[SandboxFilesystemConfig] = DeriveJsonDecoder.gen[SandboxFilesystemConfig]
+  given JsonEncoder[SandboxFilesystemConfig] = DeriveJsonEncoder.gen[SandboxFilesystemConfig]
 
 /** Ripgrep configuration for sandbox.
   *

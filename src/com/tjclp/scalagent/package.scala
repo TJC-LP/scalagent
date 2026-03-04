@@ -229,6 +229,24 @@ package object scalagent {
   type CompactTrigger = hooks.CompactTrigger
   val CompactTrigger = hooks.CompactTrigger
 
+  type ExitReason = hooks.ExitReason
+  val ExitReason = hooks.ExitReason
+
+  type SessionStartSource = hooks.SessionStartSource
+  val SessionStartSource = hooks.SessionStartSource
+
+  type SetupTrigger = hooks.SetupTrigger
+  val SetupTrigger = hooks.SetupTrigger
+
+  type ElicitationMode = hooks.ElicitationMode
+  val ElicitationMode = hooks.ElicitationMode
+
+  type ElicitationAction = hooks.ElicitationAction
+  val ElicitationAction = hooks.ElicitationAction
+
+  type ConfigChangeSource = hooks.ConfigChangeSource
+  val ConfigChangeSource = hooks.ConfigChangeSource
+
   type HookCallback = hooks.HookCallback
   val HookCallback = hooks.HookCallback
 
@@ -412,7 +430,7 @@ package object scalagent {
     def collectResult: ZIO[R, AgentError, QueryResult] =
       stream.runCollect.map { chunk =>
         val messages = chunk.toList
-        val outcome = messages.collectFirst { case AgentMessage.Result(o, _, _) => o }
+        val outcome = messages.collectFirst { case AgentMessage.Result(o, _, _, _) => o }
         QueryResult(
           messages,
           outcome.getOrElse(

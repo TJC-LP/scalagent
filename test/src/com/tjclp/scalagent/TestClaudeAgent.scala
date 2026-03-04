@@ -58,7 +58,7 @@ final class TestClaudeAgent(
         case Some(err) => ZIO.fail(err)
         case None =>
           responsesRef.get.map { msgs =>
-            val outcome = msgs.collectFirst { case AgentMessage.Result(o, _, _) => o }
+            val outcome = msgs.collectFirst { case AgentMessage.Result(o, _, _, _) => o }
             QueryResult(
               msgs,
               outcome.getOrElse(
@@ -126,6 +126,7 @@ object TestClaudeAgent:
         permissionDenials = Nil,
         structuredOutput = None
       ),
+      fastModeState = None,
       uuid = TestFixtures.testMessageUuid,
       sessionId = TestFixtures.testSessionId
     )

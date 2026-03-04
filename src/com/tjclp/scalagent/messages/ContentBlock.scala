@@ -1,6 +1,7 @@
 package com.tjclp.scalagent.messages
 
 import zio.json.*
+import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.ToolUseId
 
 /** Content blocks that can appear in assistant and user messages */
@@ -11,7 +12,7 @@ enum ContentBlock:
   /** Tool use request from assistant */
   case ToolUse(
       id: ToolUseId,
-      name: String,
+      name: ToolName,
       input: zio.json.ast.Json
   )
 

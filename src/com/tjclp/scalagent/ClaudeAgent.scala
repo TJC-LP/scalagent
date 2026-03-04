@@ -73,9 +73,9 @@ final case class QueryResult(
 ):
   /** Get the final text result, or fail with AgentError if not successful */
   def text: Either[AgentError, String] = outcome match
-    case ResultOutcome.Success(_, _, _, result, _, _, _, _, _) => Right(result)
-    case ResultOutcome.Error(reason, _, _, _, _, _, _, denials, errors) =>
-      Left(AgentError.ApiError(500, reason.toString, Some(errors.mkString("; "))))
+    case s: ResultOutcome.Success => Right(s.result)
+    case e: ResultOutcome.Error =>
+      Left(AgentError.ApiError(500, e.reason.toString, Some(e.errors.mkString("; "))))
 
   /** Get the final text result as a ZIO effect */
   def textOrFail: IO[AgentError, String] = ZIO.fromEither(text)
@@ -139,7 +139,7 @@ private final class ClaudeAgentLive extends ClaudeAgent:
   ): IO[AgentError, QueryResult] =
     query(prompt, options).runCollect.map { chunk =>
       val messages = chunk.toList
-      val outcome = messages.collectFirst { case AgentMessage.Result(o, _, _) => o }
+      val outcome = messages.collectFirst { case AgentMessage.Result(o, _, _, _) => o }
       QueryResult(
         messages,
         outcome.getOrElse(
@@ -192,5 +192,7 @@ private final class ClaudeAgentLive extends ClaudeAgent:
   */
 @js.native
 @JSImport("@anthropic-ai/claude-agent-sdk", JSImport.Namespace)
-private object SdkModule extends js.Object:
+private[scalagent] object SdkModule extends js.Object:
   def query(params: js.Dynamic): js.Object = js.native
+  def listSessions(options: js.Dynamic): js.Promise[js.Array[js.Dynamic]] = js.native
+  def getSessionMessages(options: js.Dynamic): js.Promise[js.Array[js.Dynamic]] = js.native

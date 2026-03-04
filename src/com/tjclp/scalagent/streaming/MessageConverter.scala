@@ -4,7 +4,7 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import zio.json.*
 import zio.json.ast.Json
-import com.tjclp.scalagent.config.{CommandName, Model, OutputStyle, PermissionMode, SkillName}
+import com.tjclp.scalagent.config.{CommandName, FastModeState, Model, OutputStyle, PermissionMode, SkillName}
 import com.tjclp.scalagent.messages.*
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{ApiMessageId, MessageUuid, SessionId, ToolUseId}
@@ -28,15 +28,21 @@ object MessageConverter:
     val msgType = obj.`type`.asInstanceOf[String]
 
     msgType match
-      case "assistant"        => parseAssistantMessage(obj)
-      case "user"             => parseUserMessage(obj)
-      case "result"           => parseResultMessage(obj)
-      case "system"           => parseSystemMessage(obj)
-      case "stream_event"     => parseStreamEvent(obj)
-      case "tool_progress"    => parseToolProgress(obj)
-      case "auth_status"      => parseAuthStatus(obj)
-      case "task_notification" => parseTaskNotification(obj)
-      case "tool_use_summary" => parseToolUseSummary(obj)
+      case "assistant"             => parseAssistantMessage(obj)
+      case "user"                  => parseUserMessage(obj)
+      case "result"                => parseResultMessage(obj)
+      case "system"                => parseSystemMessage(obj)
+      case "stream_event"          => parseStreamEvent(obj)
+      case "tool_progress"         => parseToolProgress(obj)
+      case "auth_status"           => parseAuthStatus(obj)
+      case "task_notification"     => parseTaskNotification(obj)
+      case "tool_use_summary"      => parseToolUseSummary(obj)
+      case "prompt_suggestion"     => parsePromptSuggestion(obj)
+      case "rate_limit"            => parseRateLimitEvent(obj)
+      case "local_command_output"  => parseLocalCommandOutput(obj)
+      case "elicitation_complete"  => parseElicitationComplete(obj)
+      case "task_started"          => parseTaskStarted(obj)
+      case "task_progress"         => parseTaskProgress(obj)
       case other => throw new IllegalArgumentException(s"Unknown message type: $other")
 
   private def parseAssistantMessage(obj: js.Dynamic): AgentMessage.Assistant =
@@ -71,6 +77,8 @@ object MessageConverter:
   private def parseResultMessage(obj: js.Dynamic): AgentMessage.Result =
     val subtype = obj.subtype.asInstanceOf[String]
 
+    val stopReason = normalizeOptionalString(obj.stop_reason.asInstanceOf[js.UndefOr[String]]).map(StopReason.fromString)
+
     val outcome =
       if subtype == "success" then
         ResultOutcome.Success(
@@ -82,7 +90,8 @@ object MessageConverter:
           usage = parseModelUsage(obj.usage),
           modelUsage = parseModelUsageMap(obj.modelUsage),
           permissionDenials = parsePermissionDenials(obj.permission_denials),
-          structuredOutput = obj.structured_output.asInstanceOf[js.UndefOr[js.Any]].toOption.map(jsToJson)
+          structuredOutput = obj.structured_output.asInstanceOf[js.UndefOr[js.Any]].toOption.map(jsToJson),
+          stopReason = stopReason
         )
       else
         ResultOutcome.Error(
@@ -94,11 +103,18 @@ object MessageConverter:
           usage = parseModelUsage(obj.usage),
           modelUsage = parseModelUsageMap(obj.modelUsage),
           permissionDenials = parsePermissionDenials(obj.permission_denials),
-          errors = obj.errors.asInstanceOf[js.Array[String]].toList
+          errors = obj.errors.asInstanceOf[js.Array[String]].toList,
+          stopReason = stopReason
         )
+
+    val fastModeState = obj.fast_mode_state
+      .asInstanceOf[js.UndefOr[String]]
+      .toOption
+      .map(FastModeState.fromString)
 
     AgentMessage.Result(
       outcome = outcome,
+      fastModeState = fastModeState,
       uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
       sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
@@ -147,7 +163,7 @@ object MessageConverter:
         case "tool_use" =>
           ContentBlock.ToolUse(
             id = ToolUseId(raw.id.asInstanceOf[String]),
-            name = raw.name.asInstanceOf[String],
+            name = ToolName.fromString(raw.name.asInstanceOf[String]),
             input = jsToJson(raw.input)
           )
         case "thinking" =>
@@ -180,6 +196,7 @@ object MessageConverter:
       toolName = ToolName.fromString(obj.tool_name.asInstanceOf[String]),
       parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
       elapsedTimeSeconds = obj.elapsed_time_seconds.asInstanceOf[Double],
+      taskId = obj.task_id.asInstanceOf[js.UndefOr[String]].toOption,
       uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
       sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
@@ -199,6 +216,8 @@ object MessageConverter:
       status = TaskStatus.fromString(obj.status.asInstanceOf[String]),
       outputFile = obj.output_file.asInstanceOf[String],
       summary = obj.summary.asInstanceOf[String],
+      toolUseId = obj.tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
+      usage = obj.usage.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.map(parseModelUsage),
       uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
       sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
@@ -215,6 +234,52 @@ object MessageConverter:
       sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
 
+  private def parsePromptSuggestion(obj: js.Dynamic): AgentMessage.PromptSuggestion =
+    AgentMessage.PromptSuggestion(
+      suggestion = obj.suggestion.asInstanceOf[String],
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+    )
+
+  private def parseRateLimitEvent(obj: js.Dynamic): AgentMessage.RateLimitEvent =
+    AgentMessage.RateLimitEvent(
+      retryAfterMs = obj.retry_after_ms.asInstanceOf[Double].toLong,
+      model = obj.model.asInstanceOf[String],
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+    )
+
+  private def parseLocalCommandOutput(obj: js.Dynamic): AgentMessage.LocalCommandOutput =
+    AgentMessage.LocalCommandOutput(
+      output = obj.output.asInstanceOf[String],
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+    )
+
+  private def parseElicitationComplete(obj: js.Dynamic): AgentMessage.ElicitationComplete =
+    AgentMessage.ElicitationComplete(
+      mcpServerName = obj.mcp_server_name.asInstanceOf[String],
+      elicitationId = obj.elicitation_id.asInstanceOf[String],
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+    )
+
+  private def parseTaskStarted(obj: js.Dynamic): AgentMessage.TaskStarted =
+    AgentMessage.TaskStarted(
+      taskId = obj.task_id.asInstanceOf[String],
+      description = obj.description.asInstanceOf[js.UndefOr[String]].getOrElse(""),
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+    )
+
+  private def parseTaskProgress(obj: js.Dynamic): AgentMessage.TaskProgress =
+    AgentMessage.TaskProgress(
+      taskId = obj.task_id.asInstanceOf[String],
+      progress = obj.progress.asInstanceOf[js.UndefOr[String]].getOrElse(""),
+      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
+      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+    )
+
   // Helper parsers
 
   private def parseApiAssistantMessage(obj: js.Dynamic): ApiAssistantMessage =
@@ -223,8 +288,8 @@ object MessageConverter:
       role = Role.fromString(obj.role.asInstanceOf[String]),
       content = parseContentBlocks(obj.content),
       model = obj.model.asInstanceOf[String],
-      stopReason = obj.stop_reason.asInstanceOf[js.UndefOr[String]].toOption.map(StopReason.fromString),
-      stopSequence = obj.stop_sequence.asInstanceOf[js.UndefOr[String]].toOption,
+      stopReason = normalizeOptionalString(obj.stop_reason.asInstanceOf[js.UndefOr[String]]).map(StopReason.fromString),
+      stopSequence = normalizeOptionalString(obj.stop_sequence.asInstanceOf[js.UndefOr[String]]),
       usage = obj.usage.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.map(parseModelUsage)
     )
 
@@ -243,7 +308,7 @@ object MessageConverter:
         case "tool_use" =>
           ContentBlock.ToolUse(
             id = ToolUseId(block.id.asInstanceOf[String]),
-            name = block.name.asInstanceOf[String],
+            name = ToolName.fromString(block.name.asInstanceOf[String]),
             input = jsToJson(block.input)
           )
         case "tool_result" =>
@@ -298,7 +363,8 @@ object MessageConverter:
             v.cacheCreationInputTokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
           webSearchRequests = v.webSearchRequests.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
           costUSD = v.costUSD.asInstanceOf[Double],
-          contextWindow = v.contextWindow.asInstanceOf[Int]
+          contextWindow = v.contextWindow.asInstanceOf[Int],
+          maxOutputTokens = v.maxOutputTokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0)
         )
       }
 
@@ -307,7 +373,7 @@ object MessageConverter:
     else
       arr.asInstanceOf[js.Array[js.Dynamic]].toList.map { denial =>
         PermissionDenial(
-          toolName = denial.tool_name.asInstanceOf[String],
+          toolName = ToolName.fromString(denial.tool_name.asInstanceOf[String]),
           toolUseId = ToolUseId(denial.tool_use_id.asInstanceOf[String]),
           toolInput = jsToJson(denial.tool_input)
         )
@@ -315,7 +381,7 @@ object MessageConverter:
 
   private def parseInitEvent(obj: js.Dynamic): SystemEvent.Init =
     SystemEvent.Init(
-      apiKeySource = obj.apiKeySource.asInstanceOf[String],
+      apiKeySource = ApiKeySource.fromString(obj.apiKeySource.asInstanceOf[String]),
       claudeCodeVersion = obj.claude_code_version.asInstanceOf[String],
       cwd = obj.cwd.asInstanceOf[String],
       tools = obj.tools.asInstanceOf[js.Array[String]].toList.map(ToolName.fromString),
@@ -327,7 +393,11 @@ object MessageConverter:
       skills = obj.skills.asInstanceOf[js.Array[String]].toList.map(SkillName.apply),
       plugins = parsePlugins(obj.plugins),
       agents = obj.agents.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList),
-      betas = obj.betas.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList)
+      betas = obj.betas.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList),
+      fastModeState = obj.fast_mode_state
+        .asInstanceOf[js.UndefOr[String]]
+        .toOption
+        .map(FastModeState.fromString)
     )
 
   private def parseCompactBoundaryEvent(obj: js.Dynamic): SystemEvent.CompactBoundary =
@@ -340,7 +410,8 @@ object MessageConverter:
 
   private def parseStatusEvent(obj: js.Dynamic): SystemEvent.Status =
     SystemEvent.Status(
-      status = obj.status.asInstanceOf[js.UndefOr[String]].toOption.map(SdkStatus.fromString)
+      status = obj.status.asInstanceOf[js.UndefOr[String]].toOption.map(SdkStatus.fromString),
+      permissionMode = obj.permissionMode.asInstanceOf[js.UndefOr[String]].toOption.map(PermissionMode.fromString)
     )
 
   private def parseHookResponseEvent(obj: js.Dynamic): SystemEvent.HookResponse =
@@ -436,3 +507,6 @@ object MessageConverter:
   private def jsToJson(value: js.Any): Json =
     val jsonStr = js.JSON.stringify(value)
     jsonStr.fromJson[Json].getOrElse(Json.Null)
+
+  private def normalizeOptionalString(value: js.UndefOr[String]): Option[String] =
+    value.toOption.filter(_ != null)

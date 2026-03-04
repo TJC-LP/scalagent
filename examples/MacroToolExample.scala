@@ -177,13 +177,13 @@ object MacroToolExample extends ZIOAppDefault:
             ZIO.foreach(results)(r => Console.printLine(r)).unit
           case None => ZIO.unit
 
-      case AgentMessage.Result(ResultOutcome.Success(_, _, turns, result, cost, _, _, _, _), _, _) =>
-        Console.printLine(s"\n--- Completed in $turns turns ---") *>
-          Console.printLine(s"Cost: $$${cost}")
+      case AgentMessage.Result(success: ResultOutcome.Success, _, _, _) =>
+        Console.printLine(s"\n--- Completed in ${success.numTurns} turns ---") *>
+          Console.printLine(s"Cost: $$${success.totalCostUsd}")
 
-      case AgentMessage.Result(ResultOutcome.Error(reason, _, _, _, _, _, _, _, errors), _, _) =>
-        Console.printLine(s"\n--- Error: $reason ---") *>
-          Console.printLine(s"Errors: ${errors.mkString(", ")}")
+      case AgentMessage.Result(error: ResultOutcome.Error, _, _, _) =>
+        Console.printLine(s"\n--- Error: ${error.reason} ---") *>
+          Console.printLine(s"Errors: ${error.errors.mkString(", ")}")
 
       case _ =>
         ZIO.unit

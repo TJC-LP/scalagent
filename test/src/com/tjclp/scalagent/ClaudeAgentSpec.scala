@@ -6,6 +6,7 @@ import zio.stream._
 import com.tjclp.scalagent.config._
 import com.tjclp.scalagent.errors._
 import com.tjclp.scalagent.messages._
+import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.TestFixtures._
 
 /** Integration tests using TestClaudeAgent mock.
@@ -338,7 +339,7 @@ class ClaudeAgentSpec extends FunSuite:
     // Should have tool calls
     val toolCalls = result.messages.allToolCalls
     assertEquals(toolCalls.size, 1)
-    assertEquals(toolCalls.head.name, "Read")
+    assertEquals(toolCalls.head.name, ToolName.Read)
 
     // Should have tool results
     val toolResults = result.messages.allToolResults

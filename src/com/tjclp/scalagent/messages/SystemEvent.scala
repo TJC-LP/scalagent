@@ -1,14 +1,14 @@
 package com.tjclp.scalagent.messages
 
 import zio.json.*
-import com.tjclp.scalagent.config.{CommandName, Model, OutputStyle, PermissionMode, SkillName}
+import com.tjclp.scalagent.config.{CommandName, FastModeState, Model, OutputStyle, PermissionMode, SkillName}
 import com.tjclp.scalagent.tools.ToolName
 
 /** System-level events emitted during agent execution */
 enum SystemEvent:
   /** Initial system event with session info */
   case Init(
-      apiKeySource: String, // Descriptive string like "/login managed key" or "ANTHROPIC_API_KEY"
+      apiKeySource: ApiKeySource,
       claudeCodeVersion: String,
       cwd: String,
       tools: List[ToolName],
@@ -20,7 +20,8 @@ enum SystemEvent:
       skills: List[SkillName],
       plugins: List[PluginInfo],
       agents: Option[List[String]],
-      betas: Option[List[String]]
+      betas: Option[List[String]],
+      fastModeState: Option[FastModeState]
   )
 
   /** Compact boundary event (context compaction) */
@@ -30,7 +31,7 @@ enum SystemEvent:
   )
 
   /** Status update */
-  case Status(status: Option[SdkStatus])
+  case Status(status: Option[SdkStatus], permissionMode: Option[PermissionMode] = None)
 
   /** Hook response event */
   case HookResponse(
@@ -117,6 +118,7 @@ enum ApiKeySource:
   case Project
   case Org
   case Temporary
+  case OAuth
   case Custom(value: String)
 
   def toRaw: String = this match
@@ -124,6 +126,7 @@ enum ApiKeySource:
     case Project    => "project"
     case Org        => "org"
     case Temporary  => "temporary"
+    case OAuth      => "oauth"
     case Custom(v)  => v
 
 object ApiKeySource:
@@ -135,6 +138,7 @@ object ApiKeySource:
     case "project"   => Project
     case "org"       => Org
     case "temporary" => Temporary
+    case "oauth"     => OAuth
     case other       => Custom(other)
 
 /** MCP server connection status */

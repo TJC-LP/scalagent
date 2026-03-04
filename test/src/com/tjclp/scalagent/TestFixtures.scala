@@ -4,6 +4,7 @@ import zio.json.ast.Json
 import com.tjclp.scalagent.config._
 import com.tjclp.scalagent.errors._
 import com.tjclp.scalagent.messages._
+import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types._
 
 /** Common test fixtures for Claude Agent SDK tests.
@@ -31,7 +32,7 @@ object TestFixtures:
   val toolUseBlock: ContentBlock.ToolUse =
     ContentBlock.ToolUse(
       id = testToolUseId,
-      name = "Read",
+      name = ToolName.Read,
       input = Json.Obj("file_path" -> Json.Str("/tmp/test.txt"))
     )
 
@@ -224,6 +225,7 @@ object TestFixtures:
   val resultSuccess: AgentMessage.Result =
     AgentMessage.Result(
       outcome = successOutcome,
+      fastModeState = None,
       uuid = testMessageUuid,
       sessionId = testSessionId
     )
@@ -231,6 +233,7 @@ object TestFixtures:
   val resultError: AgentMessage.Result =
     AgentMessage.Result(
       outcome = errorOutcome,
+      fastModeState = None,
       uuid = testMessageUuid,
       sessionId = testSessionId
     )
@@ -309,6 +312,8 @@ object TestFixtures:
       status = TaskStatus.Completed,
       outputFile = "/tmp/task-output.txt",
       summary = "Task completed successfully",
+      toolUseId = None,
+      usage = None,
       uuid = testMessageUuid,
       sessionId = testSessionId
     )
@@ -319,6 +324,8 @@ object TestFixtures:
       status = TaskStatus.Failed,
       outputFile = "/tmp/task-output.txt",
       summary = "Task failed due to permission error",
+      toolUseId = None,
+      usage = None,
       uuid = testMessageUuid,
       sessionId = testSessionId
     )

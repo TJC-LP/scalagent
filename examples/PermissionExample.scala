@@ -109,18 +109,18 @@ object PermissionExample extends ZIOAppDefault:
             ZIO.foreach(results)(r => Console.printLine(r)).unit
           case None => ZIO.unit
 
-      case AgentMessage.Result(ResultOutcome.Success(_, _, turns, result, cost, _, _, denials, _), _, _) =>
-        Console.printLine(s"\n--- Completed in $turns turns ---") *>
-          Console.printLine(s"Cost: $$${cost}") *>
-          (if denials.nonEmpty then
-             Console.printLine(s"Permission denials: ${denials.map(_.toolName).mkString(", ")}")
+      case AgentMessage.Result(success: ResultOutcome.Success, _, _, _) =>
+        Console.printLine(s"\n--- Completed in ${success.numTurns} turns ---") *>
+          Console.printLine(s"Cost: $$${success.totalCostUsd}") *>
+          (if success.permissionDenials.nonEmpty then
+             Console.printLine(s"Permission denials: ${success.permissionDenials.map(_.toolName).mkString(", ")}")
            else ZIO.unit)
 
-      case AgentMessage.Result(ResultOutcome.Error(reason, _, _, _, _, _, _, denials, errors), _, _) =>
-        Console.printLine(s"\n--- Error: $reason ---") *>
-          Console.printLine(s"Errors: ${errors.mkString(", ")}") *>
-          (if denials.nonEmpty then
-             Console.printLine(s"Permission denials: ${denials.map(_.toolName).mkString(", ")}")
+      case AgentMessage.Result(error: ResultOutcome.Error, _, _, _) =>
+        Console.printLine(s"\n--- Error: ${error.reason} ---") *>
+          Console.printLine(s"Errors: ${error.errors.mkString(", ")}") *>
+          (if error.permissionDenials.nonEmpty then
+             Console.printLine(s"Permission denials: ${error.permissionDenials.map(_.toolName).mkString(", ")}")
            else ZIO.unit)
 
       case _ =>

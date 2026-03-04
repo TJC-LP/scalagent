@@ -1,6 +1,7 @@
 package com.tjclp.scalagent.messages
 
 import zio.json.*
+import com.tjclp.scalagent.config.FastModeState
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{ApiMessageId, MessageUuid, SessionId, ToolUseId}
 
@@ -39,6 +40,7 @@ enum AgentMessage:
   /** Final result message */
   case Result(
       outcome: ResultOutcome,
+      fastModeState: Option[FastModeState],
       uuid: MessageUuid,
       sessionId: SessionId
   )
@@ -64,6 +66,7 @@ enum AgentMessage:
       toolName: ToolName,
       parentToolUseId: Option[ToolUseId],
       elapsedTimeSeconds: Double,
+      taskId: Option[String],
       uuid: MessageUuid,
       sessionId: SessionId
   )
@@ -83,6 +86,8 @@ enum AgentMessage:
       status: TaskStatus,
       outputFile: String,
       summary: String,
+      toolUseId: Option[ToolUseId],
+      usage: Option[ModelUsage],
       uuid: MessageUuid,
       sessionId: SessionId
   )
@@ -91,6 +96,52 @@ enum AgentMessage:
   case ToolUseSummary(
       summary: String,
       precedingToolUseIds: List[ToolUseId],
+      uuid: MessageUuid,
+      sessionId: SessionId
+  )
+
+  /** Prompt suggestion after a turn (when promptSuggestions is enabled) */
+  case PromptSuggestion(
+      suggestion: String,
+      uuid: MessageUuid,
+      sessionId: SessionId
+  )
+
+  /** Rate limit event */
+  case RateLimitEvent(
+      retryAfterMs: Long,
+      model: String,
+      uuid: MessageUuid,
+      sessionId: SessionId
+  )
+
+  /** Local command output */
+  case LocalCommandOutput(
+      output: String,
+      uuid: MessageUuid,
+      sessionId: SessionId
+  )
+
+  /** Elicitation complete */
+  case ElicitationComplete(
+      mcpServerName: String,
+      elicitationId: String,
+      uuid: MessageUuid,
+      sessionId: SessionId
+  )
+
+  /** Task started notification */
+  case TaskStarted(
+      taskId: String,
+      description: String,
+      uuid: MessageUuid,
+      sessionId: SessionId
+  )
+
+  /** Task progress update */
+  case TaskProgress(
+      taskId: String,
+      progress: String,
       uuid: MessageUuid,
       sessionId: SessionId
   )
@@ -114,6 +165,8 @@ object AgentMessage:
         if texts.isEmpty then None else Some(texts.mkString)
       case StreamEvent(event, _, _, _) =>
         event.delta.collect { case StreamDelta.TextDelta(t) => t }
+      case PromptSuggestion(suggestion, _, _) =>
+        Some(suggestion)
       case _ => None
 
     /** Extract all tool use requests from this message */
@@ -135,14 +188,13 @@ object AgentMessage:
 
     /** Check if this message indicates completion */
     def isComplete: Boolean = msg match
-      case Result(ResultOutcome.Success(_, _, _, _, _, _, _, _, _), _, _) => true
-      case Result(ResultOutcome.Error(_, _, _, _, _, _, _, _, _), _, _)   => true
-      case _                                                              => false
+      case _: Result => true
+      case _         => false
 
     /** Get the result outcome if this is a Result message */
     def asResult: Option[ResultOutcome] = msg match
-      case Result(outcome, _, _) => Some(outcome)
-      case _                     => None
+      case Result(outcome, _, _, _) => Some(outcome)
+      case _                        => None
 
     /** Check if this is an assistant message */
     def isAssistant: Boolean = msg match
@@ -164,6 +216,11 @@ object AgentMessage:
       case _: ToolUseSummary => true
       case _                 => false
 
+    /** Check if this is a prompt suggestion */
+    def isPromptSuggestion: Boolean = msg match
+      case _: PromptSuggestion => true
+      case _                   => false
+
   // Extension methods for message lists
   extension (messages: List[AgentMessage])
     /** Extract all text from all messages */
@@ -172,7 +229,7 @@ object AgentMessage:
 
     /** Get the final result if present */
     def finalResult: Option[ResultOutcome] =
-      messages.collectFirst { case Result(outcome, _, _) => outcome }
+      messages.collectFirst { case Result(outcome, _, _, _) => outcome }
 
     /** Extract all tool calls from all messages */
     def allToolCalls: List[ContentBlock.ToolUse] =
@@ -200,6 +257,10 @@ object AgentMessage:
     /** Extract all tool use summaries from messages */
     def toolUseSummaries: List[AgentMessage.ToolUseSummary] =
       messages.collect { case tus: AgentMessage.ToolUseSummary => tus }
+
+    /** Extract all prompt suggestions from messages */
+    def promptSuggestions: List[AgentMessage.PromptSuggestion] =
+      messages.collect { case ps: AgentMessage.PromptSuggestion => ps }
 
 /** API assistant message structure */
 final case class ApiAssistantMessage(
@@ -233,6 +294,7 @@ enum AssistantMessageError:
   case RateLimit
   case InvalidRequest
   case ServerError
+  case MaxOutputTokens
   case Unknown
 
 object AssistantMessageError:
@@ -245,6 +307,7 @@ object AssistantMessageError:
     case "rate_limit"            => RateLimit
     case "invalid_request"       => InvalidRequest
     case "server_error"          => ServerError
+    case "max_output_tokens"     => MaxOutputTokens
     case _                       => Unknown
 
 /** Raw streaming event from the API */
