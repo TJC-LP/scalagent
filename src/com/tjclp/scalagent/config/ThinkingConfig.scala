@@ -1,6 +1,7 @@
 package com.tjclp.scalagent.config
 
 import scala.scalajs.js
+import scala.util.Try
 import zio.json.*
 
 /** Controls Claude's thinking/reasoning behavior.
@@ -33,10 +34,36 @@ object ThinkingConfig:
     import zio.json.ast.Json.*
     tc match
       case Adaptive    => Obj("type" -> Str("adaptive"))
-      case Enabled(b)  => Obj("type" -> Str("enabled"), "budgetTokens" -> b.fold[zio.json.ast.Json](Null)(n => Num(n)))
+      case Enabled(Some(budget)) => Obj("type" -> Str("enabled"), "budgetTokens" -> Num(budget))
+      case Enabled(None) => Obj("type" -> Str("enabled"))
       case Disabled    => Obj("type" -> Str("disabled"))
   }
-  given JsonDecoder[ThinkingConfig] = DeriveJsonDecoder.gen[ThinkingConfig]
+  given JsonDecoder[ThinkingConfig] = JsonDecoder[zio.json.ast.Json].mapOrFail {
+    case zio.json.ast.Json.Obj(fields) =>
+      val map = fields.toMap
+      map.get("type") match
+        case Some(zio.json.ast.Json.Str("adaptive")) =>
+          Right(Adaptive)
+        case Some(zio.json.ast.Json.Str("enabled")) =>
+          decodeBudgetTokens(map.get("budgetTokens")).map(Enabled.apply)
+        case Some(zio.json.ast.Json.Str("disabled")) =>
+          Right(Disabled)
+        case Some(zio.json.ast.Json.Str(other)) =>
+          Left(s"Unknown thinking type: $other")
+        case _ =>
+          Left("ThinkingConfig must contain a string 'type' field")
+    case _ =>
+      Left("ThinkingConfig must be a JSON object")
+  }
+
+  private def decodeBudgetTokens(raw: Option[zio.json.ast.Json]): Either[String, Option[Int]] =
+    raw match
+      case None | Some(zio.json.ast.Json.Null) =>
+        Right(None)
+      case Some(zio.json.ast.Json.Num(n)) =>
+        Try(n.intValueExact()).toEither.left.map(_ => s"budgetTokens must be an integer, got: $n").map(Some(_))
+      case Some(other) =>
+        Left(s"budgetTokens must be a number or null, got: $other")
 
   /** Adaptive thinking (recommended for Opus 4.6+) */
   val adaptive: ThinkingConfig = Adaptive

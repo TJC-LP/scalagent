@@ -77,7 +77,7 @@ object MessageConverter:
   private def parseResultMessage(obj: js.Dynamic): AgentMessage.Result =
     val subtype = obj.subtype.asInstanceOf[String]
 
-    val stopReason = obj.stop_reason.asInstanceOf[js.UndefOr[String]].toOption
+    val stopReason = normalizeOptionalString(obj.stop_reason.asInstanceOf[js.UndefOr[String]])
 
     val outcome =
       if subtype == "success" then
@@ -288,8 +288,8 @@ object MessageConverter:
       role = Role.fromString(obj.role.asInstanceOf[String]),
       content = parseContentBlocks(obj.content),
       model = obj.model.asInstanceOf[String],
-      stopReason = obj.stop_reason.asInstanceOf[js.UndefOr[String]].toOption.map(StopReason.fromString),
-      stopSequence = obj.stop_sequence.asInstanceOf[js.UndefOr[String]].toOption,
+      stopReason = normalizeOptionalString(obj.stop_reason.asInstanceOf[js.UndefOr[String]]).map(StopReason.fromString),
+      stopSequence = normalizeOptionalString(obj.stop_sequence.asInstanceOf[js.UndefOr[String]]),
       usage = obj.usage.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.map(parseModelUsage)
     )
 
@@ -507,3 +507,6 @@ object MessageConverter:
   private def jsToJson(value: js.Any): Json =
     val jsonStr = js.JSON.stringify(value)
     jsonStr.fromJson[Json].getOrElse(Json.Null)
+
+  private def normalizeOptionalString(value: js.UndefOr[String]): Option[String] =
+    value.toOption.filter(_ != null)

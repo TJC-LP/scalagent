@@ -237,6 +237,11 @@ final case class AgentOptions(
     canUseTool.map(handler => CanUseTool.toRawJs(handler, runtime)).orUndefined
 
 object AgentOptions:
+  private val uuidPattern = "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+
+  private def isValidUuid(value: String): Boolean =
+    value.matches(uuidPattern)
+
   /** Default options (empty configuration) */
   val default: AgentOptions = AgentOptions()
 
@@ -698,6 +703,7 @@ object AgentOptions:
 
     /** Set a specific session ID (must be a valid UUID). */
     def withSessionId(uuid: String): AgentOptions =
+      require(AgentOptions.isValidUuid(uuid), s"sessionId must be a valid UUID, got: $uuid")
       opts.copy(sessionId = Some(uuid))
 
     /** Enable strict MCP server configuration validation.

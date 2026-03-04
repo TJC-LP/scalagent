@@ -72,7 +72,9 @@ object HookInput:
       toolName: ToolName,
       toolInput: Json,
       permissionSuggestions: List[Json] = Nil,
-      permissionMode: Option[PermissionMode] = None
+      permissionMode: Option[PermissionMode] = None,
+      toolUseId: Option[ToolUseId] = None,
+      agentId: Option[SubagentId] = None
   ) extends HookInput
 
   /** Input for Notification hook */
@@ -112,7 +114,8 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       reason: ExitReason,
-      permissionMode: Option[PermissionMode] = None
+      permissionMode: Option[PermissionMode] = None,
+      totalCostUsd: Option[Double] = None
   ) extends HookInput
 
   /** Input for Stop hook */
@@ -132,7 +135,12 @@ object HookInput:
       agentId: String,
       agentType: String,
       permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+  ) extends HookInput:
+    @deprecated("Use agentId", "0.2.63")
+    def subagentId: SubagentId = SubagentId(agentId)
+
+    @deprecated("Use agentType", "0.2.63")
+    def subagentType: String = agentType
 
   /** Input for SubagentStop hook */
   final case class SubagentStop(
@@ -144,7 +152,12 @@ object HookInput:
       agentTranscriptPath: String,
       agentType: String,
       permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+  ) extends HookInput:
+    @deprecated("Use agentId", "0.2.63")
+    def subagentId: SubagentId = SubagentId(agentId)
+
+    @deprecated("Use agentType", "0.2.63")
+    def subagentType: String = agentType
 
   /** Input for PreCompact hook - before context compaction */
   final case class PreCompact(

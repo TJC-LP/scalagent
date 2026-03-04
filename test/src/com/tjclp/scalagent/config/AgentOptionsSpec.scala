@@ -351,6 +351,16 @@ class AgentOptionsSpec extends FunSuite:
     val opts = AgentOptions.default.withCustomSessionId("my-uuid-123")
     assertEquals(opts.extraArgs.get("session-id"), Some(Some("my-uuid-123")))
 
+  test("withSessionId sets sessionId for valid UUID"):
+    val uuid = "123e4567-e89b-12d3-a456-426614174000"
+    val opts = AgentOptions.default.withSessionId(uuid)
+    assertEquals(opts.sessionId, Some(uuid))
+
+  test("withSessionId rejects invalid UUID"):
+    intercept[IllegalArgumentException] {
+      AgentOptions.default.withSessionId("not-a-uuid")
+    }
+
   test("toRaw includes extraArgs with custom session ID"):
     val opts = AgentOptions.default.withCustomSessionId("my-uuid-123")
     val raw = opts.toRaw.asInstanceOf[js.Dynamic]
@@ -436,3 +446,7 @@ class AgentOptionsSpec extends FunSuite:
   test("PermissionMode.fromString parses unknown modes"):
     val custom = PermissionMode.fromString("some-custom-mode")
     assertEquals(custom.toRaw, "some-custom-mode")
+
+  test("PermissionMode.Delegate round-trips"):
+    assertEquals(PermissionMode.Delegate.toRaw, "delegate")
+    assertEquals(PermissionMode.fromString("delegate"), PermissionMode.Delegate)
