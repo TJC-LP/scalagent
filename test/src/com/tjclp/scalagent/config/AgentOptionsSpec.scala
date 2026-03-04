@@ -54,6 +54,10 @@ class AgentOptionsSpec extends FunSuite:
     val opts = AgentOptions.default.withMaxTurns(10)
     assertEquals(opts.maxTurns, Some(10))
 
+  test("withMaxTurns accepts PositiveInt"):
+    val opts = AgentOptions.default.withMaxTurns(PositiveInt.unsafe(12))
+    assertEquals(opts.maxTurns, Some(12))
+
   test("withMaxTurns rejects non-positive values"):
     intercept[IllegalArgumentException] {
       AgentOptions.default.withMaxTurns(0)
@@ -66,6 +70,10 @@ class AgentOptionsSpec extends FunSuite:
     val opts = AgentOptions.default.withMaxBudgetUsd(5.0)
     assertEquals(opts.maxBudgetUsd, Some(5.0))
 
+  test("withMaxBudgetUsd accepts PositiveDouble"):
+    val opts = AgentOptions.default.withMaxBudgetUsd(PositiveDouble.unsafe(7.5))
+    assertEquals(opts.maxBudgetUsd, Some(7.5))
+
   test("withMaxBudgetUsd rejects non-positive values"):
     intercept[IllegalArgumentException] {
       AgentOptions.default.withMaxBudgetUsd(0.0)
@@ -77,6 +85,10 @@ class AgentOptionsSpec extends FunSuite:
   test("withMaxThinkingTokens sets thinking tokens"):
     val opts = AgentOptions.default.withMaxThinkingTokens(1000)
     assertEquals(opts.maxThinkingTokens, Some(1000))
+
+  test("withMaxThinkingTokens accepts PositiveInt"):
+    val opts = AgentOptions.default.withMaxThinkingTokens(PositiveInt.unsafe(2048))
+    assertEquals(opts.maxThinkingTokens, Some(2048))
 
   test("withMaxThinkingTokens rejects non-positive values"):
     intercept[IllegalArgumentException] {

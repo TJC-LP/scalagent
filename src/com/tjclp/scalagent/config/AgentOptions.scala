@@ -2,6 +2,7 @@ package com.tjclp.scalagent.config
 
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
+import scala.annotation.targetName
 import zio.*
 import zio.json.*
 import com.tjclp.scalagent.hooks.*
@@ -259,6 +260,18 @@ object AgentOptions:
   private def isValidUuid(value: String): Boolean =
     uuidRegex.matches(value)
 
+  private def requirePositiveInt(field: String, value: Int): PositiveInt =
+    PositiveInt(value) match
+      case Right(valid) => valid
+      case Left(_) =>
+        throw new IllegalArgumentException(s"$field must be positive, got: $value")
+
+  private def requirePositiveDouble(field: String, value: Double): PositiveDouble =
+    PositiveDouble(value) match
+      case Right(valid) => valid
+      case Left(_) =>
+        throw new IllegalArgumentException(s"$field must be positive, got: $value")
+
   /** Default options (empty configuration) */
   val default: AgentOptions = AgentOptions()
 
@@ -279,22 +292,34 @@ object AgentOptions:
       * @throws IllegalArgumentException if n <= 0
       */
     def withMaxTurns(n: Int): AgentOptions =
-      require(n > 0, s"maxTurns must be positive, got: $n")
-      opts.copy(maxTurns = Some(n))
+      withMaxTurns(requirePositiveInt("maxTurns", n))
+
+    /** Set maximum turns using a validated positive integer. */
+    @targetName("withMaxTurnsPositive")
+    def withMaxTurns(n: PositiveInt): AgentOptions =
+      opts.copy(maxTurns = Some(n.value))
 
     /** Set maximum budget in USD (must be positive).
       * @throws IllegalArgumentException if b <= 0
       */
     def withMaxBudgetUsd(b: Double): AgentOptions =
-      require(b > 0, s"maxBudgetUsd must be positive, got: $b")
-      opts.copy(maxBudgetUsd = Some(b))
+      withMaxBudgetUsd(requirePositiveDouble("maxBudgetUsd", b))
+
+    /** Set maximum budget in USD using a validated positive value. */
+    @targetName("withMaxBudgetUsdPositive")
+    def withMaxBudgetUsd(b: PositiveDouble): AgentOptions =
+      opts.copy(maxBudgetUsd = Some(b.value))
 
     /** Set maximum thinking tokens (must be positive).
       * @throws IllegalArgumentException if t <= 0
       */
     def withMaxThinkingTokens(t: Int): AgentOptions =
-      require(t > 0, s"maxThinkingTokens must be positive, got: $t")
-      opts.copy(maxThinkingTokens = Some(t))
+      withMaxThinkingTokens(requirePositiveInt("maxThinkingTokens", t))
+
+    /** Set maximum thinking tokens using a validated positive integer. */
+    @targetName("withMaxThinkingTokensPositive")
+    def withMaxThinkingTokens(t: PositiveInt): AgentOptions =
+      opts.copy(maxThinkingTokens = Some(t.value))
 
     def withPermissionMode(pm: PermissionMode): AgentOptions =
       opts.copy(permissionMode = Some(pm))
