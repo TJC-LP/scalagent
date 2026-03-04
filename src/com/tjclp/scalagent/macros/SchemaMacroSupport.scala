@@ -12,6 +12,8 @@ object SchemaMacroSupport:
   private val ListTypeFullName = "scala.collection.immutable.List"
   private val VectorTypeFullName = "scala.collection.immutable.Vector"
   private val SetTypeFullName = "scala.collection.immutable.Set"
+  private val EitherTypeFullName = "scala.util.Either"
+  private val Tuple2TypeFullName = "scala.Tuple2"
   private val DescriptionAnnotationFullName = "com.tjclp.scalagent.macros.description"
 
   def splitOptional(using q: Quotes)(
@@ -49,6 +51,12 @@ object SchemaMacroSupport:
 
   def isMapLike(using q: Quotes)(tycon: q.reflect.TypeRepr): Boolean =
     tycon.typeSymbol.fullName.contains("Map")
+
+  def isEitherLike(using q: Quotes)(tycon: q.reflect.TypeRepr): Boolean =
+    tycon.typeSymbol.fullName == EitherTypeFullName
+
+  def isTuple2Like(using q: Quotes)(tycon: q.reflect.TypeRepr): Boolean =
+    tycon.typeSymbol.fullName == Tuple2TypeFullName
 
   def enumCaseNames(using q: Quotes)(enumType: q.reflect.TypeRepr): List[String] =
     enumType.typeSymbol.children.map(_.name)

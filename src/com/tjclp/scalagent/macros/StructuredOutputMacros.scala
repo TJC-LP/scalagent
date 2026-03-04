@@ -135,6 +135,18 @@ object StructuredOutputMacros:
         val valueSchemaExpr = typeToSchemaExpr(valueType)
         '{ JsonSchemaAst.map($valueSchemaExpr) }
 
+      // Either[L, R]
+      case AppliedType(tycon, List(leftType, rightType)) if isEitherLike(tycon) =>
+        val leftSchemaExpr = typeToSchemaExpr(leftType)
+        val rightSchemaExpr = typeToSchemaExpr(rightType)
+        '{ JsonSchemaAst.oneOf(List($leftSchemaExpr, $rightSchemaExpr)) }
+
+      // Tuple2[A, B]
+      case AppliedType(tycon, List(leftType, rightType)) if isTuple2Like(tycon) =>
+        val leftSchemaExpr = typeToSchemaExpr(leftType)
+        val rightSchemaExpr = typeToSchemaExpr(rightType)
+        '{ JsonSchemaAst.tuple2($leftSchemaExpr, $rightSchemaExpr) }
+
       // Enum (Scala 3)
       case t if t.typeSymbol.flags.is(Flags.Enum) =>
         val enumCases = enumCaseNames(t)
