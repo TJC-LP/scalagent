@@ -124,7 +124,13 @@ final case class AgentOptions(
     /** Enforce strict validation of MCP server configurations.
       * When true, invalid configurations will cause errors instead of warnings.
       */
-    strictMcpConfig: Boolean = false
+    strictMcpConfig: Boolean = false,
+
+    /** Per-tool configuration (e.g., askUserQuestion preview format). */
+    toolConfig: Option[ToolConfig] = None,
+
+    /** Inline settings object or path to a settings file. */
+    settings: Option[SettingsConfig] = None
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -209,6 +215,8 @@ final case class AgentOptions(
     if debug then obj.debug = true
     debugFile.foreach(df => obj.debugFile = df)
     if strictMcpConfig then obj.strictMcpConfig = true
+    toolConfig.foreach(tc => obj.toolConfig = tc.toRaw)
+    settings.foreach(s => obj.settings = s.toRaw)
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks
@@ -759,6 +767,27 @@ object AgentOptions:
     def withStrictMcpConfig: AgentOptions =
       opts.copy(strictMcpConfig = true)
 
+    /** Set per-tool configuration.
+      *
+      * Example:
+      * {{{
+      * options.withToolConfig(ToolConfig(askUserQuestionPreviewFormat = Some("html")))
+      * }}}
+      */
+    def withToolConfig(config: ToolConfig): AgentOptions =
+      opts.copy(toolConfig = Some(config))
+
+    /** Set inline settings or settings file path.
+      *
+      * Example:
+      * {{{
+      * options.withSettings(SettingsConfig.Path("/path/to/settings.json"))
+      * options.withSettings(SettingsConfig.Inline(js.Dynamic.literal(...)))
+      * }}}
+      */
+    def withSettings(config: SettingsConfig): AgentOptions =
+      opts.copy(settings = Some(config))
+
 /** System prompt configuration */
 enum SystemPromptConfig:
   /** Custom system prompt string */
@@ -824,3 +853,30 @@ final case class OutputFormat(schema: zio.json.ast.Json):
 object OutputFormat:
   given JsonDecoder[OutputFormat] = DeriveJsonDecoder.gen[OutputFormat]
   given JsonEncoder[OutputFormat] = DeriveJsonEncoder.gen[OutputFormat]
+
+/** Per-tool configuration options */
+final case class ToolConfig(
+    askUserQuestionPreviewFormat: Option[String] = None
+):
+  def toRaw: js.Object =
+    val obj = js.Dynamic.literal()
+    askUserQuestionPreviewFormat.foreach { fmt =>
+      obj.askUserQuestion = js.Dynamic.literal(previewFormat = fmt)
+    }
+    obj.asInstanceOf[js.Object]
+
+object ToolConfig:
+  /** Create a ToolConfig with HTML preview format for askUserQuestion */
+  def htmlPreviews: ToolConfig = ToolConfig(askUserQuestionPreviewFormat = Some("html"))
+
+  /** Create a ToolConfig with markdown preview format (default) */
+  def markdownPreviews: ToolConfig = ToolConfig(askUserQuestionPreviewFormat = Some("markdown"))
+
+/** Settings configuration — either an inline object or a file path */
+enum SettingsConfig:
+  case Path(path: String)
+  case Inline(settings: js.Object)
+
+  def toRaw: js.Any = this match
+    case Path(p)       => p.asInstanceOf[js.Any]
+    case Inline(obj)   => obj.asInstanceOf[js.Any]

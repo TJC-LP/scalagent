@@ -197,16 +197,16 @@ object Claude:
     *   The project directory to list sessions for
     * @param limit
     *   Maximum number of sessions to return (default: 50)
+    * @param includeWorktrees
+    *   When dir is inside a git repo, include sessions from all worktree paths (default: true)
     * @return
     *   A list of session info objects
     */
-  def listSessions(dir: String, limit: Int = 50): IO[AgentError, List[SessionInfo]] =
+  def listSessions(dir: String, limit: Int = 50, includeWorktrees: Boolean = true): IO[AgentError, List[SessionInfo]] =
+    val opts = js.Dynamic.literal(dir = dir, limit = limit)
+    if !includeWorktrees then opts.includeWorktrees = false
     ZIO
-      .fromPromiseJS(
-        SdkModule.listSessions(
-          js.Dynamic.literal(dir = dir, limit = limit)
-        )
-      )
+      .fromPromiseJS(SdkModule.listSessions(opts))
       .map(_.toList.map(SessionInfo.fromRaw))
       .mapError(AgentError.fromThrowable)
 

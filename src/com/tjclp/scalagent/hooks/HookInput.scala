@@ -24,6 +24,17 @@ sealed trait HookInput:
   /** Permission mode active for this session */
   def permissionMode: Option[PermissionMode]
 
+  /** Subagent identifier, present when the hook fires from within a subagent.
+    * Absent for the main thread, even in --agent sessions.
+    */
+  def hookAgentId: Option[SubagentId]
+
+  /** Agent type name (e.g., "general-purpose", "code-reviewer").
+    * Present when the hook fires from within a subagent (alongside agentId),
+    * or on the main thread of a session started with --agent (without agentId).
+    */
+  def hookAgentType: Option[String]
+
 object HookInput:
 
   /** Input for PreToolUse hook - before tool execution */
@@ -35,8 +46,10 @@ object HookInput:
       toolInput: Json,
       toolUseId: ToolUseId,
       agentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+  ) extends HookInput:
+    def hookAgentId: Option[SubagentId] = agentId
 
   /** Input for PostToolUse hook - after successful tool execution */
   final case class PostToolUse(
@@ -48,8 +61,10 @@ object HookInput:
       toolUseId: ToolUseId,
       toolResponse: String,
       agentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+  ) extends HookInput:
+    def hookAgentId: Option[SubagentId] = agentId
 
   /** Input for PostToolUseFailure hook - after tool execution error */
   final case class PostToolUseFailure(
@@ -61,9 +76,11 @@ object HookInput:
       toolUseId: ToolUseId,
       error: String,
       agentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       isInterrupt: Boolean = false,
       permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+  ) extends HookInput:
+    def hookAgentId: Option[SubagentId] = agentId
 
   /** Input for PermissionRequest hook - when permission decision needed */
   final case class PermissionRequest(
@@ -75,8 +92,10 @@ object HookInput:
       permissionSuggestions: List[Json] = Nil,
       permissionMode: Option[PermissionMode] = None,
       toolUseId: Option[ToolUseId] = None,
-      agentId: Option[SubagentId] = None
-  ) extends HookInput
+      agentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None
+  ) extends HookInput:
+    def hookAgentId: Option[SubagentId] = agentId
 
   /** Input for Notification hook */
   final case class Notification(
@@ -86,6 +105,8 @@ object HookInput:
       message: String,
       title: Option[String] = None,
       notificationType: String = "info",
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -95,6 +116,8 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       prompt: String,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -106,8 +129,10 @@ object HookInput:
       source: SessionStartSource,
       agentType: Option[String] = None,
       model: Option[String] = None,
+      hookAgentId: Option[SubagentId] = None,
       permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+  ) extends HookInput:
+    def hookAgentType: Option[String] = agentType
 
   /** Input for SessionEnd hook */
   final case class SessionEnd(
@@ -115,6 +140,8 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       reason: ExitReason,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None,
       totalCostUsd: Option[Double] = None
   ) extends HookInput
@@ -125,6 +152,8 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       stopHookActive: Boolean = false,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -137,6 +166,9 @@ object HookInput:
       agentType: String,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput:
+    def hookAgentId: Option[SubagentId] = Some(agentId)
+    def hookAgentType: Option[String] = Some(agentType)
+
     @deprecated("Use agentId", "0.2.63")
     def subagentId: SubagentId = agentId
 
@@ -154,6 +186,9 @@ object HookInput:
       agentType: String,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput:
+    def hookAgentId: Option[SubagentId] = Some(agentId)
+    def hookAgentType: Option[String] = Some(agentType)
+
     @deprecated("Use agentId", "0.2.63")
     def subagentId: SubagentId = agentId
 
@@ -167,6 +202,8 @@ object HookInput:
       transcriptPath: String,
       trigger: CompactTrigger,
       customInstructions: Option[String] = None,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -176,6 +213,8 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       trigger: SetupTrigger,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -186,6 +225,8 @@ object HookInput:
       transcriptPath: String,
       teammateName: String,
       teamName: String,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -199,6 +240,8 @@ object HookInput:
       taskDescription: Option[String] = None,
       teammateName: Option[String] = None,
       teamName: Option[String] = None,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -213,6 +256,8 @@ object HookInput:
       url: Option[String] = None,
       elicitationId: Option[String] = None,
       requestedSchema: Option[Json] = None,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -226,6 +271,8 @@ object HookInput:
       elicitationId: Option[String] = None,
       mode: Option[ElicitationMode] = None,
       content: Option[Json] = None,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -236,6 +283,8 @@ object HookInput:
       transcriptPath: String,
       source: ConfigChangeSource,
       filePath: Option[String] = None,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -245,6 +294,8 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       name: String,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -254,6 +305,24 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       worktreePath: String,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
+      permissionMode: Option[PermissionMode] = None
+  ) extends HookInput
+
+  /** Input for InstructionsLoaded hook - when CLAUDE.md or memory files are loaded */
+  final case class InstructionsLoaded(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      filePath: String,
+      memoryType: MemoryType,
+      loadReason: InstructionsLoadReason,
+      globs: Option[List[String]] = None,
+      triggerFilePath: Option[String] = None,
+      parentFilePath: Option[String] = None,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
@@ -411,6 +480,52 @@ object ElicitationAction:
     case "decline" => Decline
     case "cancel"  => Cancel
     case other     => Custom(other)
+
+/** Memory type for instructions loaded hook */
+enum MemoryType:
+  case User, Project, Local, Managed
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case User       => "User"
+    case Project    => "Project"
+    case Local      => "Local"
+    case Managed    => "Managed"
+    case Custom(v)  => v
+
+object MemoryType:
+  given JsonEncoder[MemoryType] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[MemoryType] = StringEnumJsonCodec.decoder(fromString)
+
+  def fromString(s: String): MemoryType = s match
+    case "User"    => User
+    case "Project" => Project
+    case "Local"   => Local
+    case "Managed" => Managed
+    case other     => Custom(other)
+
+/** Load reason for instructions loaded hook */
+enum InstructionsLoadReason:
+  case SessionStart, NestedTraversal, PathGlobMatch, Include
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case SessionStart    => "session_start"
+    case NestedTraversal => "nested_traversal"
+    case PathGlobMatch   => "path_glob_match"
+    case Include         => "include"
+    case Custom(v)       => v
+
+object InstructionsLoadReason:
+  given JsonEncoder[InstructionsLoadReason] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[InstructionsLoadReason] = StringEnumJsonCodec.decoder(fromString)
+
+  def fromString(s: String): InstructionsLoadReason = s match
+    case "session_start"    => SessionStart
+    case "nested_traversal" => NestedTraversal
+    case "path_glob_match"  => PathGlobMatch
+    case "include"          => Include
+    case other              => Custom(other)
 
 /** Source of a configuration change */
 enum ConfigChangeSource:
