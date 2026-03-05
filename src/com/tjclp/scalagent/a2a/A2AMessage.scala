@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.a2a
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 import zio.json.ast.Json
 
@@ -76,12 +77,12 @@ enum A2ARole:
   case Agent
 
 object A2ARole:
-  given JsonEncoder[A2ARole] = JsonEncoder.string.contramap {
+  given JsonEncoder[A2ARole] = StringEnumJsonCodec.encoder {
     case A2ARole.User  => "user"
     case A2ARole.Agent => "agent"
   }
 
-  given JsonDecoder[A2ARole] = JsonDecoder.string.mapOrFail {
+  given JsonDecoder[A2ARole] = StringEnumJsonCodec.decoderOrFail {
     case "user"  => Right(A2ARole.User)
     case "agent" => Right(A2ARole.Agent)
     case other   => Left(s"Unknown role: $other")

@@ -64,7 +64,7 @@ object HookExample extends ZIOAppDefault:
     }
 
     val options = AgentOptions.default
-      .withModel(Model.Sonnet4_5)
+      .withModel(Model.sonnet)
       .withPermissionMode(PermissionMode.Default)
       .withMaxTurns(5)
       .withHook(HookEvent.PreToolUse, loggingHook)

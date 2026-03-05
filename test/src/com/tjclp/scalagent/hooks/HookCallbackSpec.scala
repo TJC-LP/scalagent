@@ -7,6 +7,7 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import zio.*
 import com.tjclp.scalagent.config.PermissionMode
+import com.tjclp.scalagent.types.SubagentId
 
 class HookCallbackSpec extends FunSuite:
   private val runtime = Runtime.default
@@ -29,7 +30,7 @@ class HookCallbackSpec extends FunSuite:
       }
     HookCallback
       .toRawJs(callback, runtime)
-      .apply(raw)
+      .apply(raw, js.undefined, js.Dynamic.literal())
       .toFuture
       .map(_ => parsed.getOrElse(fail("Expected hook input to be parsed")))
 
@@ -42,7 +43,7 @@ class HookCallbackSpec extends FunSuite:
       case input: HookInput.TeammateIdle =>
         assertEquals(input.teammateName, "researcher")
         assertEquals(input.teamName, "my-team")
-        assertEquals(input.permissionMode, Some(PermissionMode.Delegate))
+        assertEquals(input.permissionMode, Some(PermissionMode.Custom("delegate")))
       case other => fail(s"Expected TeammateIdle, got: $other")
     }
 
@@ -133,6 +134,24 @@ class HookCallbackSpec extends FunSuite:
     parseInput(raw).map {
       case input: HookInput.Setup =>
         assertEquals(input.trigger, SetupTrigger.Init)
-        assertEquals(input.permissionMode, Some(PermissionMode.Delegate))
+        assertEquals(input.permissionMode, Some(PermissionMode.Custom("delegate")))
       case other => fail(s"Expected Setup, got: $other")
+    }
+
+  test("parseHookInput handles InstructionsLoaded with agent metadata"):
+    val raw = baseInput("InstructionsLoaded")
+    raw.file_path = "/tmp/project/CLAUDE.md"
+    raw.memory_type = "Project"
+    raw.load_reason = "session_start"
+    raw.agent_id = "agent-42"
+    raw.agent_type = "code-reviewer"
+
+    parseInput(raw).map {
+      case input: HookInput.InstructionsLoaded =>
+        assertEquals(input.filePath, "/tmp/project/CLAUDE.md")
+        assertEquals(input.memoryType, MemoryType.Project)
+        assertEquals(input.loadReason, InstructionsLoadReason.SessionStart)
+        assertEquals(input.hookAgentId, Some(SubagentId("agent-42")))
+        assertEquals(input.hookAgentType, Some("code-reviewer"))
+      case other => fail(s"Expected InstructionsLoaded, got: $other")
     }

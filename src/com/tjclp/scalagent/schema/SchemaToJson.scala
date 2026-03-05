@@ -35,10 +35,7 @@ object SchemaToJson:
         schemaToJson(inner)
 
       case seq: Schema.Sequence[?, ?, ?] =>
-        Json.Obj(
-          "type" -> Json.Str("array"),
-          "items" -> schemaToJson(seq.elementSchema)
-        )
+        JsonSchemaAst.array(schemaToJson(seq.elementSchema))
 
       case enumSchema: Schema.Enum[?] =>
         enumSchemaToJson(enumSchema)
@@ -50,83 +47,68 @@ object SchemaToJson:
         schemaToJson(transform.schema)
 
       case Schema.Fail(_, _) =>
-        Json.Obj("type" -> Json.Str("null"))
+        JsonSchemaAst.nullType
 
       case map: Schema.Map[?, ?] =>
-        Json.Obj(
-          "type" -> Json.Str("object"),
-          "additionalProperties" -> schemaToJson(map.valueSchema)
-        )
+        JsonSchemaAst.map(schemaToJson(map.valueSchema))
 
       case set: Schema.Set[?] =>
-        Json.Obj(
-          "type" -> Json.Str("array"),
-          "items" -> schemaToJson(set.elementSchema),
-          "uniqueItems" -> Json.Bool(true)
+        JsonSchemaAst.array(
+          items = schemaToJson(set.elementSchema),
+          uniqueItems = true
         )
 
       case either: Schema.Either[?, ?] =>
         // Either as oneOf
-        Json.Obj(
-          "oneOf" -> Json.Arr(
+        JsonSchemaAst.oneOf(
+          List(
             schemaToJson(either.left),
             schemaToJson(either.right)
           )
         )
 
       case tuple: Schema.Tuple2[?, ?] =>
-        Json.Obj(
-          "type" -> Json.Str("array"),
-          "items" -> Json.Arr(
-            schemaToJson(tuple.left),
-            schemaToJson(tuple.right)
-          ),
-          "minItems" -> Json.Num(2),
-          "maxItems" -> Json.Num(2)
+        JsonSchemaAst.tuple2(
+          left = schemaToJson(tuple.left),
+          right = schemaToJson(tuple.right)
         )
 
       case _ =>
-        Json.Obj("type" -> Json.Str("object"))
+        JsonSchemaAst.objectType
 
   private def primitiveToJson(standardType: StandardType[?]): Json =
-    val (typeName, format) = standardType match
-      case StandardType.StringType         => ("string", None)
-      case StandardType.IntType            => ("integer", None)
-      case StandardType.LongType           => ("integer", Some("int64"))
-      case StandardType.FloatType          => ("number", Some("float"))
-      case StandardType.DoubleType         => ("number", Some("double"))
-      case StandardType.BoolType           => ("boolean", None)
-      case StandardType.ShortType          => ("integer", Some("int32"))
-      case StandardType.ByteType           => ("integer", Some("int32"))
-      case StandardType.CharType           => ("string", None)
-      case StandardType.BigDecimalType     => ("number", None)
-      case StandardType.BigIntegerType     => ("integer", None)
-      case StandardType.UUIDType           => ("string", Some("uuid"))
-      case StandardType.LocalDateType      => ("string", Some("date"))
-      case StandardType.LocalTimeType      => ("string", Some("time"))
-      case StandardType.LocalDateTimeType  => ("string", Some("date-time"))
-      case StandardType.OffsetTimeType     => ("string", Some("time"))
-      case StandardType.OffsetDateTimeType => ("string", Some("date-time"))
-      case StandardType.ZonedDateTimeType  => ("string", Some("date-time"))
-      case StandardType.InstantType        => ("string", Some("date-time"))
-      case StandardType.DurationType       => ("string", Some("duration"))
-      case StandardType.PeriodType         => ("string", None)
-      case StandardType.YearType           => ("integer", None)
-      case StandardType.YearMonthType      => ("string", None)
-      case StandardType.MonthType          => ("string", None)
-      case StandardType.MonthDayType       => ("string", None)
-      case StandardType.DayOfWeekType      => ("string", None)
-      case StandardType.ZoneIdType         => ("string", None)
-      case StandardType.ZoneOffsetType     => ("string", None)
-      case StandardType.UnitType           => ("null", None)
-      case StandardType.BinaryType         => ("string", Some("byte"))
-      case StandardType.CurrencyType       => ("string", None)
-
-    format match
-      case Some(fmt) =>
-        Json.Obj("type" -> Json.Str(typeName), "format" -> Json.Str(fmt))
-      case None =>
-        Json.Obj("type" -> Json.Str(typeName))
+    standardType match
+      case StandardType.StringType         => JsonSchemaAst.string
+      case StandardType.IntType            => JsonSchemaAst.integer
+      case StandardType.LongType           => JsonSchemaAst.integerWithFormat("int64")
+      case StandardType.FloatType          => JsonSchemaAst.numberWithFormat("float")
+      case StandardType.DoubleType         => JsonSchemaAst.numberWithFormat("double")
+      case StandardType.BoolType           => JsonSchemaAst.boolean
+      case StandardType.ShortType          => JsonSchemaAst.integerWithFormat("int32")
+      case StandardType.ByteType           => JsonSchemaAst.integerWithFormat("int32")
+      case StandardType.CharType           => JsonSchemaAst.string
+      case StandardType.BigDecimalType     => JsonSchemaAst.number
+      case StandardType.BigIntegerType     => JsonSchemaAst.integer
+      case StandardType.UUIDType           => JsonSchemaAst.withFormat("string", "uuid")
+      case StandardType.LocalDateType      => JsonSchemaAst.withFormat("string", "date")
+      case StandardType.LocalTimeType      => JsonSchemaAst.withFormat("string", "time")
+      case StandardType.LocalDateTimeType  => JsonSchemaAst.withFormat("string", "date-time")
+      case StandardType.OffsetTimeType     => JsonSchemaAst.withFormat("string", "time")
+      case StandardType.OffsetDateTimeType => JsonSchemaAst.withFormat("string", "date-time")
+      case StandardType.ZonedDateTimeType  => JsonSchemaAst.withFormat("string", "date-time")
+      case StandardType.InstantType        => JsonSchemaAst.withFormat("string", "date-time")
+      case StandardType.DurationType       => JsonSchemaAst.withFormat("string", "duration")
+      case StandardType.PeriodType         => JsonSchemaAst.string
+      case StandardType.YearType           => JsonSchemaAst.integer
+      case StandardType.YearMonthType      => JsonSchemaAst.string
+      case StandardType.MonthType          => JsonSchemaAst.string
+      case StandardType.MonthDayType       => JsonSchemaAst.string
+      case StandardType.DayOfWeekType      => JsonSchemaAst.string
+      case StandardType.ZoneIdType         => JsonSchemaAst.string
+      case StandardType.ZoneOffsetType     => JsonSchemaAst.string
+      case StandardType.UnitType           => JsonSchemaAst.nullType
+      case StandardType.BinaryType         => JsonSchemaAst.withFormat("string", "byte")
+      case StandardType.CurrencyType       => JsonSchemaAst.string
 
   private def recordToJson(record: Schema.Record[?]): Json =
     val properties = record.fields.map { field =>
@@ -140,14 +122,9 @@ object SchemaToJson:
       .filterNot(f => isOptional(f.schema))
       .map(_.name)
 
-    val propsObj = Json.Obj(properties.map((k, v) => (k, v))*)
-    val requiredArr = Json.Arr(required.map(Json.Str(_))*)
-
-    Json.Obj(
-      "type" -> Json.Str("object"),
-      "properties" -> propsObj,
-      "required" -> requiredArr,
-      "additionalProperties" -> Json.Bool(false)
+    JsonSchemaAst.objectSchema(
+      properties = properties.toList,
+      required = required.toList
     )
 
   private def isOptional(schema: Schema[?]): Boolean =
@@ -159,7 +136,4 @@ object SchemaToJson:
   private def enumSchemaToJson(enumSchema: Schema.Enum[?]): Json =
     // For simple string enums
     val cases = enumSchema.cases.map(_.id)
-    Json.Obj(
-      "type" -> Json.Str("string"),
-      "enum" -> Json.Arr(cases.map(Json.Str(_))*)
-    )
+    JsonSchemaAst.enumOf(cases.toList)

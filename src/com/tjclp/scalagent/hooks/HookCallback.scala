@@ -82,8 +82,11 @@ object HookCallback:
     *
     * This bridges the ZIO-based callback to the SDK's expected JavaScript function format.
     */
-  def toRawJs(callback: HookCallback, runtime: Runtime[Any]): js.Function1[js.Dynamic, js.Promise[js.Object]] =
-    (rawInput: js.Dynamic) => {
+  def toRawJs(
+      callback: HookCallback,
+      runtime: Runtime[Any]
+  ): js.Function3[js.Dynamic, js.UndefOr[String], js.Dynamic, js.Promise[js.Object]] =
+    (rawInput: js.Dynamic, _toolUseId: js.UndefOr[String], _options: js.Dynamic) => {
       val input = parseHookInput(rawInput)
       val effect = callback(input).map(_.toRaw)
       Unsafe.unsafe { implicit unsafe =>
@@ -101,6 +104,8 @@ object HookCallback:
     val transcriptPath = raw.transcript_path.asInstanceOf[String]
     val hookEvent = firstString(raw, "hook_event", "hook_event_name").getOrElse("Unknown")
     val permissionMode = firstString(raw, "permission_mode", "permissionMode").map(PermissionMode.fromString)
+    val baseAgentId = firstString(raw, "agent_id", "agentId").map(SubagentId.apply)
+    val baseAgentType = firstString(raw, "agent_type", "agentType")
 
     hookEvent match
       case "PreToolUse" =>
@@ -111,7 +116,8 @@ object HookCallback:
           toolName = ToolName(raw.tool_name.asInstanceOf[String]),
           toolInput = parseJson(raw.tool_input),
           toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
-          agentId = firstString(raw, "agent_id", "agentId").map(SubagentId.apply),
+          agentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -124,7 +130,8 @@ object HookCallback:
           toolInput = parseJson(raw.tool_input),
           toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
           toolResponse = raw.tool_response.asInstanceOf[String],
-          agentId = firstString(raw, "agent_id", "agentId").map(SubagentId.apply),
+          agentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -137,7 +144,8 @@ object HookCallback:
           toolInput = parseJson(raw.tool_input),
           toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
           error = raw.error.asInstanceOf[String],
-          agentId = firstString(raw, "agent_id", "agentId").map(SubagentId.apply),
+          agentId = baseAgentId,
+          hookAgentType = baseAgentType,
           isInterrupt = optionalBoolean(raw, "is_interrupt").getOrElse(false),
           permissionMode = permissionMode
         )
@@ -155,7 +163,8 @@ object HookCallback:
             .getOrElse(Nil),
           permissionMode = permissionMode,
           toolUseId = firstString(raw, "tool_use_id", "toolUseId").map(ToolUseId.apply),
-          agentId = firstString(raw, "agent_id", "agentId").map(SubagentId.apply)
+          agentId = baseAgentId,
+          hookAgentType = baseAgentType
         )
 
       case "Notification" =>
@@ -166,6 +175,8 @@ object HookCallback:
           message = raw.message.asInstanceOf[String],
           title = firstString(raw, "title"),
           notificationType = firstString(raw, "notification_type", "notificationType").getOrElse("info"),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -175,6 +186,8 @@ object HookCallback:
           cwd = cwd,
           transcriptPath = transcriptPath,
           prompt = raw.prompt.asInstanceOf[String],
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -186,8 +199,9 @@ object HookCallback:
           source = SessionStartSource.fromString(
             firstString(raw, "source").getOrElse("startup")
           ),
-          agentType = firstString(raw, "agent_type", "agentType"),
+          agentType = baseAgentType,
           model = firstString(raw, "model"),
+          hookAgentId = baseAgentId,
           permissionMode = permissionMode
         )
 
@@ -197,6 +211,8 @@ object HookCallback:
           cwd = cwd,
           transcriptPath = transcriptPath,
           reason = ExitReason.fromString(firstString(raw, "reason").getOrElse("other")),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode,
           totalCostUsd = optionalDouble(raw, "total_cost_usd", "totalCostUsd")
         )
@@ -207,6 +223,8 @@ object HookCallback:
           cwd = cwd,
           transcriptPath = transcriptPath,
           stopHookActive = optionalBoolean(raw, "stop_hook_active").getOrElse(false),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -241,6 +259,8 @@ object HookCallback:
             firstString(raw, "trigger").getOrElse("auto")
           ),
           customInstructions = firstString(raw, "custom_instructions", "customInstructions"),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -252,6 +272,8 @@ object HookCallback:
           trigger = SetupTrigger.fromString(
             firstString(raw, "trigger").getOrElse("init")
           ),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -262,6 +284,8 @@ object HookCallback:
           transcriptPath = transcriptPath,
           teammateName = firstString(raw, "teammate_name", "teammateName").getOrElse(""),
           teamName = firstString(raw, "team_name", "teamName").getOrElse(""),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -275,6 +299,8 @@ object HookCallback:
           taskDescription = firstString(raw, "task_description", "taskDescription"),
           teammateName = firstString(raw, "teammate_name", "teammateName"),
           teamName = firstString(raw, "team_name", "teamName"),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -289,6 +315,8 @@ object HookCallback:
           url = firstString(raw, "url"),
           elicitationId = firstString(raw, "elicitation_id", "elicitationId"),
           requestedSchema = optionalJsValue(raw, "requested_schema").map(parseJson),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -302,6 +330,8 @@ object HookCallback:
           elicitationId = firstString(raw, "elicitation_id", "elicitationId"),
           mode = firstString(raw, "mode").map(ElicitationMode.fromString),
           content = optionalJsValue(raw, "content").map(parseJson),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -312,6 +342,8 @@ object HookCallback:
           transcriptPath = transcriptPath,
           source = ConfigChangeSource.fromString(firstString(raw, "source").getOrElse("user_settings")),
           filePath = firstString(raw, "file_path", "filePath"),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -321,6 +353,8 @@ object HookCallback:
           cwd = cwd,
           transcriptPath = transcriptPath,
           name = firstString(raw, "name").getOrElse(""),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -330,6 +364,30 @@ object HookCallback:
           cwd = cwd,
           transcriptPath = transcriptPath,
           worktreePath = firstString(raw, "worktree_path", "worktreePath").getOrElse(""),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
+          permissionMode = permissionMode
+        )
+
+      case "InstructionsLoaded" =>
+        HookInput.InstructionsLoaded(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          filePath = firstString(raw, "file_path", "filePath").getOrElse(""),
+          memoryType = MemoryType.fromString(
+            firstString(raw, "memory_type", "memoryType").getOrElse("Project")
+          ),
+          loadReason = InstructionsLoadReason.fromString(
+            firstString(raw, "load_reason", "loadReason").getOrElse("session_start")
+          ),
+          globs = optionalJsValue(raw, "globs")
+            .filter(js.Array.isArray(_))
+            .map(_.asInstanceOf[js.Array[String]].toList),
+          triggerFilePath = firstString(raw, "trigger_file_path", "triggerFilePath"),
+          parentFilePath = firstString(raw, "parent_file_path", "parentFilePath"),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 
@@ -340,6 +398,8 @@ object HookCallback:
           cwd = cwd,
           transcriptPath = transcriptPath,
           message = s"Unknown hook event: $other",
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 

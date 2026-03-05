@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.config
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
 /** Setting source for filesystem-based configuration loading.
@@ -32,8 +33,8 @@ object SettingSource:
     case "local"   => Local
     case other     => Custom(other)
 
-  given JsonEncoder[SettingSource] = JsonEncoder[String].contramap(_.raw)
-  given JsonDecoder[SettingSource] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[SettingSource] = StringEnumJsonCodec.encoder(_.raw)
+  given JsonDecoder[SettingSource] = StringEnumJsonCodec.decoder(fromString)
 
   /** Common preset: Load user and project settings (typical for Skills) */
   val userAndProject: List[SettingSource] = List(User, Project)

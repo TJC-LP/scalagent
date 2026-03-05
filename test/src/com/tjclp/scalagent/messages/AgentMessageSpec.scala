@@ -7,6 +7,10 @@ import com.tjclp.scalagent.TestFixtures._
 import com.tjclp.scalagent.tools.ToolName
 
 class AgentMessageSpec extends FunSuite:
+  private def assertStringEnumRoundTrip[A: JsonEncoder: JsonDecoder](value: A, raw: String): Unit =
+    val json = value.toJson
+    assertEquals(json, s"\"$raw\"")
+    assertEquals(json.fromJson[A], Right(value))
 
   // ============================================
   // Message Variants
@@ -286,6 +290,10 @@ class AgentMessageSpec extends FunSuite:
     assertEquals(TaskStatus.Stopped.toRaw, "stopped")
     assertEquals(TaskStatus.Custom("xyz").toRaw, "xyz")
 
+  test("TaskStatus JSON codec round-trips known and custom values"):
+    assertStringEnumRoundTrip(TaskStatus.Completed, "completed")
+    assertStringEnumRoundTrip(TaskStatus.Custom("future_status"), "future_status")
+
   // ============================================
   // HookOutcome Tests
   // ============================================
@@ -305,6 +313,28 @@ class AgentMessageSpec extends FunSuite:
     assertEquals(HookOutcome.Error.toRaw, "error")
     assertEquals(HookOutcome.Cancelled.toRaw, "cancelled")
     assertEquals(HookOutcome.Custom("xyz").toRaw, "xyz")
+
+  test("HookOutcome JSON codec round-trips known and custom values"):
+    assertStringEnumRoundTrip(HookOutcome.Success, "success")
+    assertStringEnumRoundTrip(HookOutcome.Custom("future_outcome"), "future_outcome")
+
+  test("Role JSON codec round-trips known and custom values"):
+    assertStringEnumRoundTrip(Role.User, "user")
+    assertStringEnumRoundTrip(Role.Custom("future_role"), "future_role")
+
+  test("StopReason JSON codec round-trips known and custom values"):
+    assertStringEnumRoundTrip(StopReason.ToolUse, "tool_use")
+    assertStringEnumRoundTrip(StopReason.Custom("future_reason"), "future_reason")
+
+  test("SystemEvent string enums JSON codec round-trip values"):
+    assertStringEnumRoundTrip(CompactTrigger.Manual, "manual")
+    assertStringEnumRoundTrip(SdkStatus.Compacting, "compacting")
+    assertStringEnumRoundTrip(ApiKeySource.User, "user")
+    assertStringEnumRoundTrip(McpConnectionStatus.NeedsAuth, "needs-auth")
+    assertStringEnumRoundTrip(HookOutcome.Cancelled, "cancelled")
+
+  test("McpConnectionStatus JSON decoder accepts legacy needs_auth value"):
+    assertEquals("\"needs_auth\"".fromJson[McpConnectionStatus], Right(McpConnectionStatus.NeedsAuth))
 
   // ============================================
   // List Extension Methods - New Types

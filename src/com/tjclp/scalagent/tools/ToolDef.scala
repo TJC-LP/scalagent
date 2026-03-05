@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.tools
 
+import scala.language.implicitConversions
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import scala.concurrent.ExecutionContext.Implicits.global

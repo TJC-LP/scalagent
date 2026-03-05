@@ -1,8 +1,9 @@
 package com.tjclp.scalagent.messages
 
-import zio.json.*
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import com.tjclp.scalagent.config.{CommandName, FastModeState, Model, OutputStyle, PermissionMode, SkillName}
 import com.tjclp.scalagent.tools.ToolName
+import zio.json.*
 
 /** System-level events emitted during agent execution */
 enum SystemEvent:
@@ -87,8 +88,8 @@ enum CompactTrigger:
     case Custom(v)  => v
 
 object CompactTrigger:
-  given JsonEncoder[CompactTrigger] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[CompactTrigger] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[CompactTrigger] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[CompactTrigger] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): CompactTrigger = s match
     case "manual" => Manual
@@ -105,8 +106,8 @@ enum SdkStatus:
     case Custom(v)  => v
 
 object SdkStatus:
-  given JsonEncoder[SdkStatus] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[SdkStatus] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[SdkStatus] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[SdkStatus] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): SdkStatus = s match
     case "compacting" => Compacting
@@ -130,8 +131,8 @@ enum ApiKeySource:
     case Custom(v)  => v
 
 object ApiKeySource:
-  given JsonEncoder[ApiKeySource] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[ApiKeySource] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[ApiKeySource] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[ApiKeySource] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): ApiKeySource = s match
     case "user"      => User
@@ -195,8 +196,8 @@ enum McpConnectionStatus:
     case Custom(v)  => v
 
 object McpConnectionStatus:
-  given JsonEncoder[McpConnectionStatus] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[McpConnectionStatus] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[McpConnectionStatus] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[McpConnectionStatus] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): McpConnectionStatus = s match
     case "connected"   => Connected
@@ -241,8 +242,8 @@ enum HookOutcome:
     case Custom(v)  => v
 
 object HookOutcome:
-  given JsonEncoder[HookOutcome] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[HookOutcome] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[HookOutcome] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[HookOutcome] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): HookOutcome = s match
     case "success"   => Success

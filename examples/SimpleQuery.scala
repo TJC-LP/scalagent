@@ -19,9 +19,9 @@ object SimpleQuery extends ZIOAppDefault:
 
   val run: ZIO[Any, AgentError, Unit] =
     val options = AgentOptions.default
-      .withModel(Model.Haiku4_5)
+      .withModel(Model.haiku)
       .withPermissionMode(PermissionMode.DontAsk)
-      .withMaxTurns(5)
+      .withMaxTurns(PositiveInt.literal(5)) // compile-time validated positive integer
 
     for
       _ <- Console.printLine("=== One-shot question with Claude.ask ===").orDie

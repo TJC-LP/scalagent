@@ -32,6 +32,11 @@ import zio.json.*
   *   Custom ripgrep configuration for sandbox
   * @param filesystem
   *   Filesystem configuration for sandbox (allowWrite, denyWrite, denyRead)
+  * @param enableWeakerNetworkIsolation
+  *   macOS only: Allow access to com.apple.trustd.agent in the sandbox.
+  *   Needed for Go-based CLI tools (gh, gcloud, terraform, etc.) to verify TLS
+  *   certificates when using httpProxyPort with a MITM proxy and custom CA.
+  *   Reduces security. Default: false
   */
 final case class SandboxSettings(
     enabled: Boolean = true,
@@ -40,6 +45,7 @@ final case class SandboxSettings(
     network: Option[SandboxNetworkConfig] = None,
     ignoreViolations: Map[String, List[String]] = Map.empty,
     enableWeakerNestedSandbox: Boolean = false,
+    enableWeakerNetworkIsolation: Boolean = false,
     excludedCommands: List[String] = Nil,
     ripgrep: Option[RipgrepConfig] = None,
     filesystem: Option[SandboxFilesystemConfig] = None
@@ -59,6 +65,7 @@ final case class SandboxSettings(
       )
 
     if enableWeakerNestedSandbox then obj.enableWeakerNestedSandbox = true
+    if enableWeakerNetworkIsolation then obj.enableWeakerNetworkIsolation = true
 
     if excludedCommands.nonEmpty then
       obj.excludedCommands = excludedCommands.toJSArray
@@ -94,6 +101,12 @@ object SandboxSettings:
 
     def withWeakerNestedSandbox: SandboxSettings =
       ss.copy(enableWeakerNestedSandbox = true)
+
+    /** macOS only: Enable weaker network isolation to allow trustd access.
+      * Required for Go-based CLI tools with MITM proxy and custom CA.
+      */
+    def withWeakerNetworkIsolation: SandboxSettings =
+      ss.copy(enableWeakerNetworkIsolation = true)
 
     def withExcludedCommands(commands: String*): SandboxSettings =
       ss.copy(excludedCommands = commands.toList)

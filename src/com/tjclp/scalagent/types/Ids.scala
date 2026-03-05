@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.types
 
+import com.tjclp.scalagent.json.OpaqueStringJsonCodec
 import zio.json.{JsonDecoder, JsonEncoder}
 
 /** Type-safe opaque wrappers for string identifiers.
@@ -51,9 +52,33 @@ object SessionId:
     def isEmpty: Boolean = value.isEmpty
     def nonEmpty: Boolean = !value.isEmpty
 
-  // Use concrete instances (not implicit search) to avoid false "infinite loop" warnings
-  given JsonEncoder[SessionId] = JsonEncoder.string.asInstanceOf[JsonEncoder[SessionId]]
-  given JsonDecoder[SessionId] = JsonDecoder.string.asInstanceOf[JsonDecoder[SessionId]]
+  given JsonEncoder[SessionId] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[SessionId] = OpaqueStringJsonCodec.decoder(apply)
+
+/** Canonical UUID identifier for explicit session ID assignment.
+  *
+  * This is stricter than [[SessionId]], which can also represent human-readable
+  * names assigned via `/rename`.
+  */
+opaque type SessionUuid = String
+object SessionUuid:
+  private val uuidPattern = "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+  private val uuidRegex   = uuidPattern.r
+
+  def apply(uuid: String): Either[String, SessionUuid] =
+    if isValid(uuid) then Right(uuid)
+    else Left(s"sessionId must be a valid UUID, got: $uuid")
+
+  def unsafe(uuid: String): SessionUuid = uuid
+
+  def isValid(uuid: String): Boolean =
+    uuidRegex.matches(uuid)
+
+  extension (uuid: SessionUuid)
+    def value: String = uuid
+
+  given JsonEncoder[SessionUuid] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[SessionUuid] = OpaqueStringJsonCodec.decoderOrFail(apply)
 
 /** Unique identifier for a tool use request */
 opaque type ToolUseId = String
@@ -64,8 +89,8 @@ object ToolUseId:
     def isEmpty: Boolean = value.isEmpty
     def nonEmpty: Boolean = !value.isEmpty
 
-  given JsonEncoder[ToolUseId] = JsonEncoder.string.asInstanceOf[JsonEncoder[ToolUseId]]
-  given JsonDecoder[ToolUseId] = JsonDecoder.string.asInstanceOf[JsonDecoder[ToolUseId]]
+  given JsonEncoder[ToolUseId] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[ToolUseId] = OpaqueStringJsonCodec.decoder(apply)
 
 /** Unique identifier for a message */
 opaque type MessageUuid = String
@@ -75,8 +100,8 @@ object MessageUuid:
     def value: String = id
     def isEmpty: Boolean = value.isEmpty
 
-  given JsonEncoder[MessageUuid] = JsonEncoder.string.asInstanceOf[JsonEncoder[MessageUuid]]
-  given JsonDecoder[MessageUuid] = JsonDecoder.string.asInstanceOf[JsonDecoder[MessageUuid]]
+  given JsonEncoder[MessageUuid] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[MessageUuid] = OpaqueStringJsonCodec.decoder(apply)
 
 /** Unique identifier for a subagent */
 opaque type SubagentId = String
@@ -86,8 +111,8 @@ object SubagentId:
     def value: String = id
     def isEmpty: Boolean = value.isEmpty
 
-  given JsonEncoder[SubagentId] = JsonEncoder.string.asInstanceOf[JsonEncoder[SubagentId]]
-  given JsonDecoder[SubagentId] = JsonDecoder.string.asInstanceOf[JsonDecoder[SubagentId]]
+  given JsonEncoder[SubagentId] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[SubagentId] = OpaqueStringJsonCodec.decoder(apply)
 
 /** API-level message identifier */
 opaque type ApiMessageId = String
@@ -97,5 +122,5 @@ object ApiMessageId:
     def value: String = id
     def isEmpty: Boolean = value.isEmpty
 
-  given JsonEncoder[ApiMessageId] = JsonEncoder.string.asInstanceOf[JsonEncoder[ApiMessageId]]
-  given JsonDecoder[ApiMessageId] = JsonDecoder.string.asInstanceOf[JsonDecoder[ApiMessageId]]
+  given JsonEncoder[ApiMessageId] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[ApiMessageId] = OpaqueStringJsonCodec.decoder(apply)

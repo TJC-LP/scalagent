@@ -1,6 +1,7 @@
 package com.tjclp.scalagent.macros
 
 import scala.quoted.*
+import com.tjclp.scalagent.macros.SchemaMacroSupport.*
 import com.tjclp.scalagent.tools.{JsonSchema, ToolInput}
 
 /** Macros for deriving ToolInput instances from case classes. */
@@ -19,30 +20,7 @@ object ToolInputMacros:
     if !sym.flags.is(Flags.Case) then
       report.errorAndAbort(s"ToolInput.derive requires a case class, but ${sym.fullName} is not a case class")
 
-    val fields = sym.caseFields
-
-    // (name, innerType, isOptional, description)
-    val fieldInfos = fields.map { field =>
-      val fieldName = field.name
-      val fieldType = tpe.memberType(field)
-
-      val (isOptional, innerType) = fieldType match
-        case AppliedType(tycon, List(inner)) if tycon.typeSymbol.fullName == "scala.Option" =>
-          (true, inner)
-        case other =>
-          (false, other)
-
-      val descriptionOpt = field.annotations.collectFirst {
-        case ann if ann.tpe.typeSymbol.fullName == "com.tjclp.scalagent.macros.description" =>
-          ann match
-            case Apply(_, List(Literal(StringConstant(text)))) => text
-            case _ =>
-              report.warning(s"Could not extract description text for field $fieldName")
-              ""
-      }
-
-      (fieldName, innerType, isOptional, descriptionOpt)
-    }
+    val fieldInfos = caseClassFieldInfos(tpe)
 
     val schemaExpr = generateSchemaExpr(fieldInfos)
 
@@ -104,42 +82,20 @@ object ToolInputMacros:
         typeToSchemaExpr(inner)
 
       case AppliedType(tycon, List(elemType))
-          if tycon.typeSymbol.fullName == "scala.collection.immutable.List" ||
-            tycon.typeSymbol.fullName == "scala.collection.immutable.Vector" ||
-            tycon.typeSymbol.fullName.contains("Seq") ||
-            tycon.typeSymbol.fullName == "scala.collection.immutable.Set" =>
+          if isListLike(tycon) =>
         val elemSchemaExpr = typeToSchemaExpr(elemType)
         '{ JsonSchema.array($elemSchemaExpr) }
 
-      case AppliedType(tycon, List(_, _)) if tycon.typeSymbol.fullName.contains("Map") =>
+      case AppliedType(tycon, List(_, _)) if isMapLike(tycon) =>
         '{ JsonSchema.obj().additionalProperties.build }
 
       case t if t.typeSymbol.flags.is(Flags.Enum) =>
-        val enumCases = t.typeSymbol.children.map(_.name)
+        val enumCases = enumCaseNames(t)
         val casesExpr = Expr(enumCases)
         '{ JsonSchema.enumOf($casesExpr*) }
 
       case t if t.typeSymbol.flags.is(Flags.Case) =>
-        val nestedFields = t.typeSymbol.caseFields.map { field =>
-          val fieldName = field.name
-          val fieldType = t.memberType(field)
-
-          val (isOptional, innerType) = fieldType match
-            case AppliedType(tycon, List(inner)) if tycon.typeSymbol.fullName == "scala.Option" =>
-              (true, inner)
-            case other =>
-              (false, other)
-
-          val descOpt = field.annotations.collectFirst {
-            case ann if ann.tpe.typeSymbol.fullName == "com.tjclp.scalagent.macros.description" =>
-              ann match
-                case Apply(_, List(Literal(StringConstant(text)))) => text
-                case _                                            => ""
-          }
-
-          (fieldName, innerType, isOptional, descOpt)
-        }
-        generateSchemaExpr(nestedFields.toList)
+        generateSchemaExpr(caseClassFieldInfos(t))
 
       case other =>
         report.warning(s"Unknown type ${other.show}, using object schema")

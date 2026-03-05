@@ -2,13 +2,14 @@ package com.tjclp.scalagent.config
 
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
+import scala.annotation.targetName
 import zio.*
 import zio.json.*
 import com.tjclp.scalagent.hooks.*
 import com.tjclp.scalagent.mcp.McpToolName
 import com.tjclp.scalagent.permissions.*
 import com.tjclp.scalagent.tools.ToolName
-import com.tjclp.scalagent.types.SessionId
+import com.tjclp.scalagent.types.{SessionId, SessionUuid}
 
 /** Configuration options for Claude Agent queries.
   *
@@ -123,7 +124,13 @@ final case class AgentOptions(
     /** Enforce strict validation of MCP server configurations.
       * When true, invalid configurations will cause errors instead of warnings.
       */
-    strictMcpConfig: Boolean = false
+    strictMcpConfig: Boolean = false,
+
+    /** Per-tool configuration (e.g., askUserQuestion preview format). */
+    toolConfig: Option[ToolConfig] = None,
+
+    /** Inline settings object or path to a settings file. */
+    settings: Option[SettingsConfig] = None
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -177,7 +184,7 @@ final case class AgentOptions(
       obj.env = js.Dictionary(env.toSeq*)
 
     if betaFeatures.nonEmpty then
-      obj.betaFeatures = betaFeatures.toJSArray
+      obj.betas = betaFeatures.toJSArray
 
     sandboxSettings.foreach(ss => obj.sandbox = ss.toRaw)
 
@@ -208,6 +215,8 @@ final case class AgentOptions(
     if debug then obj.debug = true
     debugFile.foreach(df => obj.debugFile = df)
     if strictMcpConfig then obj.strictMcpConfig = true
+    toolConfig.foreach(tc => obj.toolConfig = tc.toRaw)
+    settings.foreach(s => obj.settings = s.toRaw)
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks
@@ -218,12 +227,28 @@ final case class AgentOptions(
     *
     * This requires a Runtime to bridge ZIO callbacks to JS functions.
     */
-  def hooksToRaw(runtime: Runtime[Any]): js.Dictionary[js.Array[js.Function1[js.Dynamic, js.Promise[js.Object]]]] =
+  def hooksToRaw(runtime: Runtime[Any]): js.Dictionary[js.Array[js.Object]] =
     if hooks.isEmpty then js.Dictionary()
     else
       js.Dictionary(
         hooks.toSeq.map { case (event, callbacks) =>
-          event.toRaw -> callbacks.map(cb => HookCallback.toRawJs(cb, runtime)).toJSArray
+          val matcher = js.Dynamic.literal(
+            hooks = callbacks.map(cb => HookCallback.toRawJs(cb, runtime)).toJSArray
+          )
+          event.toRaw -> js.Array(matcher.asInstanceOf[js.Object])
+        }*
+      )
+
+  /** Convert agent definitions to raw JavaScript format, including runtime hooks when present. */
+  def agentsToRaw(runtime: Runtime[Any]): js.Dictionary[js.Object] =
+    if agents.isEmpty then js.Dictionary()
+    else
+      js.Dictionary(
+        agents.toSeq.map { case (name, agentDef) =>
+          val raw =
+            if agentDef.hasHooks then agentDef.toRawWithHooks(runtime)
+            else agentDef.toRaw
+          name -> raw
         }*
       )
 
@@ -237,11 +262,17 @@ final case class AgentOptions(
     canUseTool.map(handler => CanUseTool.toRawJs(handler, runtime)).orUndefined
 
 object AgentOptions:
-  private val uuidPattern = "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-  private val uuidRegex   = uuidPattern.r
+  private def requirePositiveInt(field: String, value: Int): PositiveInt =
+    PositiveInt(value) match
+      case Right(valid) => valid
+      case Left(_) =>
+        throw new IllegalArgumentException(s"$field must be positive, got: $value")
 
-  private def isValidUuid(value: String): Boolean =
-    uuidRegex.matches(value)
+  private def requirePositiveDouble(field: String, value: Double): PositiveDouble =
+    PositiveDouble(value) match
+      case Right(valid) => valid
+      case Left(_) =>
+        throw new IllegalArgumentException(s"$field must be positive, got: $value")
 
   /** Default options (empty configuration) */
   val default: AgentOptions = AgentOptions()
@@ -263,22 +294,34 @@ object AgentOptions:
       * @throws IllegalArgumentException if n <= 0
       */
     def withMaxTurns(n: Int): AgentOptions =
-      require(n > 0, s"maxTurns must be positive, got: $n")
-      opts.copy(maxTurns = Some(n))
+      withMaxTurns(requirePositiveInt("maxTurns", n))
+
+    /** Set maximum turns using a validated positive integer. */
+    @targetName("withMaxTurnsPositive")
+    def withMaxTurns(n: PositiveInt): AgentOptions =
+      opts.copy(maxTurns = Some(n.value))
 
     /** Set maximum budget in USD (must be positive).
       * @throws IllegalArgumentException if b <= 0
       */
     def withMaxBudgetUsd(b: Double): AgentOptions =
-      require(b > 0, s"maxBudgetUsd must be positive, got: $b")
-      opts.copy(maxBudgetUsd = Some(b))
+      withMaxBudgetUsd(requirePositiveDouble("maxBudgetUsd", b))
+
+    /** Set maximum budget in USD using a validated positive value. */
+    @targetName("withMaxBudgetUsdPositive")
+    def withMaxBudgetUsd(b: PositiveDouble): AgentOptions =
+      opts.copy(maxBudgetUsd = Some(b.value))
 
     /** Set maximum thinking tokens (must be positive).
       * @throws IllegalArgumentException if t <= 0
       */
     def withMaxThinkingTokens(t: Int): AgentOptions =
-      require(t > 0, s"maxThinkingTokens must be positive, got: $t")
-      opts.copy(maxThinkingTokens = Some(t))
+      withMaxThinkingTokens(requirePositiveInt("maxThinkingTokens", t))
+
+    /** Set maximum thinking tokens using a validated positive integer. */
+    @targetName("withMaxThinkingTokensPositive")
+    def withMaxThinkingTokens(t: PositiveInt): AgentOptions =
+      opts.copy(maxThinkingTokens = Some(t.value))
 
     def withPermissionMode(pm: PermissionMode): AgentOptions =
       opts.copy(permissionMode = Some(pm))
@@ -705,8 +748,16 @@ object AgentOptions:
 
     /** Set a specific session ID (must be a valid UUID). */
     def withSessionId(uuid: String): AgentOptions =
-      require(AgentOptions.isValidUuid(uuid), s"sessionId must be a valid UUID, got: $uuid")
-      opts.copy(sessionId = Some(uuid))
+      withSessionId(
+        SessionUuid(uuid) match
+          case Right(valid) => valid
+          case Left(message) => throw new IllegalArgumentException(message)
+      )
+
+    /** Set a specific session ID using a validated UUID wrapper. */
+    @targetName("withSessionIdValidated")
+    def withSessionId(uuid: SessionUuid): AgentOptions =
+      opts.copy(sessionId = Some(uuid.value))
 
     /** Enable strict MCP server configuration validation.
       *
@@ -715,6 +766,27 @@ object AgentOptions:
       */
     def withStrictMcpConfig: AgentOptions =
       opts.copy(strictMcpConfig = true)
+
+    /** Set per-tool configuration.
+      *
+      * Example:
+      * {{{
+      * options.withToolConfig(ToolConfig(askUserQuestionPreviewFormat = Some("html")))
+      * }}}
+      */
+    def withToolConfig(config: ToolConfig): AgentOptions =
+      opts.copy(toolConfig = Some(config))
+
+    /** Set inline settings or settings file path.
+      *
+      * Example:
+      * {{{
+      * options.withSettings(SettingsConfig.Path("/path/to/settings.json"))
+      * options.withSettings(SettingsConfig.Inline(js.Dynamic.literal(...)))
+      * }}}
+      */
+    def withSettings(config: SettingsConfig): AgentOptions =
+      opts.copy(settings = Some(config))
 
 /** System prompt configuration */
 enum SystemPromptConfig:
@@ -781,3 +853,30 @@ final case class OutputFormat(schema: zio.json.ast.Json):
 object OutputFormat:
   given JsonDecoder[OutputFormat] = DeriveJsonDecoder.gen[OutputFormat]
   given JsonEncoder[OutputFormat] = DeriveJsonEncoder.gen[OutputFormat]
+
+/** Per-tool configuration options */
+final case class ToolConfig(
+    askUserQuestionPreviewFormat: Option[String] = None
+):
+  def toRaw: js.Object =
+    val obj = js.Dynamic.literal()
+    askUserQuestionPreviewFormat.foreach { fmt =>
+      obj.askUserQuestion = js.Dynamic.literal(previewFormat = fmt)
+    }
+    obj.asInstanceOf[js.Object]
+
+object ToolConfig:
+  /** Create a ToolConfig with HTML preview format for askUserQuestion */
+  def htmlPreviews: ToolConfig = ToolConfig(askUserQuestionPreviewFormat = Some("html"))
+
+  /** Create a ToolConfig with markdown preview format (default) */
+  def markdownPreviews: ToolConfig = ToolConfig(askUserQuestionPreviewFormat = Some("markdown"))
+
+/** Settings configuration — either an inline object or a file path */
+enum SettingsConfig:
+  case Path(path: String)
+  case Inline(settings: js.Object)
+
+  def toRaw: js.Any = this match
+    case Path(p)       => p.asInstanceOf[js.Any]
+    case Inline(obj)   => obj.asInstanceOf[js.Any]

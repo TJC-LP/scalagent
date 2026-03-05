@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.config
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
 /** Controls how much effort Claude puts into its response.
@@ -31,8 +32,8 @@ enum Effort:
     case Custom(v) => v
 
 object Effort:
-  given JsonEncoder[Effort] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[Effort] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[Effort] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[Effort] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): Effort = s match
     case "low"    => Low

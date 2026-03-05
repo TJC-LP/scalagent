@@ -2,9 +2,11 @@ package com.tjclp.scalagent.macros
 
 import scala.quoted.*
 import scala.compiletime.summonInline
+import com.tjclp.scalagent.macros.SchemaMacroSupport.*
 import zio.json.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.config.StructuredOutput
+import com.tjclp.scalagent.schema.JsonSchemaAst
 
 /** Macros for deriving StructuredOutput instances from case classes.
   *
@@ -53,33 +55,7 @@ object StructuredOutputMacros:
     if !sym.flags.is(Flags.Case) then
       report.errorAndAbort(s"StructuredOutput.derive requires a case class, but ${sym.fullName} is not a case class")
 
-    // Get case class fields
-    val fields = sym.caseFields
-
-    // Extract field info: (name, type, isOptional, description)
-    val fieldInfos = fields.map { field =>
-      val fieldName = field.name
-      val fieldType = tpe.memberType(field)
-
-      // Check if field is Optional
-      val (isOptional, innerType) = fieldType match
-        case AppliedType(tycon, List(inner)) if tycon.typeSymbol.fullName == "scala.Option" =>
-          (true, inner)
-        case other =>
-          (false, other)
-
-      // Extract @description annotation
-      val descriptionOpt = field.annotations.collectFirst {
-        case ann if ann.tpe.typeSymbol.fullName == "com.tjclp.scalagent.macros.description" =>
-          ann match
-            case Apply(_, List(Literal(StringConstant(text)))) => text
-            case _ =>
-              report.warning(s"Could not extract description text for field $fieldName")
-              ""
-      }
-
-      (fieldName, innerType, isOptional, descriptionOpt)
-    }
+    val fieldInfos = caseClassFieldInfos(tpe)
 
     // Generate JSON Schema expression
     generateSchemaExpr(fieldInfos)
@@ -111,14 +87,7 @@ object StructuredOutputMacros:
     val propertiesListExpr = Expr.ofList(propertiesExprs)
     val requiredListExpr = Expr.ofList(requiredExprs)
 
-    '{
-      Json.Obj(
-        "type" -> Json.Str("object"),
-        "properties" -> Json.Obj($propertiesListExpr*),
-        "required" -> Json.Arr($requiredListExpr.map(Json.Str(_))*),
-        "additionalProperties" -> Json.Bool(false)
-      )
-    }
+    '{ JsonSchemaAst.objectSchema($propertiesListExpr, $requiredListExpr) }
 
   /** Convert a type to its JSON Schema representation */
   private def typeToSchemaExpr(using Quotes)(tpe: quotes.reflect.TypeRepr): Expr[Json] =
@@ -127,95 +96,72 @@ object StructuredOutputMacros:
     tpe.dealias match
       // String
       case t if t =:= TypeRepr.of[String] =>
-        '{ Json.Obj("type" -> Json.Str("string")) }
+        '{ JsonSchemaAst.string }
 
       // Int
       case t if t =:= TypeRepr.of[Int] =>
-        '{ Json.Obj("type" -> Json.Str("integer")) }
+        '{ JsonSchemaAst.integer }
 
       // Long
       case t if t =:= TypeRepr.of[Long] =>
-        '{ Json.Obj("type" -> Json.Str("integer"), "format" -> Json.Str("int64")) }
+        '{ JsonSchemaAst.integerWithFormat("int64") }
 
       // Double
       case t if t =:= TypeRepr.of[Double] =>
-        '{ Json.Obj("type" -> Json.Str("number"), "format" -> Json.Str("double")) }
+        '{ JsonSchemaAst.numberWithFormat("double") }
 
       // Float
       case t if t =:= TypeRepr.of[Float] =>
-        '{ Json.Obj("type" -> Json.Str("number"), "format" -> Json.Str("float")) }
+        '{ JsonSchemaAst.numberWithFormat("float") }
 
       // Boolean
       case t if t =:= TypeRepr.of[Boolean] =>
-        '{ Json.Obj("type" -> Json.Str("boolean")) }
+        '{ JsonSchemaAst.boolean }
 
-      // List[T]
-      case AppliedType(tycon, List(elemType)) if tycon.typeSymbol.fullName == "scala.collection.immutable.List" =>
+      // List/Vector/Seq/Set
+      case AppliedType(tycon, List(elemType)) if isListLike(tycon) =>
         val elemSchemaExpr = typeToSchemaExpr(elemType)
-        '{ Json.Obj("type" -> Json.Str("array"), "items" -> $elemSchemaExpr) }
-
-      // Vector[T]
-      case AppliedType(tycon, List(elemType)) if tycon.typeSymbol.fullName == "scala.collection.immutable.Vector" =>
-        val elemSchemaExpr = typeToSchemaExpr(elemType)
-        '{ Json.Obj("type" -> Json.Str("array"), "items" -> $elemSchemaExpr) }
-
-      // Seq[T]
-      case AppliedType(tycon, List(elemType)) if tycon.typeSymbol.fullName.contains("Seq") =>
-        val elemSchemaExpr = typeToSchemaExpr(elemType)
-        '{ Json.Obj("type" -> Json.Str("array"), "items" -> $elemSchemaExpr) }
-
-      // Set[T]
-      case AppliedType(tycon, List(elemType)) if tycon.typeSymbol.fullName == "scala.collection.immutable.Set" =>
-        val elemSchemaExpr = typeToSchemaExpr(elemType)
-        '{ Json.Obj("type" -> Json.Str("array"), "items" -> $elemSchemaExpr, "uniqueItems" -> Json.Bool(true)) }
+        if isSetLike(tycon) then
+          '{ JsonSchemaAst.array(items = $elemSchemaExpr, uniqueItems = true) }
+        else
+          '{ JsonSchemaAst.array($elemSchemaExpr) }
 
       // Option[T] - just return the inner type schema
       case AppliedType(tycon, List(inner)) if tycon.typeSymbol.fullName == "scala.Option" =>
         typeToSchemaExpr(inner)
 
       // Map[String, V]
-      case AppliedType(tycon, List(keyType, valueType)) if tycon.typeSymbol.fullName.contains("Map") =>
+      case AppliedType(tycon, List(_, valueType)) if isMapLike(tycon) =>
         val valueSchemaExpr = typeToSchemaExpr(valueType)
-        '{ Json.Obj("type" -> Json.Str("object"), "additionalProperties" -> $valueSchemaExpr) }
+        '{ JsonSchemaAst.map($valueSchemaExpr) }
+
+      // Either[L, R]
+      case AppliedType(tycon, List(leftType, rightType)) if isEitherLike(tycon) =>
+        val leftSchemaExpr = typeToSchemaExpr(leftType)
+        val rightSchemaExpr = typeToSchemaExpr(rightType)
+        '{ JsonSchemaAst.oneOf(List($leftSchemaExpr, $rightSchemaExpr)) }
+
+      // Tuple2[A, B]
+      case AppliedType(tycon, List(leftType, rightType)) if isTuple2Like(tycon) =>
+        val leftSchemaExpr = typeToSchemaExpr(leftType)
+        val rightSchemaExpr = typeToSchemaExpr(rightType)
+        '{ JsonSchemaAst.tuple2($leftSchemaExpr, $rightSchemaExpr) }
 
       // Enum (Scala 3)
       case t if t.typeSymbol.flags.is(Flags.Enum) =>
-        val enumCases = t.typeSymbol.children.map(_.name)
-        val casesExpr = Expr(enumCases)
-        '{ Json.Obj("type" -> Json.Str("string"), "enum" -> Json.Arr($casesExpr.map(Json.Str(_))*)) }
+        val enumCases = enumCaseNames(t)
+        val casesExpr = Expr.ofList(enumCases.map(Expr(_)))
+        '{ JsonSchemaAst.enumOf($casesExpr) }
 
       // Nested case class
       case t if t.typeSymbol.flags.is(Flags.Case) =>
-        // Recursively generate schema for nested case class
-        val nestedFields = t.typeSymbol.caseFields.map { field =>
-          val fieldName = field.name
-          val fieldType = t.memberType(field)
-
-          val (isOptional, innerType) = fieldType match
-            case AppliedType(tycon, List(inner)) if tycon.typeSymbol.fullName == "scala.Option" =>
-              (true, inner)
-            case other =>
-              (false, other)
-
-          val descOpt = field.annotations.collectFirst {
-            case ann if ann.tpe.typeSymbol.fullName == "com.tjclp.scalagent.macros.description" =>
-              ann match
-                case Apply(_, List(Literal(StringConstant(text)))) => text
-                case _ => ""
-          }
-
-          (fieldName, innerType, isOptional, descOpt)
-        }
-        generateSchemaExpr(nestedFields)
+        generateSchemaExpr(caseClassFieldInfos(t))
 
       // Default fallback
       case other =>
         report.warning(s"Unknown type ${other.show}, using string schema")
-        '{ Json.Obj("type" -> Json.Str("string")) }
+        '{ JsonSchemaAst.string }
 
   /** Add description field to a JSON Schema */
   def addDescription(schema: Json, description: String): Json =
-    schema match
-      case Json.Obj(fields) =>
-        Json.Obj(fields.toList :+ ("description" -> Json.Str(description))*)
-      case other => other
+    JsonSchemaAst.withDescription(schema, description)

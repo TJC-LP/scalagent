@@ -28,21 +28,22 @@ object MessageConverter:
     val msgType = obj.`type`.asInstanceOf[String]
 
     msgType match
-      case "assistant"             => parseAssistantMessage(obj)
-      case "user"                  => parseUserMessage(obj)
-      case "result"                => parseResultMessage(obj)
-      case "system"                => parseSystemMessage(obj)
-      case "stream_event"          => parseStreamEvent(obj)
-      case "tool_progress"         => parseToolProgress(obj)
-      case "auth_status"           => parseAuthStatus(obj)
-      case "task_notification"     => parseTaskNotification(obj)
-      case "tool_use_summary"      => parseToolUseSummary(obj)
-      case "prompt_suggestion"     => parsePromptSuggestion(obj)
-      case "rate_limit"            => parseRateLimitEvent(obj)
-      case "local_command_output"  => parseLocalCommandOutput(obj)
-      case "elicitation_complete"  => parseElicitationComplete(obj)
-      case "task_started"          => parseTaskStarted(obj)
-      case "task_progress"         => parseTaskProgress(obj)
+      case "assistant"           => parseAssistantMessage(obj)
+      case "user"                => parseUserMessage(obj)
+      case "result"              => parseResultMessage(obj)
+      case "system"              => parseSystemEnvelope(obj)
+      case "stream_event"        => parseStreamEvent(obj)
+      case "tool_progress"       => parseToolProgress(obj)
+      case "auth_status"         => parseAuthStatus(obj)
+      case "task_notification"   => parseTaskNotification(obj)   // Legacy payload shape
+      case "tool_use_summary"    => parseToolUseSummary(obj)
+      case "prompt_suggestion"   => parsePromptSuggestion(obj)
+      case "rate_limit_event"    => parseRateLimitEvent(obj)
+      case "rate_limit"          => parseRateLimitEvent(obj)     // Legacy payload shape
+      case "local_command_output" => parseLocalCommandOutput(obj) // Legacy payload shape
+      case "elicitation_complete" => parseElicitationComplete(obj) // Legacy payload shape
+      case "task_started"        => parseTaskStarted(obj)        // Legacy payload shape
+      case "task_progress"       => parseTaskProgress(obj)       // Legacy payload shape
       case other => throw new IllegalArgumentException(s"Unknown message type: $other")
 
   private def parseAssistantMessage(obj: js.Dynamic): AgentMessage.Assistant =
@@ -119,19 +120,27 @@ object MessageConverter:
       sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
 
-  private def parseSystemMessage(obj: js.Dynamic): AgentMessage.System =
-    // SDK uses flat structure with `subtype` field, not nested `event.type`
-    val subtype = obj.subtype.asInstanceOf[String]
+  private def parseSystemEnvelope(obj: js.Dynamic): AgentMessage =
+    val subtype = obj.subtype.asInstanceOf[js.UndefOr[String]].toOption.getOrElse("")
+    subtype match
+      case "task_notification"    => parseTaskNotification(obj)
+      case "task_progress"        => parseTaskProgress(obj)
+      case "task_started"         => parseTaskStarted(obj)
+      case "local_command_output" => parseLocalCommandOutput(obj)
+      case "elicitation_complete" => parseElicitationComplete(obj)
+      case _                      => parseSystemEventMessage(obj, subtype)
 
+  private def parseSystemEventMessage(obj: js.Dynamic, subtype: String): AgentMessage.System =
     val event: SystemEvent = subtype match
-      case "init"             => parseInitEvent(obj)  // Pass obj directly, not obj.event
+      case "init"             => parseInitEvent(obj)
       case "compact_boundary" => parseCompactBoundaryEvent(obj)
       case "status"           => parseStatusEvent(obj)
       case "hook_response"    => parseHookResponseEvent(obj)
       case "hook_started"     => parseHookStartedEvent(obj)
       case "hook_progress"    => parseHookProgressEvent(obj)
       case "files_persisted"  => parseFilesPersistedEvent(obj)
-      case other => throw new IllegalArgumentException(s"Unknown system event subtype: $other")
+      case other =>
+        throw new IllegalArgumentException(s"Unknown system event subtype: $other")
 
     AgentMessage.System(
       event = event,
@@ -203,7 +212,7 @@ object MessageConverter:
 
   private def parseAuthStatus(obj: js.Dynamic): AgentMessage.AuthStatus =
     AgentMessage.AuthStatus(
-      isAuthenticating = obj.is_authenticating.asInstanceOf[Boolean],
+      isAuthenticating = firstBoolean(obj, "isAuthenticating", "is_authenticating").getOrElse(false),
       output = obj.output.asInstanceOf[js.Array[String]].toList,
       error = obj.error.asInstanceOf[js.UndefOr[String]].toOption,
       uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
@@ -217,7 +226,7 @@ object MessageConverter:
       outputFile = obj.output_file.asInstanceOf[String],
       summary = obj.summary.asInstanceOf[String],
       toolUseId = obj.tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
-      usage = obj.usage.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.map(parseModelUsage),
+      usage = obj.usage.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.map(parseModelUsageFlexible),
       uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
       sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
@@ -242,16 +251,21 @@ object MessageConverter:
     )
 
   private def parseRateLimitEvent(obj: js.Dynamic): AgentMessage.RateLimitEvent =
+    val rateLimitInfo = obj.rate_limit_info.asInstanceOf[js.UndefOr[js.Dynamic]].toOption
     AgentMessage.RateLimitEvent(
-      retryAfterMs = obj.retry_after_ms.asInstanceOf[Double].toLong,
-      model = obj.model.asInstanceOf[String],
+      retryAfterMs = obj.retry_after_ms.asInstanceOf[js.UndefOr[Double]].toOption.map(_.toLong),
+      model = obj.model.asInstanceOf[js.UndefOr[String]].toOption,
+      status = rateLimitInfo.flatMap(_.status.asInstanceOf[js.UndefOr[String]].toOption),
+      resetsAt = rateLimitInfo.flatMap(_.resetsAt.asInstanceOf[js.UndefOr[Double]].toOption.map(_.toLong)),
+      rateLimitType = rateLimitInfo.flatMap(_.rateLimitType.asInstanceOf[js.UndefOr[String]].toOption),
+      utilization = rateLimitInfo.flatMap(_.utilization.asInstanceOf[js.UndefOr[Double]].toOption),
       uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
       sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
 
   private def parseLocalCommandOutput(obj: js.Dynamic): AgentMessage.LocalCommandOutput =
     AgentMessage.LocalCommandOutput(
-      output = obj.output.asInstanceOf[String],
+      output = firstString(obj, "content", "output").getOrElse(""),
       uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
       sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
@@ -275,7 +289,7 @@ object MessageConverter:
   private def parseTaskProgress(obj: js.Dynamic): AgentMessage.TaskProgress =
     AgentMessage.TaskProgress(
       taskId = obj.task_id.asInstanceOf[String],
-      progress = obj.progress.asInstanceOf[js.UndefOr[String]].getOrElse(""),
+      progress = firstString(obj, "description", "progress").getOrElse(""),
       uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
       sessionId = SessionId(obj.session_id.asInstanceOf[String])
     )
@@ -339,12 +353,37 @@ object MessageConverter:
           ContentBlock.Text(s"[Unknown content block type: $other]")
     }
 
+  private def firstString(obj: js.Dynamic, fields: String*): Option[String] =
+    fields.iterator
+      .map(field => obj.selectDynamic(field).asInstanceOf[js.Any])
+      .find(v => !js.isUndefined(v) && v != null && js.typeOf(v) == "string")
+      .map(_.asInstanceOf[String])
+
+  private def firstBoolean(obj: js.Dynamic, fields: String*): Option[Boolean] =
+    fields.iterator
+      .map(field => obj.selectDynamic(field).asInstanceOf[js.Any])
+      .find(v => !js.isUndefined(v) && v != null && js.typeOf(v) == "boolean")
+      .map(_.asInstanceOf[Boolean])
+
   private def parseModelUsage(obj: js.Dynamic): ModelUsage =
     ModelUsage(
       inputTokens = obj.input_tokens.asInstanceOf[Int],
       outputTokens = obj.output_tokens.asInstanceOf[Int],
       cacheReadInputTokens =
         obj.cache_read_input_tokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
+      cacheCreationInputTokens =
+        obj.cache_creation_input_tokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0)
+    )
+
+  private def parseModelUsageFlexible(obj: js.Dynamic): ModelUsage =
+    ModelUsage(
+      inputTokens = obj.input_tokens
+        .asInstanceOf[js.UndefOr[Int]]
+        .toOption
+        .orElse(obj.total_tokens.asInstanceOf[js.UndefOr[Int]].toOption)
+        .getOrElse(0),
+      outputTokens = obj.output_tokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
+      cacheReadInputTokens = obj.cache_read_input_tokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
       cacheCreationInputTokens =
         obj.cache_creation_input_tokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0)
     )

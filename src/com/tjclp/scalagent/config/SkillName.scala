@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.config
 
+import com.tjclp.scalagent.json.OpaqueStringJsonCodec
 import zio.json.{JsonDecoder, JsonEncoder}
 
 /** Type-safe wrapper for skill names.
@@ -46,6 +47,5 @@ object SkillName:
       if isPluginSkill then name.dropWhile(_ != ':').drop(1)
       else name
 
-  // Opaque type is String at runtime, so cast is safe
-  given JsonEncoder[SkillName] = JsonEncoder.string.asInstanceOf[JsonEncoder[SkillName]]
-  given JsonDecoder[SkillName] = JsonDecoder.string.asInstanceOf[JsonDecoder[SkillName]]
+  given JsonEncoder[SkillName] = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[SkillName] = OpaqueStringJsonCodec.decoder(apply)

@@ -103,7 +103,7 @@ object AgentHooksExample extends ZIOAppDefault:
       }
 
       options = AgentOptions.default
-        .withModel(Model.Haiku4_5)
+        .withModel(Model.haiku)
         .withPermissionMode(PermissionMode.DontAsk)
         .withMaxTurns(3)
         .withHook(HookEvent.PreToolUse, globalLoggingHook)

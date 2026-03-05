@@ -82,7 +82,7 @@ object PluginExample extends ZIOAppDefault:
       // Demonstrate the pattern inline
       plugin = PluginConfig.local("./demo-plugin")
       options = AgentOptions.default
-        .withModel(Model.Sonnet4_5)
+        .withModel(Model.sonnet)
         .withPermissionMode(PermissionMode.DontAsk)
         .withMaxTurns(3)
         .withPlugin(plugin)

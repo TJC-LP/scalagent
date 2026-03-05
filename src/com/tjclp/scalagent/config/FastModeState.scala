@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.config
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
 /** Fast mode state: off, in cooldown after rate limit, or actively enabled. */
@@ -16,8 +17,8 @@ enum FastModeState:
     case Custom(v)  => v
 
 object FastModeState:
-  given JsonEncoder[FastModeState] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[FastModeState] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[FastModeState] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[FastModeState] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): FastModeState = s match
     case "off"      => Off

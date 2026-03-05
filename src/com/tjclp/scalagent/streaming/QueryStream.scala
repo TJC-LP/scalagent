@@ -165,13 +165,40 @@ final class QueryStream private (rawQuery: RawQuery):
     *
     * @param message
     *   The user message to add
+    * @param priority
+    *   Message priority: "now", "next", or "later" (optional)
     */
-  def streamUserMessage(message: String): Task[Unit] =
+  def streamUserMessage(message: String, priority: Option[MessagePriority] = None): Task[Unit] =
     val userMsg = js.Dynamic.literal(
-      role = "user",
-      content = message
+      `type` = "user",
+      message = js.Dynamic.literal(
+        role = "user",
+        content = js.Array(js.Dynamic.literal(`type` = "text", text = message))
+      ),
+      parent_tool_use_id = null,
+      session_id = ""
     )
-    ZIO.fromPromiseJS(rawQuery.streamInput(userMsg))
+    priority.foreach(p => userMsg.priority = p.toRaw)
+    ZIO.fromPromiseJS(rawQuery.streamInput(singleMessageStream(userMsg)))
+
+  private def singleMessageStream(userMsg: js.Dynamic): js.Any =
+    val iterator = js.Dynamic.literal()
+    var emitted = false
+    iterator.next = () =>
+      if !emitted then
+        emitted = true
+        js.Promise.resolve(
+          js.Dynamic.literal(
+            value = userMsg,
+            done = false
+          )
+        )
+      else
+        js.Promise.resolve(js.Dynamic.literal(done = true))
+
+    val stream = js.Dynamic.literal()
+    js.Dynamic.global.Reflect.set(stream, js.Symbol.asyncIterator, () => iterator)
+    stream
 
   /** Forcefully close the query and terminate the underlying process.
     *
@@ -280,6 +307,15 @@ object QueryStream:
   def apply(rawQuery: RawQuery): QueryStream =
     new QueryStream(rawQuery)
 
+/** Priority for user messages in multi-turn streaming */
+enum MessagePriority:
+  case Now, Next, Later
+
+  def toRaw: String = this match
+    case Now   => "now"
+    case Next  => "next"
+    case Later => "later"
+
 /** Information about a slash command */
 final case class SlashCommand(
     name: String,
@@ -299,7 +335,11 @@ object SlashCommand:
 final case class ModelInfo(
     value: String,
     displayName: String,
-    description: String
+    description: String,
+    supportsEffort: Option[Boolean] = None,
+    supportedEffortLevels: Option[List[String]] = None,
+    supportsAdaptiveThinking: Option[Boolean] = None,
+    supportsFastMode: Option[Boolean] = None
 )
 
 object ModelInfo:
@@ -307,7 +347,11 @@ object ModelInfo:
     ModelInfo(
       value = obj.value.asInstanceOf[String],
       displayName = obj.displayName.asInstanceOf[String],
-      description = obj.description.asInstanceOf[js.UndefOr[String]].getOrElse("")
+      description = obj.description.asInstanceOf[js.UndefOr[String]].getOrElse(""),
+      supportsEffort = obj.supportsEffort.asInstanceOf[js.UndefOr[Boolean]].toOption,
+      supportedEffortLevels = obj.supportedEffortLevels.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList),
+      supportsAdaptiveThinking = obj.supportsAdaptiveThinking.asInstanceOf[js.UndefOr[Boolean]].toOption,
+      supportsFastMode = obj.supportsFastMode.asInstanceOf[js.UndefOr[Boolean]].toOption
     )
 
 /** Information about a supported subagent */

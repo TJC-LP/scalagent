@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.hooks
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
 /** Hook event types supported by the Claude Agent SDK.
@@ -67,6 +68,9 @@ enum HookEvent:
   /** Git worktree removal hook */
   case WorktreeRemove
 
+  /** Instructions loaded hook - triggered when CLAUDE.md or memory files are loaded */
+  case InstructionsLoaded
+
   /** Convert to SDK string representation */
   def toRaw: String = this match
     case PreToolUse         => "PreToolUse"
@@ -88,11 +92,12 @@ enum HookEvent:
     case ElicitationResult  => "ElicitationResult"
     case ConfigChange       => "ConfigChange"
     case WorktreeCreate     => "WorktreeCreate"
-    case WorktreeRemove     => "WorktreeRemove"
+    case WorktreeRemove       => "WorktreeRemove"
+    case InstructionsLoaded   => "InstructionsLoaded"
 
 object HookEvent:
-  given JsonEncoder[HookEvent] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[HookEvent] = JsonDecoder[String].mapOrFail {
+  given JsonEncoder[HookEvent] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[HookEvent] = StringEnumJsonCodec.decoderOrFail {
     case "PreToolUse"        => Right(PreToolUse)
     case "PostToolUse"       => Right(PostToolUse)
     case "PostToolUseFailure" => Right(PostToolUseFailure)
@@ -112,8 +117,9 @@ object HookEvent:
     case "ElicitationResult" => Right(ElicitationResult)
     case "ConfigChange"      => Right(ConfigChange)
     case "WorktreeCreate"    => Right(WorktreeCreate)
-    case "WorktreeRemove"    => Right(WorktreeRemove)
-    case other               => Left(s"Unknown hook event: $other")
+    case "WorktreeRemove"      => Right(WorktreeRemove)
+    case "InstructionsLoaded"  => Right(InstructionsLoaded)
+    case other                 => Left(s"Unknown hook event: $other")
   }
 
   def fromString(s: String): HookEvent = s match
@@ -136,5 +142,6 @@ object HookEvent:
     case "ElicitationResult" => ElicitationResult
     case "ConfigChange"      => ConfigChange
     case "WorktreeCreate"    => WorktreeCreate
-    case "WorktreeRemove"    => WorktreeRemove
+    case "WorktreeRemove"      => WorktreeRemove
+    case "InstructionsLoaded"  => InstructionsLoaded
     case other => throw new IllegalArgumentException(s"Unknown hook event: $other")

@@ -197,16 +197,16 @@ object Claude:
     *   The project directory to list sessions for
     * @param limit
     *   Maximum number of sessions to return (default: 50)
+    * @param includeWorktrees
+    *   When dir is inside a git repo, include sessions from all worktree paths (default: true)
     * @return
     *   A list of session info objects
     */
-  def listSessions(dir: String, limit: Int = 50): IO[AgentError, List[SessionInfo]] =
+  def listSessions(dir: String, limit: Int = 50, includeWorktrees: Boolean = true): IO[AgentError, List[SessionInfo]] =
+    val opts = js.Dynamic.literal(dir = dir, limit = limit)
+    if !includeWorktrees then opts.includeWorktrees = false
     ZIO
-      .fromPromiseJS(
-        SdkModule.listSessions(
-          js.Dynamic.literal(dir = dir, limit = limit)
-        )
-      )
+      .fromPromiseJS(SdkModule.listSessions(opts))
       .map(_.toList.map(SessionInfo.fromRaw))
       .mapError(AgentError.fromThrowable)
 
@@ -223,7 +223,8 @@ object Claude:
     ZIO
       .fromPromiseJS(
         SdkModule.getSessionMessages(
-          js.Dynamic.literal(sessionId = sessionId.value, dir = dir)
+          sessionId.value,
+          js.Dynamic.literal(dir = dir)
         )
       )
       .map(_.toList.map(SessionMessage.fromRaw))
@@ -231,44 +232,87 @@ object Claude:
 
 /** Session information from listSessions */
 final case class SessionInfo(
-    id: String,
-    name: Option[String],
-    model: Option[String],
-    createdAt: Option[String],
-    lastActiveAt: Option[String],
+    sessionId: SessionId,
+    summary: String,
+    lastModified: Long,
+    fileSize: Long,
+    customTitle: Option[String],
+    firstPrompt: Option[String],
+    gitBranch: Option[String],
     cwd: Option[String],
-    numTurns: Option[Int],
-    totalCostUsd: Option[Double]
 )
 
 object SessionInfo:
   def fromRaw(obj: js.Dynamic): SessionInfo =
     SessionInfo(
-      id = obj.id.asInstanceOf[String],
-      name = obj.name.asInstanceOf[js.UndefOr[String]].toOption,
-      model = obj.model.asInstanceOf[js.UndefOr[String]].toOption,
-      createdAt = obj.createdAt.asInstanceOf[js.UndefOr[String]].toOption,
-      lastActiveAt = obj.lastActiveAt.asInstanceOf[js.UndefOr[String]].toOption,
-      cwd = obj.cwd.asInstanceOf[js.UndefOr[String]].toOption,
-      numTurns = obj.numTurns.asInstanceOf[js.UndefOr[Int]].toOption,
-      totalCostUsd = obj.totalCostUsd.asInstanceOf[js.UndefOr[Double]].toOption
+      sessionId = SessionId(getString(obj, "sessionId").orElse(getString(obj, "id")).getOrElse("")),
+      summary = getString(obj, "summary")
+        .orElse(getString(obj, "name"))
+        .orElse(getString(obj, "firstPrompt"))
+        .getOrElse(""),
+      lastModified = getLong(obj, "lastModified").getOrElse(0L),
+      fileSize = getLong(obj, "fileSize").getOrElse(0L),
+      customTitle = getString(obj, "customTitle"),
+      firstPrompt = getString(obj, "firstPrompt"),
+      gitBranch = getString(obj, "gitBranch"),
+      cwd = getString(obj, "cwd")
     )
+
+  private def getField(obj: js.Dynamic, field: String): Option[js.Any] =
+    val value = obj.selectDynamic(field).asInstanceOf[js.Any]
+    if js.isUndefined(value) || value == null then None else Some(value)
+
+  private def getString(obj: js.Dynamic, field: String): Option[String] =
+    getField(obj, field).flatMap { value =>
+      if js.typeOf(value) == "string" then
+        val s = value.asInstanceOf[String]
+        Option.when(s.nonEmpty)(s)
+      else None
+    }
+
+  private def getLong(obj: js.Dynamic, field: String): Option[Long] =
+    getField(obj, field).flatMap {
+      value =>
+        if js.typeOf(value) == "number" then
+          val n = value.asInstanceOf[Double]
+          Option.when(!n.isNaN)(n.toLong)
+        else if js.typeOf(value) == "string" then
+          scala.util.Try(value.asInstanceOf[String].toLong).toOption
+        else None
+    }
 
 /** Message from a session transcript */
 final case class SessionMessage(
-    role: String,
-    content: String,
-    timestamp: Option[String]
+    messageType: String,
+    uuid: String,
+    sessionId: SessionId,
+    message: String,
+    parentToolUseId: Option[String]
 )
 
 object SessionMessage:
   def fromRaw(obj: js.Dynamic): SessionMessage =
-    val contentValue = obj.content
-    val contentStr =
-      if js.typeOf(contentValue) == "string" then contentValue.asInstanceOf[String]
-      else js.JSON.stringify(contentValue)
+    val rawMessage = getField(obj, "message").getOrElse(getField(obj, "content").orNull)
+    val messageStr =
+      if rawMessage == null then ""
+      else if js.typeOf(rawMessage) == "string" then rawMessage.asInstanceOf[String]
+      else js.JSON.stringify(rawMessage)
     SessionMessage(
-      role = obj.role.asInstanceOf[String],
-      content = contentStr,
-      timestamp = obj.timestamp.asInstanceOf[js.UndefOr[String]].toOption
+      messageType = getString(obj, "type").orElse(getString(obj, "role")).getOrElse("assistant"),
+      uuid = getString(obj, "uuid").getOrElse(""),
+      sessionId = SessionId(getString(obj, "session_id").orElse(getString(obj, "sessionId")).getOrElse("")),
+      message = messageStr,
+      parentToolUseId = getString(obj, "parent_tool_use_id").orElse(getString(obj, "parentToolUseId"))
     )
+
+  private def getField(obj: js.Dynamic, field: String): Option[js.Any] =
+    val value = obj.selectDynamic(field).asInstanceOf[js.Any]
+    if js.isUndefined(value) || value == null then None else Some(value)
+
+  private def getString(obj: js.Dynamic, field: String): Option[String] =
+    getField(obj, field).flatMap { value =>
+      if js.typeOf(value) == "string" then
+        val s = value.asInstanceOf[String]
+        Option.when(s.nonEmpty)(s)
+      else None
+    }

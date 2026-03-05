@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.config
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import scala.scalajs.js
 import zio.json.*
 
@@ -20,9 +21,6 @@ enum PermissionMode:
   /** Plan mode - generate plans without execution */
   case Plan
 
-  /** Delegate permission decisions to hooks */
-  case Delegate
-
   /** Don't ask for permissions, deny if not pre-approved */
   case DontAsk
 
@@ -35,20 +33,18 @@ enum PermissionMode:
     case AcceptEdits       => "acceptEdits"
     case BypassPermissions => "bypassPermissions"
     case Plan              => "plan"
-    case Delegate          => "delegate"
     case DontAsk           => "dontAsk"
     case Custom(v)         => v
 
 object PermissionMode:
   // JSON codecs using string conversion (not derived - handles raw strings properly)
-  given JsonEncoder[PermissionMode] = JsonEncoder[String].contramap(_.toRaw)
-  given JsonDecoder[PermissionMode] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[PermissionMode] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[PermissionMode] = StringEnumJsonCodec.decoder(fromString)
 
   def fromString(s: String): PermissionMode = s match
     case "default"           => Default
     case "acceptEdits"       => AcceptEdits
     case "bypassPermissions" => BypassPermissions
     case "plan"              => Plan
-    case "delegate"          => Delegate
     case "dontAsk"           => DontAsk
     case other               => Custom(other)

@@ -1,5 +1,8 @@
 package com.tjclp.scalagent.config
 
+import scala.language.implicitConversions
+import scala.compiletime.error
+
 /** A positive double (> 0.0).
   *
   * Use this for configuration fields that must be positive, like maxBudgetUsd.
@@ -28,6 +31,14 @@ object PositiveDouble:
 
   /** Create a PositiveDouble without validation (for trusted/internal values) */
   def unsafe(n: Double): PositiveDouble = n
+
+  /** Create a PositiveDouble from a literal at compile time.
+    *
+    * This fails compilation when the literal is not strictly positive.
+    */
+  inline def literal(inline n: Double): PositiveDouble =
+    inline if n > 0.0 then n
+    else error("PositiveDouble literal must be > 0.0")
 
   /** Create from Option, returning None if validation fails */
   def fromOption(n: Option[Double]): Option[PositiveDouble] =

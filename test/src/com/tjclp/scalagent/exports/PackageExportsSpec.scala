@@ -7,21 +7,27 @@ class PackageExportsSpec extends FunSuite:
 
   test("SessionInfo and SessionMessage are available from package object"):
     val info: SessionInfo = SessionInfo(
-      id = "session-123",
-      name = Some("test-session"),
-      model = Some("claude-sonnet-4-5"),
-      createdAt = None,
-      lastActiveAt = None,
-      cwd = None,
-      numTurns = Some(3),
-      totalCostUsd = Some(0.01)
+      sessionId = SessionId("session-123"),
+      summary = "test-session",
+      lastModified = 123L,
+      fileSize = 10L,
+      customTitle = Some("custom"),
+      firstPrompt = Some("hello"),
+      gitBranch = Some("main"),
+      cwd = Some("/tmp")
     )
 
     val message: SessionMessage = SessionMessage(
-      role = "user",
-      content = "hello",
-      timestamp = None
+      messageType = "user",
+      uuid = "msg-1",
+      sessionId = SessionId("session-123"),
+      message = "hello",
+      parentToolUseId = None
     )
 
-    assertEquals(info.id, "session-123")
-    assertEquals(message.role, "user")
+    assertEquals(info.sessionId.value, "session-123")
+    assertEquals(message.messageType, "user")
+
+  test("SessionUuid is available from package object"):
+    val uuid = SessionUuid("123e4567-e89b-12d3-a456-426614174000")
+    assert(uuid.isRight)

@@ -54,6 +54,10 @@ class AgentOptionsSpec extends FunSuite:
     val opts = AgentOptions.default.withMaxTurns(10)
     assertEquals(opts.maxTurns, Some(10))
 
+  test("withMaxTurns accepts PositiveInt"):
+    val opts = AgentOptions.default.withMaxTurns(PositiveInt.unsafe(12))
+    assertEquals(opts.maxTurns, Some(12))
+
   test("withMaxTurns rejects non-positive values"):
     intercept[IllegalArgumentException] {
       AgentOptions.default.withMaxTurns(0)
@@ -66,6 +70,10 @@ class AgentOptionsSpec extends FunSuite:
     val opts = AgentOptions.default.withMaxBudgetUsd(5.0)
     assertEquals(opts.maxBudgetUsd, Some(5.0))
 
+  test("withMaxBudgetUsd accepts PositiveDouble"):
+    val opts = AgentOptions.default.withMaxBudgetUsd(PositiveDouble.unsafe(7.5))
+    assertEquals(opts.maxBudgetUsd, Some(7.5))
+
   test("withMaxBudgetUsd rejects non-positive values"):
     intercept[IllegalArgumentException] {
       AgentOptions.default.withMaxBudgetUsd(0.0)
@@ -77,6 +85,10 @@ class AgentOptionsSpec extends FunSuite:
   test("withMaxThinkingTokens sets thinking tokens"):
     val opts = AgentOptions.default.withMaxThinkingTokens(1000)
     assertEquals(opts.maxThinkingTokens, Some(1000))
+
+  test("withMaxThinkingTokens accepts PositiveInt"):
+    val opts = AgentOptions.default.withMaxThinkingTokens(PositiveInt.unsafe(2048))
+    assertEquals(opts.maxThinkingTokens, Some(2048))
 
   test("withMaxThinkingTokens rejects non-positive values"):
     intercept[IllegalArgumentException] {
@@ -356,6 +368,12 @@ class AgentOptionsSpec extends FunSuite:
     val opts = AgentOptions.default.withSessionId(uuid)
     assertEquals(opts.sessionId, Some(uuid))
 
+  test("withSessionId accepts SessionUuid"):
+    import com.tjclp.scalagent.types.SessionUuid
+    val uuid = SessionUuid("123e4567-e89b-12d3-a456-426614174000").toOption.get
+    val opts = AgentOptions.default.withSessionId(uuid)
+    assertEquals(opts.sessionId, Some(uuid.value))
+
   test("withSessionId rejects invalid UUID"):
     intercept[IllegalArgumentException] {
       AgentOptions.default.withSessionId("not-a-uuid")
@@ -447,6 +465,5 @@ class AgentOptionsSpec extends FunSuite:
     val custom = PermissionMode.fromString("some-custom-mode")
     assertEquals(custom.toRaw, "some-custom-mode")
 
-  test("PermissionMode.Delegate round-trips"):
-    assertEquals(PermissionMode.Delegate.toRaw, "delegate")
-    assertEquals(PermissionMode.fromString("delegate"), PermissionMode.Delegate)
+  test("PermissionMode handles unsupported delegate as Custom"):
+    assertEquals(PermissionMode.fromString("delegate"), PermissionMode.Custom("delegate"))

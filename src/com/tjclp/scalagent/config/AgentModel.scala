@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.config
 
+import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
 /** Model selection for subagents.
@@ -29,5 +30,5 @@ object AgentModel:
     case "inherit" => Inherit
     case _         => Inherit // Default to inherit for unknown
 
-  given JsonEncoder[AgentModel] = JsonEncoder[String].contramap(_.raw)
-  given JsonDecoder[AgentModel] = JsonDecoder[String].map(fromString)
+  given JsonEncoder[AgentModel] = StringEnumJsonCodec.encoder(_.raw)
+  given JsonDecoder[AgentModel] = StringEnumJsonCodec.decoder(fromString)
