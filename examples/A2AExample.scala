@@ -61,7 +61,7 @@ object A2AExample extends ZIOAppDefault:
       host = "localhost",
       port = 3001,
       agentOptions = AgentOptions.default
-        .withModel(Model.Sonnet4_5)
+        .withModel(Model.sonnet)
         .withMaxTurns(10)
         .withSystemPrompt(
           """You are a research assistant specializing in providing accurate, factual information.
@@ -96,7 +96,7 @@ object A2AExample extends ZIOAppDefault:
 
       // Configure Writer agent with access to Researcher
       writerOptions = AgentOptions.default
-        .withModel(Model.Sonnet4_5)
+        .withModel(Model.sonnet)
         .withPermissionMode(PermissionMode.BypassPermissions)
         .withMcpServer("research", mcpServer)
         .withMaxTurns(10)

@@ -15,6 +15,7 @@ import com.tjclp.scalagent.*
   *   - Send messages and receive streaming responses with `session.send(message)`
   *   - Simple text responses with `session.ask(message)` (no streaming)
   *   - Proper resource cleanup with `session.close`
+  *   - Validated session UUIDs with `SessionUuid`
   *
   * Run with: mill examples.runMain com.tjclp.scalagent.examples.SessionExample
   *
@@ -31,22 +32,31 @@ object SessionExample extends ZIOAppDefault:
         _ <- Console.printLine("Starting V2 Session API example...").orDie
         _ <- Console.printLine("---").orDie
 
+        // SessionUuid provides validated UUID handling for explicit session IDs
+        _ <- Console.printLine("SessionUuid validation examples:").orDie
+        validUuid = SessionUuid("123e4567-e89b-12d3-a456-426614174000")
+        invalidUuid = SessionUuid("not-a-uuid")
+        _ <- Console.printLine(s"  Valid UUID:   $validUuid").orDie
+        _ <- Console.printLine(s"  Invalid UUID: $invalidUuid").orDie
+        _ <- Console.printLine("").orDie
+
         // Configure options and create session
         options = AgentOptions.default
-          .withModel(Model.Sonnet4_5)
+          .withModel(Model.sonnet)
           .withPermissionMode(PermissionMode.BypassPermissions)
           .withMaxTurns(5)
         session <- ClaudeSession.create(options).withFinalizer(s =>
           s.close.ignoreLogged
         )
 
-        _ <- Console.printLine(s"Session created: ${session.sessionId}").orDie
+        _ <- Console.printLine("Session created (ID available after first message)").orDie
         _ <- Console.printLine("").orDie
 
         // First turn - use ask() for simple text response
         _ <- Console.printLine("User: What is 2 + 2?").orDie
         answer1 <- session.ask("What is 2 + 2?")
         _ <- Console.printLine(s"Claude: $answer1").orDie
+        _ <- Console.printLine(s"Session ID: ${session.sessionId}").orDie
         _ <- Console.printLine("").orDie
 
         // Second turn - use ask() again (session maintains context)

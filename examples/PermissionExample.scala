@@ -4,6 +4,7 @@ import zio.*
 import zio.stream.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.*
+import com.tjclp.scalagent.permissions.{PermissionUpdate, PermissionUpdateDestination}
 
 /** Example demonstrating the permission callback system.
   *
@@ -11,6 +12,7 @@ import com.tjclp.scalagent.*
   *   1. Implement custom permission logic with CanUseTool
   *   2. Allow/deny tools based on context
   *   3. Use permission utilities for common patterns
+  *   4. Programmatic permission updates with PermissionUpdateDestination
   *
   * Run with: mill examples.runMain com.tjclp.scalagent.examples.PermissionExample
   *
@@ -67,13 +69,22 @@ object PermissionExample extends ZIOAppDefault:
               ZIO.succeed(PermissionResult.Allow())
       yield result
 
+    // Programmatic permission updates with destination targeting
+    val sessionAllow  = PermissionUpdate.allowTool("Bash")  // defaults to Session
+    val projectAllow  = PermissionUpdate.allowTool("Read", destination = PermissionUpdateDestination.ProjectSettings)
+    val projectDeny   = PermissionUpdate.denyTool("Write", destination = PermissionUpdateDestination.ProjectSettings)
+
     val options = AgentOptions.default
-      .withModel(Model.Sonnet4_5)
+      .withModel(Model.sonnet)
       .withPermissionMode(PermissionMode.Default)
       .withMaxTurns(5)
       .withCanUseTool(customPermissionHandler)
 
     Console.printLine("Starting agent with custom permission handler") *>
+      Console.printLine(s"  Permission update examples:") *>
+      Console.printLine(s"    sessionAllow:  $sessionAllow") *>
+      Console.printLine(s"    projectAllow:  $projectAllow") *>
+      Console.printLine(s"    projectDeny:   $projectDeny") *>
       Console.printLine("- Read/Glob/Grep: Always allowed") *>
       Console.printLine("- Bash: Only ls/pwd/echo allowed") *>
       Console.printLine("- Write/Edit: Always denied") *>

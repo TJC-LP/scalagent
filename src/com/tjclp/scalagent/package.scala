@@ -70,6 +70,17 @@ import com.tjclp.scalagent.messages.*
   */
 package object scalagent {
 
+  // The Agent SDK spawns a Claude Code subprocess. If _we_ are already running
+  // inside Claude Code (e.g. an example invoked from a Claude session), the
+  // subprocess will detect the CLAUDECODE env var and refuse to start with
+  // "Claude Code cannot be launched inside another Claude Code session."
+  // Clearing it here lets the SDK spawn freely.
+  locally {
+    val env = scala.scalajs.js.Dynamic.global.process.env
+    if !scala.scalajs.js.isUndefined(env.CLAUDECODE) then
+      scala.scalajs.js.special.delete(env, "CLAUDECODE")
+  }
+
   /** Convenience type alias for the main service */
   type ClaudeAgentService = ClaudeAgent
 
