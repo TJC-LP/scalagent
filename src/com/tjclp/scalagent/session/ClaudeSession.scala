@@ -180,12 +180,18 @@ private final class ClaudeSessionLive(
     }
 
   override def interrupt(using Open =:= Open): IO[AgentError, Unit] =
-    ZIO
-      .attempt {
-        val dyn = raw.asInstanceOf[js.Dynamic]
-        dyn.interrupt.asInstanceOf[js.UndefOr[js.Function0[Unit]]].toOption.foreach(_.apply())
-      }
-      .mapError(AgentError.fromThrowable)
+    val maybeInterrupt = raw
+      .asInstanceOf[js.Dynamic]
+      .interrupt
+      .asInstanceOf[js.UndefOr[js.Function0[js.Any]]]
+      .toOption
+
+    maybeInterrupt match
+      case Some(interruptFn) =>
+        ZIO.fromPromiseJS(js.Promise.resolve(interruptFn.apply())).unit
+          .mapError(AgentError.fromThrowable)
+      case None =>
+        ZIO.fail(AgentError.Unknown("Session interrupt is not supported by this SDK session instance"))
 
   override def close(using Open =:= Open): IO[AgentError, ClaudeSession[Closed]] =
     // V2 API: close() returns void (synchronous)

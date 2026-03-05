@@ -386,6 +386,8 @@ object HookCallback:
             .map(_.asInstanceOf[js.Array[String]].toList),
           triggerFilePath = firstString(raw, "trigger_file_path", "triggerFilePath"),
           parentFilePath = firstString(raw, "parent_file_path", "parentFilePath"),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 

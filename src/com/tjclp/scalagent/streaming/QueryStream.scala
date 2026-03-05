@@ -170,8 +170,13 @@ final class QueryStream private (rawQuery: RawQuery):
     */
   def streamUserMessage(message: String, priority: Option[MessagePriority] = None): Task[Unit] =
     val userMsg = js.Dynamic.literal(
-      role = "user",
-      content = message
+      `type` = "user",
+      message = js.Dynamic.literal(
+        role = "user",
+        content = js.Array(js.Dynamic.literal(`type` = "text", text = message))
+      ),
+      parent_tool_use_id = null,
+      session_id = ""
     )
     priority.foreach(p => userMsg.priority = p.toRaw)
     ZIO.fromPromiseJS(rawQuery.streamInput(singleMessageStream(userMsg)))
