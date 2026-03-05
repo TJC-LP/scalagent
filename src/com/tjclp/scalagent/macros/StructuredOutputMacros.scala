@@ -106,13 +106,13 @@ object StructuredOutputMacros:
       case t if t =:= TypeRepr.of[Long] =>
         '{ JsonSchemaAst.integerWithFormat("int64") }
 
-      // Double
+      // Double — use plain "number" (Agent SDK doesn't support format:"double")
       case t if t =:= TypeRepr.of[Double] =>
-        '{ JsonSchemaAst.numberWithFormat("double") }
+        '{ JsonSchemaAst.number }
 
-      // Float
+      // Float — use plain "number" (Agent SDK doesn't support format:"float")
       case t if t =:= TypeRepr.of[Float] =>
-        '{ JsonSchemaAst.numberWithFormat("float") }
+        '{ JsonSchemaAst.number }
 
       // Boolean
       case t if t =:= TypeRepr.of[Boolean] =>
