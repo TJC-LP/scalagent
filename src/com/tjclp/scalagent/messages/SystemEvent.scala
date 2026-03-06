@@ -72,6 +72,11 @@ enum SystemEvent:
       processedAt: String
   )
 
+  /** Forward-compatible fallback for unknown system events */
+  case Unknown(
+      envelope: UnknownEnvelope
+  )
+
 object SystemEvent:
   given JsonDecoder[SystemEvent] = DeriveJsonDecoder.gen[SystemEvent]
   given JsonEncoder[SystemEvent] = DeriveJsonEncoder.gen[SystemEvent]

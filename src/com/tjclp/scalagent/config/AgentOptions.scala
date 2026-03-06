@@ -82,6 +82,9 @@ final case class AgentOptions(
     // Plugins to load
     plugins: List[PluginConfig] = List.empty,
 
+    // Preloaded main-thread skills
+    skills: List[SkillName] = List.empty,
+
     // Subagents
     agents: Map[String, AgentDefinition] = Map.empty,
 
@@ -549,6 +552,19 @@ object AgentOptions:
           case Some(tools) => Some(tools)
           case None => Some(List(ToolName.Skill))
       )
+
+    /** Preload skills into the main conversation context.
+      *
+      * Unlike [[withSkillsEnabled]], this does not rely on runtime `Skill` tool turns.
+      * Skills are resolved through the compatibility layer before the SDK call is made.
+      */
+    def withSkills(skillNames: SkillName*): AgentOptions =
+      opts.copy(skills = (opts.skills ++ skillNames).distinct)
+
+    /** Preload skills by raw string name. */
+    @targetName("withSkillsStrings")
+    def withSkills(skillNames: String*): AgentOptions =
+      withSkills(skillNames.map(SkillName.apply)*)
 
     /** Add a single plugin configuration.
       *

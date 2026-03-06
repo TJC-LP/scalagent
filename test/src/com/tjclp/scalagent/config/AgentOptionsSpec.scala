@@ -204,6 +204,37 @@ class AgentOptionsSpec extends FunSuite:
       case Some(tools) => assert(tools.contains(ToolName.Skill))
       case None        => fail("Expected allowedTools to be set")
 
+  test("withSkills stores preloaded skill names"):
+    val opts = AgentOptions.default.withSkills(SkillName("slides"), SkillName("spreadsheets"))
+    assertEquals(opts.skills, List(SkillName("slides"), SkillName("spreadsheets")))
+
+  test("withSkills string overload accepts raw skill names"):
+    val opts = AgentOptions.default.withSkills("slides", "spreadsheets")
+    assertEquals(opts.skills, List(SkillName("slides"), SkillName("spreadsheets")))
+
+  test("prepare adds default setting sources for top-level skills"):
+    val prepared = AgentOptionsCompatibility.prepare(AgentOptions.default.withSkills("slides"))
+    assertEquals(prepared.settingSources, SettingSource.userAndProject)
+
+  test("prepare augments an existing main agent with preloaded skills"):
+    val prepared = AgentOptionsCompatibility.prepare(
+      AgentOptions.default
+        .withAgent("main", AgentDefinition(description = "Main agent", prompt = "You are the main agent."))
+        .withMainAgent("main")
+        .withSkills("slides")
+    )
+
+    assertEquals(prepared.agent, Some("main"))
+    assertEquals(prepared.agents("main").skills, List("slides"))
+
+  test("prepare synthesizes a main agent when only top-level skills are provided"):
+    val prepared = AgentOptionsCompatibility.prepare(AgentOptions.default.withSkills("slides"))
+    val agentName = prepared.agent.getOrElse(fail("Expected a synthesized main agent"))
+
+    assert(agentName.startsWith("__scalagent_preloaded_skills"))
+    assertEquals(prepared.agents(agentName).skills, List("slides"))
+    assertEquals(prepared.agents(agentName).prompt, "")
+
   // ============================================
   // Method Chaining
   // ============================================

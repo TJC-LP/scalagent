@@ -2,6 +2,7 @@ package com.tjclp.scalagent.streaming
 
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
+import scala.util.Try
 import zio.json.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.config.{CommandName, FastModeState, Model, OutputStyle, PermissionMode, SkillName}
@@ -9,543 +10,766 @@ import com.tjclp.scalagent.messages.*
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{ApiMessageId, MessageUuid, SessionId, ToolUseId}
 
-/** Converts raw JavaScript SDK messages to Scala ADT.
-  *
-  * This handles the discriminated union pattern used by the TypeScript SDK, where each message has a `type` field that
-  * determines its structure.
-  */
+/** Converts raw JavaScript SDK messages to Scala ADTs in a forward-compatible way. */
 object MessageConverter:
 
-  /** Convert a raw JavaScript message to the Scala ADT.
-    *
-    * @param raw
-    *   The raw JavaScript object from the SDK
-    * @return
-    *   The corresponding AgentMessage case
-    */
+  final case class MessageParseException(
+      message: String,
+      raw: Json,
+      cause: Option[Throwable] = None
+  ) extends RuntimeException(message, cause.orNull)
+
+  private final case class EnvelopeContext(
+      uuid: Option[MessageUuid],
+      sessionId: Option[SessionId],
+      parentToolUseId: Option[ToolUseId]
+  )
+
   def fromRaw(raw: js.Any): AgentMessage =
-    val obj = raw.asInstanceOf[js.Dynamic]
-    val msgType = obj.`type`.asInstanceOf[String]
+    val rawJson = jsToJson(raw)
+    val obj = asDynamicObject(raw, rawJson)
+    val rawType = requiredString(obj, "type", rawJson)
+    val context = envelopeContext(obj)
+    val rawSubtype = stringField(obj, "subtype")
 
-    msgType match
-      case "assistant"           => parseAssistantMessage(obj)
-      case "user"                => parseUserMessage(obj)
-      case "result"              => parseResultMessage(obj)
-      case "system"              => parseSystemEnvelope(obj)
-      case "stream_event"        => parseStreamEvent(obj)
-      case "tool_progress"       => parseToolProgress(obj)
-      case "auth_status"         => parseAuthStatus(obj)
-      case "task_notification"   => parseTaskNotification(obj)   // Legacy payload shape
-      case "tool_use_summary"    => parseToolUseSummary(obj)
-      case "prompt_suggestion"   => parsePromptSuggestion(obj)
-      case "rate_limit_event"    => parseRateLimitEvent(obj)
-      case "rate_limit"          => parseRateLimitEvent(obj)     // Legacy payload shape
-      case "local_command_output" => parseLocalCommandOutput(obj) // Legacy payload shape
-      case "elicitation_complete" => parseElicitationComplete(obj) // Legacy payload shape
-      case "task_started"        => parseTaskStarted(obj)        // Legacy payload shape
-      case "task_progress"       => parseTaskProgress(obj)       // Legacy payload shape
-      case other => throw new IllegalArgumentException(s"Unknown message type: $other")
+    rawType match
+      case "assistant" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseAssistantMessage(obj, rawJson, context)
+        }
+      case "user" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseUserMessage(obj, rawJson, context)
+        }
+      case "result" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseResultMessage(obj, rawJson)
+        }
+      case "system" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseSystemEnvelope(obj, rawJson, context)
+        }
+      case "stream_event" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseStreamEvent(obj, rawJson, context)
+        }
+      case "tool_progress" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseToolProgress(obj, rawJson)
+        }
+      case "auth_status" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseAuthStatus(obj, rawJson)
+        }
+      case "task_notification" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseTaskNotification(obj, rawJson)
+        }
+      case "tool_use_summary" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseToolUseSummary(obj, rawJson)
+        }
+      case "prompt_suggestion" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parsePromptSuggestion(obj, rawJson)
+        }
+      case "rate_limit_event" | "rate_limit" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseRateLimitEvent(obj, rawJson)
+        }
+      case "local_command_output" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseLocalCommandOutput(obj, rawJson)
+        }
+      case "elicitation_complete" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseElicitationComplete(obj, rawJson)
+        }
+      case "task_started" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseTaskStarted(obj, rawJson)
+        }
+      case "task_progress" =>
+        guardTopLevelUnknown(rawJson, rawType, rawSubtype, context) {
+          parseTaskProgress(obj, rawJson)
+        }
+      case other =>
+        AgentMessage.Unknown(unknownEnvelope(rawJson, other, rawSubtype, context))
 
-  private def parseAssistantMessage(obj: js.Dynamic): AgentMessage.Assistant =
+  private def guardTopLevelUnknown(
+      raw: Json,
+      rawType: String,
+      rawSubtype: Option[String],
+      context: EnvelopeContext
+  )(
+      parse: => AgentMessage
+  ): AgentMessage =
+    try parse
+    catch
+      case _: MessageParseException =>
+        AgentMessage.Unknown(unknownEnvelope(raw, rawType, rawSubtype, context))
+
+  private def parseAssistantMessage(
+      obj: js.Dynamic,
+      raw: Json,
+      context: EnvelopeContext
+  ): AgentMessage.Assistant =
+    val messageObj = requiredDynamic(obj, "message", raw, "assistant.message")
     AgentMessage.Assistant(
-      message = parseApiAssistantMessage(obj.message),
-      parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
-      error = obj.error.asInstanceOf[js.UndefOr[String]].toOption.map(AssistantMessageError.fromString),
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      message = parseApiAssistantMessage(messageObj, jsToJson(messageObj.asInstanceOf[js.Any]), context),
+      parentToolUseId = context.parentToolUseId,
+      error = stringField(obj, "error").map(AssistantMessageError.fromString),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parseUserMessage(obj: js.Dynamic): AgentMessage =
-    val isReplay = obj.isReplay.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
+  private def parseUserMessage(
+      obj: js.Dynamic,
+      raw: Json,
+      context: EnvelopeContext
+  ): AgentMessage =
+    val messageObj = requiredDynamic(obj, "message", raw, "user.message")
+    val message = parseApiUserMessage(messageObj, jsToJson(messageObj.asInstanceOf[js.Any]), context)
+    val isReplay = booleanField(obj, "isReplay").getOrElse(false)
 
     if isReplay then
       AgentMessage.UserReplay(
-        message = parseApiUserMessage(obj.message),
-        parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
-        uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-        sessionId = SessionId(obj.session_id.asInstanceOf[String])
+        message = message,
+        parentToolUseId = context.parentToolUseId,
+        uuid = requiredUuid(obj, raw),
+        sessionId = requiredSessionId(obj, raw)
       )
     else
       AgentMessage.User(
-        message = parseApiUserMessage(obj.message),
-        parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
-        isSynthetic = obj.isSynthetic.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false),
-        toolUseResult = obj.tool_use_result.asInstanceOf[js.UndefOr[js.Any]].toOption.map(jsToJson),
-        uuid = obj.uuid.asInstanceOf[js.UndefOr[String]].toOption.map(MessageUuid.apply),
-        sessionId = SessionId(obj.session_id.asInstanceOf[String])
+        message = message,
+        parentToolUseId = context.parentToolUseId,
+        isSynthetic = booleanField(obj, "isSynthetic").getOrElse(false),
+        toolUseResult = anyField(obj, "tool_use_result").map(jsToJson),
+        uuid = stringField(obj, "uuid").map(MessageUuid.apply),
+        sessionId = requiredSessionId(obj, raw)
       )
 
-  private def parseResultMessage(obj: js.Dynamic): AgentMessage.Result =
-    val subtype = obj.subtype.asInstanceOf[String]
-
-    val stopReason = normalizeOptionalString(obj.stop_reason.asInstanceOf[js.UndefOr[String]]).map(StopReason.fromString)
+  private def parseResultMessage(obj: js.Dynamic, raw: Json): AgentMessage.Result =
+    val subtype = requiredString(obj, "subtype", raw)
+    val stopReason = stringField(obj, "stop_reason").map(StopReason.fromString)
 
     val outcome =
       if subtype == "success" then
         ResultOutcome.Success(
-          durationMs = obj.duration_ms.asInstanceOf[Double].toLong,
-          durationApiMs = obj.duration_api_ms.asInstanceOf[Double].toLong,
-          numTurns = obj.num_turns.asInstanceOf[Int],
-          result = obj.result.asInstanceOf[String],
-          totalCostUsd = obj.total_cost_usd.asInstanceOf[Double],
-          usage = parseModelUsage(obj.usage),
-          modelUsage = parseModelUsageMap(obj.modelUsage),
-          permissionDenials = parsePermissionDenials(obj.permission_denials),
-          structuredOutput = obj.structured_output.asInstanceOf[js.UndefOr[js.Any]].toOption.map(jsToJson),
+          durationMs = longField(obj, "duration_ms").getOrElse(0L),
+          durationApiMs = longField(obj, "duration_api_ms").getOrElse(0L),
+          numTurns = intField(obj, "num_turns").getOrElse(0),
+          result = stringField(obj, "result").getOrElse(""),
+          totalCostUsd = doubleField(obj, "total_cost_usd").getOrElse(0.0),
+          usage = dynamicField(obj, "usage").map(parseModelUsage).getOrElse(ModelUsage.empty),
+          modelUsage = dynamicField(obj, "modelUsage").map(parseModelUsageMap).getOrElse(Map.empty),
+          permissionDenials = dynamicArrayField(obj, "permission_denials").map(parsePermissionDenial),
+          structuredOutput = anyField(obj, "structured_output").map(jsToJson),
           stopReason = stopReason
         )
       else
         ResultOutcome.Error(
           reason = ErrorReason.fromString(subtype),
-          durationMs = obj.duration_ms.asInstanceOf[Double].toLong,
-          durationApiMs = obj.duration_api_ms.asInstanceOf[Double].toLong,
-          numTurns = obj.num_turns.asInstanceOf[Int],
-          totalCostUsd = obj.total_cost_usd.asInstanceOf[Double],
-          usage = parseModelUsage(obj.usage),
-          modelUsage = parseModelUsageMap(obj.modelUsage),
-          permissionDenials = parsePermissionDenials(obj.permission_denials),
-          errors = obj.errors.asInstanceOf[js.Array[String]].toList,
+          durationMs = longField(obj, "duration_ms").getOrElse(0L),
+          durationApiMs = longField(obj, "duration_api_ms").getOrElse(0L),
+          numTurns = intField(obj, "num_turns").getOrElse(0),
+          totalCostUsd = doubleField(obj, "total_cost_usd").getOrElse(0.0),
+          usage = dynamicField(obj, "usage").map(parseModelUsage).getOrElse(ModelUsage.empty),
+          modelUsage = dynamicField(obj, "modelUsage").map(parseModelUsageMap).getOrElse(Map.empty),
+          permissionDenials = dynamicArrayField(obj, "permission_denials").map(parsePermissionDenial),
+          errors = stringArrayField(obj, "errors"),
           stopReason = stopReason
         )
 
-    val fastModeState = obj.fast_mode_state
-      .asInstanceOf[js.UndefOr[String]]
-      .toOption
-      .map(FastModeState.fromString)
-
     AgentMessage.Result(
       outcome = outcome,
-      fastModeState = fastModeState,
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      fastModeState = stringField(obj, "fast_mode_state").map(FastModeState.fromString),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parseSystemEnvelope(obj: js.Dynamic): AgentMessage =
-    val subtype = obj.subtype.asInstanceOf[js.UndefOr[String]].toOption.getOrElse("")
-    subtype match
-      case "task_notification"    => parseTaskNotification(obj)
-      case "task_progress"        => parseTaskProgress(obj)
-      case "task_started"         => parseTaskStarted(obj)
-      case "local_command_output" => parseLocalCommandOutput(obj)
-      case "elicitation_complete" => parseElicitationComplete(obj)
-      case _                      => parseSystemEventMessage(obj, subtype)
-
-  private def parseSystemEventMessage(obj: js.Dynamic, subtype: String): AgentMessage.System =
-    val event: SystemEvent = subtype match
-      case "init"             => parseInitEvent(obj)
-      case "compact_boundary" => parseCompactBoundaryEvent(obj)
-      case "status"           => parseStatusEvent(obj)
-      case "hook_response"    => parseHookResponseEvent(obj)
-      case "hook_started"     => parseHookStartedEvent(obj)
-      case "hook_progress"    => parseHookProgressEvent(obj)
-      case "files_persisted"  => parseFilesPersistedEvent(obj)
+  private def parseSystemEnvelope(
+      obj: js.Dynamic,
+      raw: Json,
+      context: EnvelopeContext
+  ): AgentMessage =
+    stringField(obj, "subtype") match
+      case Some("task_notification") => parseTaskNotification(obj, raw)
+      case Some("task_progress")     => parseTaskProgress(obj, raw)
+      case Some("task_started")      => parseTaskStarted(obj, raw)
+      case Some("local_command_output") => parseLocalCommandOutput(obj, raw)
+      case Some("elicitation_complete") => parseElicitationComplete(obj, raw)
       case other =>
-        throw new IllegalArgumentException(s"Unknown system event subtype: $other")
+        AgentMessage.System(
+          event = parseSystemEvent(obj, raw, other, context),
+          uuid = requiredUuid(obj, raw),
+          sessionId = requiredSessionId(obj, raw)
+        )
 
-    AgentMessage.System(
-      event = event,
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
-    )
+  private def parseSystemEvent(
+      obj: js.Dynamic,
+      raw: Json,
+      subtype: Option[String],
+      context: EnvelopeContext
+  ): SystemEvent =
+    subtype match
+      case Some("init") => guardedSystemEvent(raw, context, subtype) {
+          parseInitEvent(obj, raw)
+        }
+      case Some("compact_boundary") => guardedSystemEvent(raw, context, subtype) {
+          parseCompactBoundaryEvent(obj, raw)
+        }
+      case Some("status") => guardedSystemEvent(raw, context, subtype) {
+          parseStatusEvent(obj)
+        }
+      case Some("hook_response") => guardedSystemEvent(raw, context, subtype) {
+          parseHookResponseEvent(obj, raw)
+        }
+      case Some("hook_started") => guardedSystemEvent(raw, context, subtype) {
+          parseHookStartedEvent(obj, raw)
+        }
+      case Some("hook_progress") => guardedSystemEvent(raw, context, subtype) {
+          parseHookProgressEvent(obj, raw)
+        }
+      case Some("files_persisted") => guardedSystemEvent(raw, context, subtype) {
+          parseFilesPersistedEvent(obj)
+        }
+      case other =>
+        SystemEvent.Unknown(unknownEnvelope(raw, "system", other, context))
 
-  private def parseStreamEvent(obj: js.Dynamic): AgentMessage.StreamEvent =
-    val event = obj.event.asInstanceOf[js.Dynamic]
+  private def guardedSystemEvent(
+      raw: Json,
+      context: EnvelopeContext,
+      subtype: Option[String]
+  )(
+      parse: => SystemEvent
+  ): SystemEvent =
+    try parse
+    catch
+      case _: MessageParseException =>
+        SystemEvent.Unknown(unknownEnvelope(raw, "system", subtype, context))
+
+  private def parseStreamEvent(
+      obj: js.Dynamic,
+      raw: Json,
+      context: EnvelopeContext
+  ): AgentMessage.StreamEvent =
+    val event = requiredDynamic(obj, "event", raw, "stream_event.event")
+    val eventRaw = jsToJson(event.asInstanceOf[js.Any])
+
     AgentMessage.StreamEvent(
       event = RawStreamEvent(
-        eventType = event.`type`.asInstanceOf[String],
-        index = event.index.asInstanceOf[js.UndefOr[Int]].toOption,
-        contentBlock = parseOptionalContentBlock(event.content_block),
-        delta = parseOptionalDelta(event.delta)
+        eventType = requiredString(event, "type", eventRaw),
+        index = intField(event, "index"),
+        contentBlock = anyField(event, "content_block").map(value => parseContentBlock(value, context)),
+        delta = anyField(event, "delta").map(value => parseDelta(value, context))
       ),
-      parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      parentToolUseId = context.parentToolUseId,
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parseOptionalContentBlock(raw: js.Dynamic): Option[ContentBlock] =
-    if js.isUndefined(raw) || raw == null then None
-    else
-      val blockType = raw.`type`.asInstanceOf[String]
-      Some(blockType match
-        case "text" =>
-          ContentBlock.Text(raw.text.asInstanceOf[js.UndefOr[String]].getOrElse(""))
-        case "tool_use" =>
-          ContentBlock.ToolUse(
-            id = ToolUseId(raw.id.asInstanceOf[String]),
-            name = ToolName.fromString(raw.name.asInstanceOf[String]),
-            input = jsToJson(raw.input)
-          )
-        case "thinking" =>
-          ContentBlock.Thinking(
-            thinking = raw.thinking.asInstanceOf[js.UndefOr[String]].getOrElse(""),
-            signature = raw.signature.asInstanceOf[js.UndefOr[String]].toOption
-          )
-        case _ =>
-          ContentBlock.Text(s"[Unknown content block: $blockType]")
-      )
+  private def parseContentBlock(raw: js.Any, context: EnvelopeContext): ContentBlock =
+    val obj = asDynamicObject(raw, jsToJson(raw))
+    val rawJson = jsToJson(raw)
 
-  private def parseOptionalDelta(raw: js.Dynamic): Option[StreamDelta] =
-    if js.isUndefined(raw) || raw == null then None
-    else
-      val deltaType = raw.`type`.asInstanceOf[String]
-      Some(deltaType match
-        case "text_delta" =>
-          StreamDelta.TextDelta(raw.text.asInstanceOf[String])
-        case "input_json_delta" =>
-          StreamDelta.InputJsonDelta(raw.partial_json.asInstanceOf[String])
-        case "thinking_delta" =>
-          StreamDelta.ThinkingDelta(raw.thinking.asInstanceOf[String])
-        case _ =>
-          StreamDelta.TextDelta(s"[Unknown delta: $deltaType]")
-      )
+    stringField(obj, "type") match
+      case Some("text") =>
+        ContentBlock.Text(stringField(obj, "text").getOrElse(""))
+      case Some("tool_use") =>
+        (for
+          id <- stringField(obj, "id")
+          name <- stringField(obj, "name")
+        yield ContentBlock.ToolUse(
+          id = ToolUseId(id),
+          name = ToolName.fromString(name),
+          input = anyField(obj, "input").map(jsToJson).getOrElse(Json.Null)
+        )).getOrElse(ContentBlock.Unknown(unknownEnvelope(rawJson, "tool_use", None, context)))
+      case Some("tool_result") =>
+        stringField(obj, "tool_use_id") match
+          case Some(toolUseId) =>
+            ContentBlock.ToolResult(
+              toolUseId = ToolUseId(toolUseId),
+              content = parseToolResultContent(anyField(obj, "content")),
+              isError = booleanField(obj, "is_error").getOrElse(false)
+            )
+          case None =>
+            ContentBlock.Unknown(unknownEnvelope(rawJson, "tool_result", None, context))
+      case Some("thinking") =>
+        ContentBlock.Thinking(
+          thinking = stringField(obj, "thinking").getOrElse(""),
+          signature = stringField(obj, "signature")
+        )
+      case Some("image") =>
+        parseImageBlock(obj, rawJson, context)
+      case Some(other) =>
+        ContentBlock.Unknown(unknownEnvelope(rawJson, other, None, context))
+      case None =>
+        ContentBlock.Unknown(unknownEnvelope(rawJson, "<missing-content-type>", None, context))
 
-  private def parseToolProgress(obj: js.Dynamic): AgentMessage.ToolProgress =
+  private def parseDelta(raw: js.Any, context: EnvelopeContext): StreamDelta =
+    val obj = asDynamicObject(raw, jsToJson(raw))
+    val rawJson = jsToJson(raw)
+
+    stringField(obj, "type") match
+      case Some("text_delta") =>
+        StreamDelta.TextDelta(stringField(obj, "text").getOrElse(""))
+      case Some("input_json_delta") =>
+        StreamDelta.InputJsonDelta(stringField(obj, "partial_json").getOrElse(""))
+      case Some("thinking_delta") =>
+        StreamDelta.ThinkingDelta(stringField(obj, "thinking").getOrElse(""))
+      case Some(other) =>
+        StreamDelta.Unknown(unknownEnvelope(rawJson, other, None, context))
+      case None =>
+        StreamDelta.Unknown(unknownEnvelope(rawJson, "<missing-delta-type>", None, context))
+
+  private def parseToolProgress(obj: js.Dynamic, raw: Json): AgentMessage.ToolProgress =
     AgentMessage.ToolProgress(
-      toolUseId = ToolUseId(obj.tool_use_id.asInstanceOf[String]),
-      toolName = ToolName.fromString(obj.tool_name.asInstanceOf[String]),
-      parentToolUseId = obj.parent_tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
-      elapsedTimeSeconds = obj.elapsed_time_seconds.asInstanceOf[Double],
-      taskId = obj.task_id.asInstanceOf[js.UndefOr[String]].toOption,
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      toolUseId = ToolUseId(requiredString(obj, "tool_use_id", raw)),
+      toolName = ToolName.fromString(requiredString(obj, "tool_name", raw)),
+      parentToolUseId = stringField(obj, "parent_tool_use_id").map(ToolUseId.apply),
+      elapsedTimeSeconds = doubleField(obj, "elapsed_time_seconds").getOrElse(0.0),
+      taskId = stringField(obj, "task_id"),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parseAuthStatus(obj: js.Dynamic): AgentMessage.AuthStatus =
+  private def parseAuthStatus(obj: js.Dynamic, raw: Json): AgentMessage.AuthStatus =
     AgentMessage.AuthStatus(
       isAuthenticating = firstBoolean(obj, "isAuthenticating", "is_authenticating").getOrElse(false),
-      output = obj.output.asInstanceOf[js.Array[String]].toList,
-      error = obj.error.asInstanceOf[js.UndefOr[String]].toOption,
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      output = stringArrayField(obj, "output"),
+      error = stringField(obj, "error"),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parseTaskNotification(obj: js.Dynamic): AgentMessage.TaskNotification =
+  private def parseTaskNotification(obj: js.Dynamic, raw: Json): AgentMessage.TaskNotification =
     AgentMessage.TaskNotification(
-      taskId = obj.task_id.asInstanceOf[String],
-      status = TaskStatus.fromString(obj.status.asInstanceOf[String]),
-      outputFile = obj.output_file.asInstanceOf[String],
-      summary = obj.summary.asInstanceOf[String],
-      toolUseId = obj.tool_use_id.asInstanceOf[js.UndefOr[String]].toOption.map(ToolUseId.apply),
-      usage = obj.usage.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.map(parseModelUsageFlexible),
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      taskId = requiredString(obj, "task_id", raw),
+      status = TaskStatus.fromString(requiredString(obj, "status", raw)),
+      outputFile = stringField(obj, "output_file").getOrElse(""),
+      summary = stringField(obj, "summary").getOrElse(""),
+      toolUseId = stringField(obj, "tool_use_id").map(ToolUseId.apply),
+      usage = dynamicField(obj, "usage").map(parseModelUsageFlexible),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parseToolUseSummary(obj: js.Dynamic): AgentMessage.ToolUseSummary =
+  private def parseToolUseSummary(obj: js.Dynamic, raw: Json): AgentMessage.ToolUseSummary =
     AgentMessage.ToolUseSummary(
-      summary = obj.summary.asInstanceOf[String],
-      precedingToolUseIds = obj.preceding_tool_use_ids
-        .asInstanceOf[js.UndefOr[js.Array[String]]]
-        .toOption
-        .map(_.toList.map(ToolUseId.apply))
-        .getOrElse(List.empty),
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      summary = stringField(obj, "summary").getOrElse(""),
+      precedingToolUseIds = stringArrayField(obj, "preceding_tool_use_ids").map(ToolUseId.apply),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parsePromptSuggestion(obj: js.Dynamic): AgentMessage.PromptSuggestion =
+  private def parsePromptSuggestion(obj: js.Dynamic, raw: Json): AgentMessage.PromptSuggestion =
     AgentMessage.PromptSuggestion(
-      suggestion = obj.suggestion.asInstanceOf[String],
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      suggestion = stringField(obj, "suggestion").getOrElse(""),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parseRateLimitEvent(obj: js.Dynamic): AgentMessage.RateLimitEvent =
-    val rateLimitInfo = obj.rate_limit_info.asInstanceOf[js.UndefOr[js.Dynamic]].toOption
+  private def parseRateLimitEvent(obj: js.Dynamic, raw: Json): AgentMessage.RateLimitEvent =
+    val rateLimitInfo = dynamicField(obj, "rate_limit_info")
     AgentMessage.RateLimitEvent(
-      retryAfterMs = obj.retry_after_ms.asInstanceOf[js.UndefOr[Double]].toOption.map(_.toLong),
-      model = obj.model.asInstanceOf[js.UndefOr[String]].toOption,
-      status = rateLimitInfo.flatMap(_.status.asInstanceOf[js.UndefOr[String]].toOption),
-      resetsAt = rateLimitInfo.flatMap(_.resetsAt.asInstanceOf[js.UndefOr[Double]].toOption.map(_.toLong)),
-      rateLimitType = rateLimitInfo.flatMap(_.rateLimitType.asInstanceOf[js.UndefOr[String]].toOption),
-      utilization = rateLimitInfo.flatMap(_.utilization.asInstanceOf[js.UndefOr[Double]].toOption),
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      retryAfterMs = longField(obj, "retry_after_ms"),
+      model = stringField(obj, "model"),
+      status = rateLimitInfo.flatMap(stringField(_, "status")),
+      resetsAt = rateLimitInfo.flatMap(longField(_, "resetsAt")),
+      rateLimitType = rateLimitInfo.flatMap(stringField(_, "rateLimitType")),
+      utilization = rateLimitInfo.flatMap(doubleField(_, "utilization")),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parseLocalCommandOutput(obj: js.Dynamic): AgentMessage.LocalCommandOutput =
+  private def parseLocalCommandOutput(obj: js.Dynamic, raw: Json): AgentMessage.LocalCommandOutput =
     AgentMessage.LocalCommandOutput(
       output = firstString(obj, "content", "output").getOrElse(""),
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parseElicitationComplete(obj: js.Dynamic): AgentMessage.ElicitationComplete =
+  private def parseElicitationComplete(obj: js.Dynamic, raw: Json): AgentMessage.ElicitationComplete =
     AgentMessage.ElicitationComplete(
-      mcpServerName = obj.mcp_server_name.asInstanceOf[String],
-      elicitationId = obj.elicitation_id.asInstanceOf[String],
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      mcpServerName = stringField(obj, "mcp_server_name").getOrElse(""),
+      elicitationId = stringField(obj, "elicitation_id").getOrElse(""),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parseTaskStarted(obj: js.Dynamic): AgentMessage.TaskStarted =
+  private def parseTaskStarted(obj: js.Dynamic, raw: Json): AgentMessage.TaskStarted =
     AgentMessage.TaskStarted(
-      taskId = obj.task_id.asInstanceOf[String],
-      description = obj.description.asInstanceOf[js.UndefOr[String]].getOrElse(""),
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      taskId = requiredString(obj, "task_id", raw),
+      description = stringField(obj, "description").getOrElse(""),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  private def parseTaskProgress(obj: js.Dynamic): AgentMessage.TaskProgress =
+  private def parseTaskProgress(obj: js.Dynamic, raw: Json): AgentMessage.TaskProgress =
     AgentMessage.TaskProgress(
-      taskId = obj.task_id.asInstanceOf[String],
+      taskId = requiredString(obj, "task_id", raw),
       progress = firstString(obj, "description", "progress").getOrElse(""),
-      uuid = MessageUuid(obj.uuid.asInstanceOf[String]),
-      sessionId = SessionId(obj.session_id.asInstanceOf[String])
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
-  // Helper parsers
-
-  private def parseApiAssistantMessage(obj: js.Dynamic): ApiAssistantMessage =
+  private def parseApiAssistantMessage(
+      obj: js.Dynamic,
+      raw: Json,
+      context: EnvelopeContext
+  ): ApiAssistantMessage =
     ApiAssistantMessage(
-      id = ApiMessageId(obj.id.asInstanceOf[String]),
-      role = Role.fromString(obj.role.asInstanceOf[String]),
-      content = parseContentBlocks(obj.content),
-      model = obj.model.asInstanceOf[String],
-      stopReason = normalizeOptionalString(obj.stop_reason.asInstanceOf[js.UndefOr[String]]).map(StopReason.fromString),
-      stopSequence = normalizeOptionalString(obj.stop_sequence.asInstanceOf[js.UndefOr[String]]),
-      usage = obj.usage.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.map(parseModelUsage)
+      id = ApiMessageId(requiredString(obj, "id", raw)),
+      role = Role.fromString(requiredString(obj, "role", raw)),
+      content = parseContentBlocks(obj, "content", raw, context),
+      model = stringField(obj, "model").getOrElse(""),
+      stopReason = stringField(obj, "stop_reason").map(StopReason.fromString),
+      stopSequence = stringField(obj, "stop_sequence"),
+      usage = dynamicField(obj, "usage").map(parseModelUsage)
     )
 
-  private def parseApiUserMessage(obj: js.Dynamic): ApiUserMessage =
+  private def parseApiUserMessage(
+      obj: js.Dynamic,
+      raw: Json,
+      context: EnvelopeContext
+  ): ApiUserMessage =
     ApiUserMessage(
-      role = Role.fromString(obj.role.asInstanceOf[String]),
-      content = parseContentBlocks(obj.content)
+      role = Role.fromString(requiredString(obj, "role", raw)),
+      content = parseContentBlocks(obj, "content", raw, context)
     )
 
-  private def parseContentBlocks(arr: js.Dynamic): List[ContentBlock] =
-    arr.asInstanceOf[js.Array[js.Dynamic]].toList.map { block =>
-      val blockType = block.`type`.asInstanceOf[String]
-      blockType match
-        case "text" =>
-          ContentBlock.Text(block.text.asInstanceOf[String])
-        case "tool_use" =>
-          ContentBlock.ToolUse(
-            id = ToolUseId(block.id.asInstanceOf[String]),
-            name = ToolName.fromString(block.name.asInstanceOf[String]),
-            input = jsToJson(block.input)
-          )
-        case "tool_result" =>
-          // Content can be either a string or an array of content blocks
-          val contentValue = block.content
-          val contentStr = if js.typeOf(contentValue) == "string" then
-            contentValue.asInstanceOf[String]
-          else if js.Array.isArray(contentValue) then
-            // Extract text from array of content blocks
-            contentValue.asInstanceOf[js.Array[js.Dynamic]].toList.collect {
-              case c if c.`type`.asInstanceOf[String] == "text" =>
-                c.text.asInstanceOf[String]
-            }.mkString("\n")
-          else
-            js.JSON.stringify(contentValue)
-          ContentBlock.ToolResult(
-            toolUseId = ToolUseId(block.tool_use_id.asInstanceOf[String]),
-            content = contentStr,
-            isError = block.is_error.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
-          )
-        case "thinking" =>
-          ContentBlock.Thinking(
-            thinking = block.thinking.asInstanceOf[String],
-            signature = block.signature.asInstanceOf[js.UndefOr[String]].toOption
-          )
-        case other =>
-          // Fallback to text for unknown types
-          ContentBlock.Text(s"[Unknown content block type: $other]")
-    }
+  private def parseContentBlocks(
+      obj: js.Dynamic,
+      field: String,
+      raw: Json,
+      context: EnvelopeContext
+  ): List[ContentBlock] =
+    requiredArray(obj, field, raw).toList.map(rawValue => parseContentBlock(rawValue, context))
 
-  private def firstString(obj: js.Dynamic, fields: String*): Option[String] =
-    fields.iterator
-      .map(field => obj.selectDynamic(field).asInstanceOf[js.Any])
-      .find(v => !js.isUndefined(v) && v != null && js.typeOf(v) == "string")
-      .map(_.asInstanceOf[String])
+  private def parseImageBlock(
+      obj: js.Dynamic,
+      raw: Json,
+      context: EnvelopeContext
+  ): ContentBlock =
+    dynamicField(obj, "source") match
+      case Some(source) =>
+        val mediaType = stringField(source, "media_type").orElse(stringField(obj, "media_type")).getOrElse("")
+        stringField(source, "type") match
+          case Some("base64") =>
+            stringField(source, "data") match
+              case Some(data) =>
+                ContentBlock.Image(
+                  source = ImageSource.Base64(data, mediaType),
+                  mediaType = mediaType
+                )
+              case None =>
+                ContentBlock.Unknown(unknownEnvelope(raw, "image", Some("base64"), context))
+          case Some("url") =>
+            stringField(source, "url").orElse(stringField(source, "uri")) match
+              case Some(url) =>
+                ContentBlock.Image(
+                  source = ImageSource.Url(url),
+                  mediaType = mediaType
+                )
+              case None =>
+                ContentBlock.Unknown(unknownEnvelope(raw, "image", Some("url"), context))
+          case Some(other) =>
+            ContentBlock.Unknown(unknownEnvelope(raw, "image", Some(other), context))
+          case None =>
+            ContentBlock.Unknown(unknownEnvelope(raw, "image", None, context))
+      case None =>
+        ContentBlock.Unknown(unknownEnvelope(raw, "image", None, context))
 
-  private def firstBoolean(obj: js.Dynamic, fields: String*): Option[Boolean] =
-    fields.iterator
-      .map(field => obj.selectDynamic(field).asInstanceOf[js.Any])
-      .find(v => !js.isUndefined(v) && v != null && js.typeOf(v) == "boolean")
-      .map(_.asInstanceOf[Boolean])
+  private def parseToolResultContent(content: Option[js.Any]): String =
+    content match
+      case Some(value) if js.typeOf(value) == "string" =>
+        value.asInstanceOf[String]
+      case Some(value) if js.Array.isArray(value) =>
+        value
+          .asInstanceOf[js.Array[js.Any]]
+          .toList
+          .map(rawValue => parseContentBlock(rawValue, EnvelopeContext(None, None, None)))
+          .collect { case ContentBlock.Text(text) => text }
+          .mkString("\n")
+      case Some(value) =>
+        js.JSON.stringify(value)
+      case None =>
+        ""
 
-  private def parseModelUsage(obj: js.Dynamic): ModelUsage =
-    ModelUsage(
-      inputTokens = obj.input_tokens.asInstanceOf[Int],
-      outputTokens = obj.output_tokens.asInstanceOf[Int],
-      cacheReadInputTokens =
-        obj.cache_read_input_tokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
-      cacheCreationInputTokens =
-        obj.cache_creation_input_tokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0)
-    )
-
-  private def parseModelUsageFlexible(obj: js.Dynamic): ModelUsage =
-    ModelUsage(
-      inputTokens = obj.input_tokens
-        .asInstanceOf[js.UndefOr[Int]]
-        .toOption
-        .orElse(obj.total_tokens.asInstanceOf[js.UndefOr[Int]].toOption)
-        .getOrElse(0),
-      outputTokens = obj.output_tokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
-      cacheReadInputTokens = obj.cache_read_input_tokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
-      cacheCreationInputTokens =
-        obj.cache_creation_input_tokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0)
-    )
-
-  private def parseModelUsageMap(obj: js.Dynamic): Map[String, PerModelUsage] =
-    if js.isUndefined(obj) then Map.empty
-    else
-      val dict = obj.asInstanceOf[js.Dictionary[js.Dynamic]]
-      dict.toMap.map { case (k, v) =>
-        // SDK uses camelCase for modelUsage fields
-        k -> PerModelUsage(
-          inputTokens = v.inputTokens.asInstanceOf[Int],
-          outputTokens = v.outputTokens.asInstanceOf[Int],
-          cacheReadInputTokens = v.cacheReadInputTokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
-          cacheCreationInputTokens =
-            v.cacheCreationInputTokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
-          webSearchRequests = v.webSearchRequests.asInstanceOf[js.UndefOr[Int]].getOrElse(0),
-          costUSD = v.costUSD.asInstanceOf[Double],
-          contextWindow = v.contextWindow.asInstanceOf[Int],
-          maxOutputTokens = v.maxOutputTokens.asInstanceOf[js.UndefOr[Int]].getOrElse(0)
-        )
-      }
-
-  private def parsePermissionDenials(arr: js.Dynamic): List[PermissionDenial] =
-    if js.isUndefined(arr) then Nil
-    else
-      arr.asInstanceOf[js.Array[js.Dynamic]].toList.map { denial =>
-        PermissionDenial(
-          toolName = ToolName.fromString(denial.tool_name.asInstanceOf[String]),
-          toolUseId = ToolUseId(denial.tool_use_id.asInstanceOf[String]),
-          toolInput = jsToJson(denial.tool_input)
-        )
-      }
-
-  private def parseInitEvent(obj: js.Dynamic): SystemEvent.Init =
+  private def parseInitEvent(obj: js.Dynamic, raw: Json): SystemEvent.Init =
     SystemEvent.Init(
-      apiKeySource = ApiKeySource.fromString(obj.apiKeySource.asInstanceOf[String]),
-      claudeCodeVersion = obj.claude_code_version.asInstanceOf[String],
-      cwd = obj.cwd.asInstanceOf[String],
-      tools = obj.tools.asInstanceOf[js.Array[String]].toList.map(ToolName.fromString),
-      mcpServers = parseMcpServers(obj.mcp_servers),
-      model = Model.fromId(obj.model.asInstanceOf[String]),
-      permissionMode = PermissionMode.fromString(obj.permissionMode.asInstanceOf[String]),
-      slashCommands = obj.slash_commands.asInstanceOf[js.Array[String]].toList.map(CommandName(_)),
-      outputStyle = OutputStyle.fromString(obj.output_style.asInstanceOf[String]),
-      skills = obj.skills.asInstanceOf[js.Array[String]].toList.map(SkillName.apply),
-      plugins = parsePlugins(obj.plugins),
-      agents = obj.agents.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList),
-      betas = obj.betas.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList),
-      fastModeState = obj.fast_mode_state
-        .asInstanceOf[js.UndefOr[String]]
-        .toOption
-        .map(FastModeState.fromString)
+      apiKeySource = ApiKeySource.fromString(requiredString(obj, "apiKeySource", raw)),
+      claudeCodeVersion = requiredString(obj, "claude_code_version", raw),
+      cwd = requiredString(obj, "cwd", raw),
+      tools = stringArrayField(obj, "tools").map(ToolName.fromString),
+      mcpServers = dynamicArrayField(obj, "mcp_servers").flatMap(parseMcpServer),
+      model = Model.fromId(requiredString(obj, "model", raw)),
+      permissionMode = PermissionMode.fromString(requiredString(obj, "permissionMode", raw)),
+      slashCommands = stringArrayField(obj, "slash_commands").map(CommandName.apply),
+      outputStyle = OutputStyle.fromString(requiredString(obj, "output_style", raw)),
+      skills = stringArrayField(obj, "skills").map(SkillName.apply),
+      plugins = dynamicArrayField(obj, "plugins").flatMap(parsePlugin),
+      agents = optionStringArray(obj, "agents"),
+      betas = optionStringArray(obj, "betas"),
+      fastModeState = stringField(obj, "fast_mode_state").map(FastModeState.fromString)
     )
 
-  private def parseCompactBoundaryEvent(obj: js.Dynamic): SystemEvent.CompactBoundary =
-    // SDK uses compact_metadata nested object for boundary info
-    val metadata = obj.compact_metadata.asInstanceOf[js.Dynamic]
+  private def parseCompactBoundaryEvent(obj: js.Dynamic, raw: Json): SystemEvent.CompactBoundary =
+    val metadata = requiredDynamic(obj, "compact_metadata", raw, "system.compact_metadata")
     SystemEvent.CompactBoundary(
-      trigger = CompactTrigger.fromString(metadata.trigger.asInstanceOf[String]),
-      preTokens = metadata.pre_tokens.asInstanceOf[Int]
+      trigger = CompactTrigger.fromString(requiredString(metadata, "trigger", raw)),
+      preTokens = intField(metadata, "pre_tokens").getOrElse(0)
     )
 
   private def parseStatusEvent(obj: js.Dynamic): SystemEvent.Status =
     SystemEvent.Status(
-      status = obj.status.asInstanceOf[js.UndefOr[String]].toOption.map(SdkStatus.fromString),
-      permissionMode = obj.permissionMode.asInstanceOf[js.UndefOr[String]].toOption.map(PermissionMode.fromString)
+      status = stringField(obj, "status").map(SdkStatus.fromString),
+      permissionMode = stringField(obj, "permissionMode").map(PermissionMode.fromString)
     )
 
-  private def parseHookResponseEvent(obj: js.Dynamic): SystemEvent.HookResponse =
+  private def parseHookResponseEvent(obj: js.Dynamic, raw: Json): SystemEvent.HookResponse =
     SystemEvent.HookResponse(
-      hookId = obj.hook_id.asInstanceOf[String],
-      hookName = obj.hook_name.asInstanceOf[String],
-      hookEvent = obj.hook_event.asInstanceOf[String],
-      stdout = obj.stdout.asInstanceOf[js.UndefOr[String]].getOrElse(""),
-      stderr = obj.stderr.asInstanceOf[js.UndefOr[String]].getOrElse(""),
-      output = obj.output.asInstanceOf[js.UndefOr[String]].getOrElse(""),
-      exitCode = obj.exit_code.asInstanceOf[js.UndefOr[Int]].toOption,
-      outcome = HookOutcome.fromString(obj.outcome.asInstanceOf[String])
+      hookId = requiredString(obj, "hook_id", raw),
+      hookName = requiredString(obj, "hook_name", raw),
+      hookEvent = requiredString(obj, "hook_event", raw),
+      stdout = stringField(obj, "stdout").getOrElse(""),
+      stderr = stringField(obj, "stderr").getOrElse(""),
+      output = stringField(obj, "output").getOrElse(""),
+      exitCode = intField(obj, "exit_code"),
+      outcome = HookOutcome.fromString(requiredString(obj, "outcome", raw))
     )
 
-  private def parseHookStartedEvent(obj: js.Dynamic): SystemEvent.HookStarted =
+  private def parseHookStartedEvent(obj: js.Dynamic, raw: Json): SystemEvent.HookStarted =
     SystemEvent.HookStarted(
-      hookId = obj.hook_id.asInstanceOf[String],
-      hookName = obj.hook_name.asInstanceOf[String],
-      hookEvent = obj.hook_event.asInstanceOf[String]
+      hookId = requiredString(obj, "hook_id", raw),
+      hookName = requiredString(obj, "hook_name", raw),
+      hookEvent = requiredString(obj, "hook_event", raw)
     )
 
-  private def parseHookProgressEvent(obj: js.Dynamic): SystemEvent.HookProgress =
+  private def parseHookProgressEvent(obj: js.Dynamic, raw: Json): SystemEvent.HookProgress =
     SystemEvent.HookProgress(
-      hookId = obj.hook_id.asInstanceOf[String],
-      hookName = obj.hook_name.asInstanceOf[String],
-      hookEvent = obj.hook_event.asInstanceOf[String],
-      stdout = obj.stdout.asInstanceOf[js.UndefOr[String]].getOrElse(""),
-      stderr = obj.stderr.asInstanceOf[js.UndefOr[String]].getOrElse(""),
-      output = obj.output.asInstanceOf[js.UndefOr[String]].getOrElse("")
+      hookId = requiredString(obj, "hook_id", raw),
+      hookName = requiredString(obj, "hook_name", raw),
+      hookEvent = requiredString(obj, "hook_event", raw),
+      stdout = stringField(obj, "stdout").getOrElse(""),
+      stderr = stringField(obj, "stderr").getOrElse(""),
+      output = stringField(obj, "output").getOrElse("")
     )
 
   private def parseFilesPersistedEvent(obj: js.Dynamic): SystemEvent.FilesPersisted =
     SystemEvent.FilesPersisted(
-      files = obj.files.asInstanceOf[js.Array[js.Dynamic]].toList.map { f =>
-        PersistedFile(
-          filename = f.filename.asInstanceOf[String],
-          fileId = f.file_id.asInstanceOf[String]
-        )
+      files = dynamicArrayField(obj, "files").flatMap { file =>
+        for
+          filename <- stringField(file, "filename")
+          fileId <- stringField(file, "file_id")
+        yield PersistedFile(filename, fileId)
       },
-      failed = obj.failed.asInstanceOf[js.Array[js.Dynamic]].toList.map { f =>
-        FailedFile(
-          filename = f.filename.asInstanceOf[String],
-          error = f.error.asInstanceOf[String]
-        )
+      failed = dynamicArrayField(obj, "failed").flatMap { file =>
+        for
+          filename <- stringField(file, "filename")
+          error <- stringField(file, "error")
+        yield FailedFile(filename, error)
       },
-      processedAt = obj.processed_at.asInstanceOf[String]
+      processedAt = stringField(obj, "processed_at").getOrElse("")
     )
 
-  private def parseMcpServers(arr: js.Dynamic): List[McpServerStatus] =
-    if js.isUndefined(arr) then Nil
-    else
-      arr.asInstanceOf[js.Array[js.Dynamic]].toList.map { server =>
-        McpServerStatus(
-          name = server.name.asInstanceOf[String],
-          status = McpConnectionStatus.fromString(server.status.asInstanceOf[String]),
-          serverInfo = server.server_info.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.map { info =>
-            McpServerInfo(
-              name = info.name.asInstanceOf[String],
-              version = info.version.asInstanceOf[String]
-            )
-          },
-          error = server.error.asInstanceOf[js.UndefOr[String]].toOption,
-          scope = server.scope.asInstanceOf[js.UndefOr[String]].toOption,
-          tools = server.tools.asInstanceOf[js.UndefOr[js.Array[js.Dynamic]]].toOption.map { toolsArr =>
-            toolsArr.toList.map { tool =>
+  private def parseMcpServer(server: js.Dynamic): Option[McpServerStatus] =
+    for
+      name <- stringField(server, "name")
+      status <- stringField(server, "status")
+    yield
+      McpServerStatus(
+        name = name,
+        status = McpConnectionStatus.fromString(status),
+        serverInfo = dynamicField(server, "server_info").flatMap { info =>
+          for
+            serverName <- stringField(info, "name")
+            version <- stringField(info, "version")
+          yield McpServerInfo(serverName, version)
+        },
+        error = stringField(server, "error"),
+        scope = stringField(server, "scope"),
+        tools = optionDynamicArray(server, "tools").map { tools =>
+          tools.flatMap { tool =>
+            stringField(tool, "name").map { toolName =>
               McpToolInfo(
-                name = tool.name.asInstanceOf[String],
-                description = tool.description.asInstanceOf[js.UndefOr[String]].toOption,
-                annotations = tool.annotations.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.map { ann =>
+                name = toolName,
+                description = stringField(tool, "description"),
+                annotations = dynamicField(tool, "annotations").map { ann =>
                   McpToolAnnotations(
-                    readOnly = ann.readOnly.asInstanceOf[js.UndefOr[Boolean]].toOption,
-                    destructive = ann.destructive.asInstanceOf[js.UndefOr[Boolean]].toOption,
-                    openWorld = ann.openWorld.asInstanceOf[js.UndefOr[Boolean]].toOption
+                    readOnly = booleanField(ann, "readOnly"),
+                    destructive = booleanField(ann, "destructive"),
+                    openWorld = booleanField(ann, "openWorld")
                   )
                 }
               )
             }
           }
-        )
-      }
+        }
+      )
 
-  private def parsePlugins(arr: js.Dynamic): List[PluginInfo] =
-    if js.isUndefined(arr) then Nil
+  private def parsePlugin(plugin: js.Dynamic): Option[PluginInfo] =
+    for
+      name <- stringField(plugin, "name")
+      path <- stringField(plugin, "path")
+    yield PluginInfo(name, path)
+
+  private def parseModelUsage(obj: js.Dynamic): ModelUsage =
+    ModelUsage(
+      inputTokens = intField(obj, "input_tokens").getOrElse(0),
+      outputTokens = intField(obj, "output_tokens").getOrElse(0),
+      cacheReadInputTokens = intField(obj, "cache_read_input_tokens").getOrElse(0),
+      cacheCreationInputTokens = intField(obj, "cache_creation_input_tokens").getOrElse(0)
+    )
+
+  private def parseModelUsageFlexible(obj: js.Dynamic): ModelUsage =
+    ModelUsage(
+      inputTokens = intField(obj, "input_tokens").orElse(intField(obj, "total_tokens")).getOrElse(0),
+      outputTokens = intField(obj, "output_tokens").getOrElse(0),
+      cacheReadInputTokens = intField(obj, "cache_read_input_tokens").getOrElse(0),
+      cacheCreationInputTokens = intField(obj, "cache_creation_input_tokens").getOrElse(0)
+    )
+
+  private def parseModelUsageMap(obj: js.Dynamic): Map[String, PerModelUsage] =
+    obj.asInstanceOf[js.Dictionary[js.Dynamic]].toMap.map { case (modelId, usage) =>
+      modelId -> PerModelUsage(
+        inputTokens = intField(usage, "inputTokens").getOrElse(0),
+        outputTokens = intField(usage, "outputTokens").getOrElse(0),
+        cacheReadInputTokens = intField(usage, "cacheReadInputTokens").getOrElse(0),
+        cacheCreationInputTokens = intField(usage, "cacheCreationInputTokens").getOrElse(0),
+        webSearchRequests = intField(usage, "webSearchRequests").getOrElse(0),
+        costUSD = doubleField(usage, "costUSD").getOrElse(0.0),
+        contextWindow = intField(usage, "contextWindow").getOrElse(0),
+        maxOutputTokens = intField(usage, "maxOutputTokens").getOrElse(0)
+      )
+    }
+
+  private def parsePermissionDenial(denial: js.Dynamic): PermissionDenial =
+    PermissionDenial(
+      toolName = ToolName.fromString(stringField(denial, "tool_name").getOrElse("unknown")),
+      toolUseId = ToolUseId(stringField(denial, "tool_use_id").getOrElse("")),
+      toolInput = anyField(denial, "tool_input").map(jsToJson).getOrElse(Json.Null)
+    )
+
+  private def asDynamicObject(value: js.Any, raw: Json): js.Dynamic =
+    if value == null || js.isUndefined(value) then
+      throw MessageParseException("Expected SDK payload object but received null/undefined", raw)
     else
-      arr.asInstanceOf[js.Array[js.Dynamic]].toList.map { plugin =>
-        PluginInfo(
-          name = plugin.name.asInstanceOf[String],
-          path = plugin.path.asInstanceOf[String]
-        )
-      }
+      val valueType = js.typeOf(value)
+      if valueType == "object" || valueType == "function" then value.asInstanceOf[js.Dynamic]
+      else throw MessageParseException(s"Expected SDK payload object but received $valueType", raw)
 
-  /** Convert a JavaScript value to zio-json AST */
+  private def envelopeContext(obj: js.Dynamic): EnvelopeContext =
+    EnvelopeContext(
+      uuid = stringField(obj, "uuid").map(MessageUuid.apply),
+      sessionId = stringField(obj, "session_id").map(SessionId.apply),
+      parentToolUseId = stringField(obj, "parent_tool_use_id").map(ToolUseId.apply)
+    )
+
+  private def unknownEnvelope(
+      raw: Json,
+      rawType: String,
+      rawSubtype: Option[String],
+      context: EnvelopeContext
+  ): UnknownEnvelope =
+    UnknownEnvelope(
+      raw = raw,
+      rawType = rawType,
+      rawSubtype = rawSubtype,
+      uuid = context.uuid,
+      sessionId = context.sessionId,
+      parentToolUseId = context.parentToolUseId
+    )
+
+  private def requiredUuid(obj: js.Dynamic, raw: Json): MessageUuid =
+    MessageUuid(requiredString(obj, "uuid", raw))
+
+  private def requiredSessionId(obj: js.Dynamic, raw: Json): SessionId =
+    SessionId(requiredString(obj, "session_id", raw))
+
+  private def requiredDynamic(obj: js.Dynamic, field: String, raw: Json, context: String): js.Dynamic =
+    dynamicField(obj, field).getOrElse {
+      throw MessageParseException(s"Missing required object field '$field' in $context", raw)
+    }
+
+  private def requiredArray(obj: js.Dynamic, field: String, raw: Json): js.Array[js.Any] =
+    anyField(obj, field)
+      .filter(js.Array.isArray)
+      .map(_.asInstanceOf[js.Array[js.Any]])
+      .getOrElse(throw MessageParseException(s"Missing required array field '$field'", raw))
+
+  private def requiredString(obj: js.Dynamic, field: String, raw: Json): String =
+    stringField(obj, field).getOrElse {
+      throw MessageParseException(s"Missing required string field '$field'", raw)
+    }
+
+  private def anyField(obj: js.Dynamic, field: String): Option[js.Any] =
+    val value = obj.selectDynamic(field).asInstanceOf[js.Any]
+    if js.isUndefined(value) || value == null then None else Some(value)
+
+  private def dynamicField(obj: js.Dynamic, field: String): Option[js.Dynamic] =
+    anyField(obj, field).map(_.asInstanceOf[js.Dynamic])
+
+  private def dynamicArrayField(obj: js.Dynamic, field: String): List[js.Dynamic] =
+    optionDynamicArray(obj, field).getOrElse(Nil)
+
+  private def optionDynamicArray(obj: js.Dynamic, field: String): Option[List[js.Dynamic]] =
+    anyField(obj, field)
+      .filter(js.Array.isArray)
+      .map(_.asInstanceOf[js.Array[js.Dynamic]].toList)
+
+  private def stringArrayField(obj: js.Dynamic, field: String): List[String] =
+    optionStringArray(obj, field).getOrElse(Nil)
+
+  private def optionStringArray(obj: js.Dynamic, field: String): Option[List[String]] =
+    anyField(obj, field)
+      .filter(js.Array.isArray)
+      .map(_.asInstanceOf[js.Array[js.Any]].toList.collect { case value if js.typeOf(value) == "string" =>
+        value.asInstanceOf[String]
+      })
+
+  private def stringField(obj: js.Dynamic, field: String): Option[String] =
+    anyField(obj, field).flatMap {
+      case value if js.typeOf(value) == "string" => Some(value.asInstanceOf[String])
+      case _                                      => None
+    }
+
+  private def booleanField(obj: js.Dynamic, field: String): Option[Boolean] =
+    anyField(obj, field).flatMap {
+      case value if js.typeOf(value) == "boolean" => Some(value.asInstanceOf[Boolean])
+      case _                                       => None
+    }
+
+  private def intField(obj: js.Dynamic, field: String): Option[Int] =
+    anyField(obj, field).flatMap {
+      case value if js.typeOf(value) == "number" => Some(value.asInstanceOf[Double].toInt)
+      case value if js.typeOf(value) == "string" => Try(value.asInstanceOf[String].toInt).toOption
+      case _                                      => None
+    }
+
+  private def longField(obj: js.Dynamic, field: String): Option[Long] =
+    anyField(obj, field).flatMap {
+      case value if js.typeOf(value) == "number" => Some(value.asInstanceOf[Double].toLong)
+      case value if js.typeOf(value) == "string" => Try(value.asInstanceOf[String].toLong).toOption
+      case _                                      => None
+    }
+
+  private def doubleField(obj: js.Dynamic, field: String): Option[Double] =
+    anyField(obj, field).flatMap {
+      case value if js.typeOf(value) == "number" => Some(value.asInstanceOf[Double])
+      case value if js.typeOf(value) == "string" => Try(value.asInstanceOf[String].toDouble).toOption
+      case _                                      => None
+    }
+
+  private def firstString(obj: js.Dynamic, fields: String*): Option[String] =
+    fields.iterator.flatMap(field => stringField(obj, field)).toSeq.headOption
+
+  private def firstBoolean(obj: js.Dynamic, fields: String*): Option[Boolean] =
+    fields.iterator.flatMap(field => booleanField(obj, field)).toSeq.headOption
+
   private def jsToJson(value: js.Any): Json =
-    val jsonStr = js.JSON.stringify(value)
-    jsonStr.fromJson[Json].getOrElse(Json.Null)
-
-  private def normalizeOptionalString(value: js.UndefOr[String]): Option[String] =
-    value.toOption.filter(_ != null)
+    if value == null || js.isUndefined(value) then Json.Null
+    else
+      val jsonStr = js.JSON.stringify(value)
+      jsonStr.fromJson[Json].getOrElse(Json.Null)

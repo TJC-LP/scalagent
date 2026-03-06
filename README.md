@@ -1,33 +1,44 @@
 # Scalagent
 
-A type-safe Scala.js SDK for the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk), providing idiomatic ZIO-based access to Claude's agentic capabilities.
+A type-safe Scala.js wrapper for `@anthropic-ai/claude-agent-sdk`, with idiomatic ZIO, forward-compatible message modeling, and policy-driven collection for long-running agent workloads.
+
+## Status
+
+- SDK baseline: `@anthropic-ai/claude-agent-sdk` `^0.2.69`
+- Current repo build version: `0.3.1-SNAPSHOT`
+- Scala version: `3.7.4`
+- Preferred JS runtime: `bun`
+- Runtime requirement: `ANTHROPIC_API_KEY`
+
+For a compatibility inventory against the installed SDK baseline, see `docs/COMPATIBILITY.md`.
 
 ## Features
 
-- **Single import convenience** — `import com.tjclp.scalagent.*` brings all types into scope
-- **ZIO + ZStream** integration for purely functional streaming
-- **Structured outputs** with compile-time JSON Schema generation
-- **Type-safe message ADT** mirroring the SDK's discriminated unions
-- **Fluent configuration builders** with Scala-native API
-- **Multi-turn conversations** via session management
-- **Tool definition DSL** for custom MCP tools
+- `ZStream`-based query and session APIs
+- Forward-compatible message ADT with `UnknownEnvelope` fallbacks
+- Deterministic query/session cleanup with idempotent `close()` behavior
+- Policy-driven collection via `CollectionPolicy` and `QueryCollector`
+- Semantic `ask()` helpers that prefer final result payloads over transcript concatenation
+- Main-thread skill preloading via `AgentOptions.withSkills(...)`
+- Structured outputs with compile-time schema derivation
+- Tool DSL, hooks, MCP server config, and multi-turn sessions
 
 ## Installation
 
-[![Maven Central](https://img.shields.io/maven-central/v/com.tjclp/scalagent_sjs1_3.svg)](https://central.sonatype.com/artifact/com.tjclp/scalagent_sjs1_3)
+Use the current published release when consuming from Maven Central. For local development against this repo, the build version is `0.3.1-SNAPSHOT`.
 
 ### Mill
 
 ```scala
 def ivyDeps = Seq(
-  mvn"com.tjclp::scalagent::0.2.4"
+  mvn"com.tjclp::scalagent::0.3.1-SNAPSHOT"
 )
 ```
 
 ### SBT
 
 ```scala
-libraryDependencies += "com.tjclp" %%% "scalagent" % "0.2.4"
+libraryDependencies += "com.tjclp" %%% "scalagent" % "0.3.1-SNAPSHOT"
 ```
 
 ### Maven
@@ -36,16 +47,16 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.2.4"
 <dependency>
   <groupId>com.tjclp</groupId>
   <artifactId>scalagent_sjs1_3</artifactId>
-  <version>0.2.4</version>
+  <version>0.3.1-SNAPSHOT</version>
 </dependency>
 ```
 
 ## Requirements
 
-- Mill build tool
-- Bun runtime (or Node.js 18+)
-- Scala 3.3.x
-- `ANTHROPIC_API_KEY` environment variable
+- Mill
+- Bun or Node.js 18+
+- Scala `3.7.4`
+- `ANTHROPIC_API_KEY`
 
 ## Quick Start
 
@@ -71,12 +82,9 @@ import zio.*
 
 object StreamingApp extends ZIOAppDefault:
   val run =
-    for
-      _ <- Console.printLine("Counting to 5...")
-      _ <- Claude.query("Count from 1 to 5, one number per line")
-             .textOnly
-             .foreach(text => Console.print(text).orDie)
-    yield ()
+    Claude.query("Count from 1 to 5, one number per line")
+      .textOnly
+      .foreach(text => Console.print(text).orDie)
 ```
 
 ### Multi-Turn Conversation
@@ -88,63 +96,110 @@ import zio.*
 object ConversationApp extends ZIOAppDefault:
   val run =
     for
-      session  <- ClaudeSession.create(AgentOptions.default.withModel(Model.Sonnet4_5))
-      _        <- session.send("Remember the number 42").runDrain
-      answer   <- session.ask("What number did I ask you to remember?")
-      _        <- Console.printLine(s"Claude remembered: $answer")
+      session <- ClaudeSession.create(AgentOptions.default.withModel(Model.Sonnet4_6))
+      _       <- session.send("Remember the number 42").runDrain
+      answer  <- session.ask("What number did I ask you to remember?")
+      _       <- Console.printLine(s"Claude remembered: $answer")
     yield ()
 ```
 
 ### Structured Output
-
-Get type-safe responses with compile-time JSON Schema generation:
 
 ```scala
 import com.tjclp.scalagent.*
 import zio.*
 import zio.json.*
 
-// Define your output type with optional field descriptions
-case class Analysis(
-  @description("Brief summary of findings") summary: String,
-  @description("Quality score from 0-100") score: Int,
-  suggestions: List[String]
-) derives JsonDecoder
-
-// Single-line schema derivation
+case class Analysis(summary: String, score: Int, suggestions: List[String]) derives JsonDecoder
 given StructuredOutput[Analysis] = StructuredOutput.derive[Analysis]
 
 object AnalysisApp extends ZIOAppDefault:
   val run =
     val options = AgentOptions.default
-      .withModel(Model.Sonnet4_5)
+      .withModel(Model.Sonnet4_6)
       .withStructuredOutput[Analysis]
 
     for
-      result  <- Claude.queryComplete("Analyze this code...", options)
-      analysis = result.outcome match
-        case s: ResultOutcome.Success => s.parseAs[Analysis]
-        case e: ResultOutcome.Error   => Left(e.errors.mkString(", "))
-      _       <- Console.printLine(s"Analysis: $analysis")
+      result   <- Claude.queryComplete("Analyze this code...", options)
+      analysis <- ZIO.fromEither(result.outcome.parseAs[Analysis])
+      _        <- Console.printLine(s"Analysis: $analysis")
     yield ()
 ```
 
-## Building
+## Collection Policies
 
-```bash
-# Install dependencies with Bun
-bun install
+`queryComplete()` and session collection are policy-driven so callers can control transcript retention explicitly.
 
-# Compile the project
-./mill agent.compile
+```scala
+import com.tjclp.scalagent.*
+import zio.*
 
-# Run the example (compiles and runs with Bun)
-bun run run
+val options = AgentOptions.default.withPromptSuggestions
 
-# Or manually:
-./mill examples.fastLinkJS
-bun run out/examples/fastLinkJS.dest/main.js
+val effect =
+  for
+    result <- Claude.queryComplete(
+      prompt = "Summarize the repository status",
+      options = options,
+      collectionPolicy = CollectionPolicy.BoundedRecent(
+        limit = 12,
+        includeStreamingDeltas = false,
+        stopAtResult = true
+      )
+    )
+    answer <- result.semanticTextOrFail
+  yield answer
 ```
+
+Available policies include:
+
+- `CollectionPolicy.Full`
+- `CollectionPolicy.NoStreamingDeltas`
+- `CollectionPolicy.UntilResult`
+- `CollectionPolicy.ResultOnly`
+- `CollectionPolicy.SummaryOnly`
+- `CollectionPolicy.Disabled`
+- `CollectionPolicy.BoundedRecent(...)`
+
+## Skill Preloading
+
+Top-level preloaded skills are exposed directly on `AgentOptions`.
+
+```scala
+val options = AgentOptions.default
+  .withSkills("slides", "spreadsheets")
+  .withSettingSources(SettingSource.User, SettingSource.Project)
+```
+
+Compatibility behavior:
+
+- preferred path: augment or synthesize a main-thread agent using SDK-native `agent` / `agents` / `AgentDefinition.skills`
+- fallback path: resolve `SKILL.md` files from configured setting sources and inject them into the effective system prompt
+- existing runtime skill loading via `withSkillsEnabled` remains available
+
+## Message Compatibility
+
+`scalagent` preserves known SDK message variants and degrades gracefully when the SDK evolves.
+
+Important properties:
+
+- unknown top-level messages become `AgentMessage.Unknown`
+- unknown system events become `SystemEvent.Unknown`
+- unknown content blocks become `ContentBlock.Unknown`
+- unknown deltas become `StreamDelta.Unknown`
+- unknown variants preserve raw JSON and envelope metadata in `UnknownEnvelope`
+- image content blocks are parsed into `ContentBlock.Image`
+- unrecoverable malformed payloads become `AgentError.MessageParseError`
+
+## Query and Session Lifecycle
+
+`QueryStream` and `ClaudeSession` are hardened for long-running use:
+
+- stream termination runs cleanup automatically
+- early consumer termination triggers generator cleanup
+- `interrupt()` attempts interruption and then cleanup
+- `close()` is idempotent
+- cleanup failures are recorded and surfaced as warnings without masking the primary outcome
 
 ## Configuration
 
@@ -152,209 +207,95 @@ Use `AgentOptions` to configure queries:
 
 ```scala
 val options = AgentOptions.default
-  .withModel(Model.Sonnet4_5)
+  .withModel(Model.Sonnet4_6)
   .withMaxTurns(10)
   .withMaxBudgetUsd(0.50)
   .withPermissionMode(PermissionMode.AcceptEdits)
   .withMcpServer("myserver", McpServerConfig.stdio("node", "server.js"))
 ```
 
-### Available Options
+Common builder methods include:
 
-| Option | Description |
-|--------|-------------|
-| `withModel(m)` | Set the model to use |
-| `withModelId(id)` | Set a custom/new model ID |
-| `withMaxTurns(n)` | Limit number of conversation turns |
-| `withMaxBudgetUsd(b)` | Set maximum cost budget |
-| `withPermissionMode(pm)` | Control permission handling |
-| `withMcpServer(name, config)` | Add an MCP server |
-| `withBypassPermissions` | Bypass all permission checks (dangerous!) |
-| `withIncludePartialMessages` | Include streaming partial messages |
-| `withStructuredOutput[T]` | Enable structured output with type-safe parsing |
-| `withMainAgent(name)` | Set agent for main conversation thread |
-| `withFileCheckpointing` | Enable file rewind capability |
-| `withFallbackModel(m)` | Set fallback model if primary fails |
-
-### Permission Modes
-
-- `Default` - Prompt user for each tool use
-- `AcceptEdits` - Auto-accept file edits
-- `BypassPermissions` - Skip all permission checks
-- `Plan` - Plan mode without execution
-- `DontAsk` - Deny unpermitted tools without prompting
-- `Delegate` - Delegated permission handling
-
-## Message Types
-
-The `AgentMessage` enum represents all message types from the SDK:
-
-```scala
-enum AgentMessage:
-  case Assistant(message, parentToolUseId, error, uuid, sessionId)
-  case User(message, parentToolUseId, isSynthetic, toolUseResult, uuid, sessionId)
-  case Result(outcome, uuid, sessionId)
-  case System(event, uuid, sessionId)
-  case StreamEvent(event, parentToolUseId, uuid, sessionId)
-  case ToolProgress(toolUseId, toolName, parentToolUseId, elapsedTimeSeconds, uuid, sessionId)
-  case TaskNotification(taskId, status, outputFile, summary, uuid, sessionId)
-  case ToolUseSummary(summary, precedingToolUseIds, uuid, sessionId)
-```
-
-### Task Status
-
-```scala
-enum TaskStatus:
-  case Completed, Failed, Stopped
-  case Custom(value: String)
-```
-
-### Result Outcomes
-
-```scala
-enum ResultOutcome:
-  case Success(durationMs, durationApiMs, numTurns, result, totalCostUsd, usage, ...)
-  case Error(reason, durationMs, durationApiMs, numTurns, totalCostUsd, usage, errors, ...)
-```
+- `withModel(...)`
+- `withSystemPrompt(...)`
+- `withMaxTurns(...)`
+- `withMaxBudgetUsd(...)`
+- `withPermissionMode(...)`
+- `withAllowedTools(...)`
+- `withMcpServer(...)`
+- `withStructuredOutput[T]`
+- `withMainAgent(...)`
+- `withSkills(...)`
+- `withSkillsEnabled`
+- `withFileCheckpointing`
+- `withFallbackModel(...)`
 
 ## Advanced Usage
 
 ### Raw Query Access
 
-For advanced control (interruption, permission mode changes):
-
 ```scala
 for
   queryStream <- ClaudeAgent.queryRaw("Complex task...")
-  fiber <- queryStream.messages.foreach(handleMessage).fork
-  _ <- ZIO.sleep(30.seconds)
-  _ <- queryStream.interrupt  // Cancel the query
-  _ <- fiber.join
+  fiber       <- queryStream.messages.foreach(handleMessage).fork
+  _           <- ZIO.sleep(30.seconds)
+  _           <- queryStream.interrupt
+  _           <- fiber.join
 yield ()
 ```
 
 ### QueryStream Control Methods
 
-The `QueryStream` provides methods for runtime control:
-
 | Method | Description |
 |--------|-------------|
-| `close()` | Abort running query and terminate process |
-| `reconnectMcpServer(name)` | Reconnect a specific MCP server |
-| `toggleMcpServer(name, enabled)` | Enable/disable an MCP server |
-| `rewindFiles(messageId, dryRun)` | Restore files to previous state (requires `withFileCheckpointing`) |
-| `setMcpServers(servers)` | Dynamically configure MCP servers |
-| `mcpServerStatus()` | Get MCP server connection status |
-| `supportedModels()` | Get list of supported models |
-| `accountInfo()` | Get account information |
+| `interrupt` | Interrupt the running query |
+| `close()` | Abort the query and terminate resources |
+| `setPermissionMode(...)` | Change permission handling |
+| `setModel(...)` | Change the active model |
+| `supportedModels` | Inspect SDK-supported models |
+| `mcpServerStatus` | Inspect MCP connection state |
+| `rewindFiles(...)` | Rewind tracked files |
+| `setMcpServers(...)` | Reconfigure MCP servers dynamically |
 
-### Custom Tool Definitions (Type-Safe)
-
-```scala
-import com.tjclp.scalagent.*
-import zio.json.*
-
-case class WeatherInput(location: String, unit: Option[String]) derives JsonDecoder
-object WeatherInput:
-  given ToolInput[WeatherInput] = ToolInput.derive[WeatherInput]
-
-val weatherTool = ToolDef.fromInput[WeatherInput](
-  name = "get_weather",
-  description = "Get current weather for a location"
-) { input =>
-  fetchWeather(input.location, input.unit.getOrElse("celsius")).map(ToolResult.Success(_))
-}
-```
-
-### Rich Tool Results (Multimodal + Errors)
-
-Tools can return arrays of content blocks (text, image, audio, resources), and you can emit
-custom error content when something fails:
-
-```scala
-val richTool = ToolDef.fromInput[WeatherInput](
-  name = "rich_content_demo",
-  description = "Return rich MCP content blocks"
-) { _ =>
-  val pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wIAAgMBAp9W8Z8AAAAASUVORK5CYII="
-  ToolResult.multi
-    .text("Here is rich content.")
-    .image(pngBase64, mime = "image/png")
-    .resourceLink("https://example.com/spec", description = Some("Spec link"))
-    .build
-}
-
-val errorTool = ToolDef.fromInput[WeatherInput](
-  name = "rich_error_demo",
-  description = "Return rich error content"
-) { _ =>
-  ToolResult.errorContents(
-    ToolContent.Text("Something went wrong."),
-    ToolContent.ResourceLink("https://example.com/help")
-  )
-}
-```
-
-### Macro Tool Definitions (@Tool)
-
-Prefer the macro-based style when you want minimal boilerplate and inline parameter docs.
-Return types can be `ToolResult`, `String`, `Task[ToolResult]`, or `Task[String]` (strings are wrapped as `ToolResult.text`).
+### Macro Tool Definitions
 
 ```scala
 import com.tjclp.scalagent.*
-import zio.*
 
 object MyTools:
-  enum Unit:
-    case Celsius, Fahrenheit
-
   @Tool("get_weather", "Get the current weather for a location")
   def getWeather(
       @Param("City or location name") location: String,
-      @Param("Temperature unit") unit: Option[Unit] = None
+      @Param("Temperature unit") unit: Option[String] = None
   ): String =
-    val u = unit.getOrElse(Unit.Celsius)
-    s"Weather in $location: 22°${u.toString.take(1)}"
-
-// One-liner server creation from annotated object
-val server = ToolMacros.createServer[MyTools.type]("macro-tools", runtime)
+    s"Weather in $location: 22°${unit.getOrElse("C")}"
 ```
 
-## Architecture
+## Building and Testing
 
-```
-┌─────────────────────────────────────────┐
-│         User Application                │
-├─────────────────────────────────────────┤
-│     Idiomatic Scala API (ZIO)           │
-│  - ClaudeAgent service                  │
-│  - ZStream[AgentMessage] streaming      │
-│  - Sealed trait message ADT             │
-│  - Type-safe config builders            │
-├─────────────────────────────────────────┤
-│     ScalablyTyped Raw Facades           │
-│  - js.Promise, js.UndefOr, native types │
-├─────────────────────────────────────────┤
-│   @anthropic-ai/claude-agent-sdk        │
-└─────────────────────────────────────────┘
+```bash
+bun install
+./mill --no-server agent.compile
+./mill --no-server agent.test
+./mill examples.list
+EXAMPLE=simple ./mill --no-server examples.run
 ```
 
 ## Project Structure
 
-```
+```text
 scalagent/
-├── build.mill                    # Mill build configuration
-├── package.json                  # NPM dependencies
-├── src/
-│   └── com/tjclp/scalagent/
-│       ├── messages/             # Message ADT
-│       ├── config/               # Configuration types
-│       ├── macros/               # Compile-time schema derivation
-│       ├── streaming/            # AsyncGenerator → ZStream
-│       ├── tools/                # Tool DSL skeleton
-│       └── ClaudeAgent.scala     # Main ZIO service
-└── examples/
-    └── SimpleQuery.scala         # Example applications
+├── build.mill
+├── package.json
+├── docs/
+├── examples/
+├── src/com/tjclp/scalagent/
+│   ├── config/
+│   ├── messages/
+│   ├── streaming/
+│   ├── tools/
+│   └── ClaudeAgent.scala
+└── test/src/com/tjclp/scalagent/
 ```
 
 ## License

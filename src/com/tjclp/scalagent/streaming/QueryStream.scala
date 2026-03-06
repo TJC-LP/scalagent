@@ -8,6 +8,12 @@ import com.tjclp.scalagent.config.PermissionMode
 import com.tjclp.scalagent.errors.AgentError
 import com.tjclp.scalagent.messages.AgentMessage
 
+final case class CleanupFailure(
+    operation: String,
+    message: String
+):
+  def description: String = s"$operation cleanup failed: $message"
+
 /** Raw Query interface from the SDK.
   *
   * This trait represents the SDK's Query object which extends AsyncGenerator and provides additional control methods.
@@ -76,6 +82,46 @@ trait RawQuery extends AsyncGenerator[js.Any, Unit, Unit]:
   */
 final class QueryStream private (rawQuery: RawQuery):
 
+  private enum CleanupMode:
+    case StreamTermination
+    case Interrupt
+    case Close
+
+  private var cleanupStarted = false
+  private val cleanupFailuresBuffer = scala.collection.mutable.ListBuffer.empty[CleanupFailure]
+
+  private def recordCleanupFailure(operation: String, throwable: Throwable): UIO[Unit] =
+    ZIO.succeed {
+      val message = Option(throwable.getMessage).getOrElse(throwable.toString)
+      cleanupFailuresBuffer += CleanupFailure(operation, message)
+    } *> ZIO.logWarning(s"QueryStream $operation cleanup failed: ${throwable.getMessage}")
+
+  private def runCleanup(mode: CleanupMode): UIO[Unit] =
+    ZIO.suspendSucceed {
+      if cleanupStarted then ZIO.unit
+      else
+        cleanupStarted = true
+        val returnEffect =
+          ZIO
+            .fromPromiseJS(rawQuery.`return`(js.undefined))
+            .unit
+            .catchAll(recordCleanupFailure("return", _))
+
+        val closeEffect =
+          mode match
+            case CleanupMode.Close =>
+              ZIO.attempt(rawQuery.close()).unit.catchAll(recordCleanupFailure("close", _))
+            case _ => ZIO.unit
+
+        returnEffect *> closeEffect
+    }
+
+  private def toAgentError(throwable: Throwable): AgentError =
+    throwable match
+      case parseError: MessageConverter.MessageParseException =>
+        AgentError.MessageParseError(parseError.message, Some(parseError.raw), parseError.cause)
+      case other => AgentError.fromThrowable(other)
+
   /** Stream of agent messages from this query.
     *
     * This stream will emit messages as they arrive from the SDK, converting each raw JavaScript message to the Scala
@@ -83,8 +129,8 @@ final class QueryStream private (rawQuery: RawQuery):
     */
   val messages: ZStream[Any, AgentError, AgentMessage] =
     AsyncIteratorOps
-      .toZStream(rawQuery)
-      .map(MessageConverter.fromRaw)
+      .toZStreamWithCleanup(rawQuery, runCleanup(CleanupMode.StreamTermination))
+      .mapZIO(raw => ZIO.attempt(MessageConverter.fromRaw(raw)).mapError(toAgentError))
       .mapError(AgentError.fromThrowable)
 
   /** Interrupt the current query execution.
@@ -92,7 +138,17 @@ final class QueryStream private (rawQuery: RawQuery):
     * This will stop the agent and cause the stream to complete.
     */
   def interrupt: Task[Unit] =
-    ZIO.fromPromiseJS(rawQuery.interrupt())
+    ZIO.suspend {
+      if cleanupStarted then ZIO.unit
+      else
+        ZIO
+          .fromPromiseJS(rawQuery.interrupt())
+          .either
+          .flatMap {
+            case Left(error)  => runCleanup(CleanupMode.Interrupt) *> ZIO.fail(error)
+            case Right(value) => runCleanup(CleanupMode.Interrupt).as(value)
+          }
+    }
 
   /** Change the permission mode for this session.
     *
@@ -206,7 +262,11 @@ final class QueryStream private (rawQuery: RawQuery):
     * After calling close(), no further messages will be received.
     */
   def close(): UIO[Unit] =
-    ZIO.succeed(rawQuery.close())
+    runCleanup(CleanupMode.Close)
+
+  /** Cleanup failures observed while closing or terminating the underlying query. */
+  def cleanupFailures: UIO[List[CleanupFailure]] =
+    ZIO.succeed(cleanupFailuresBuffer.toList)
 
   /** Reconnect an MCP server by name.
     *

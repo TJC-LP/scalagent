@@ -48,7 +48,9 @@ final class TestClaudeAgent(
 
   override def queryComplete(
       prompt: String,
-      opts: AgentOptions
+      opts: AgentOptions,
+      collectionPolicy: CollectionPolicy,
+      sink: QueryCollector.MessageSink
   ): IO[AgentError, QueryResult] =
     for
       _        <- promptsRef.update(_ :+ prompt)
@@ -57,25 +59,11 @@ final class TestClaudeAgent(
       result   <- maybeErr match
         case Some(err) => ZIO.fail(err)
         case None =>
-          responsesRef.get.map { msgs =>
-            val outcome = msgs.collectFirst { case AgentMessage.Result(o, _, _, _) => o }
-            QueryResult(
-              msgs,
-              outcome.getOrElse(
-                ResultOutcome.Error(
-                  reason = ErrorReason.DuringExecution,
-                  durationMs = 0,
-                  durationApiMs = 0,
-                  numTurns = 0,
-                  totalCostUsd = 0.0,
-                  usage = ModelUsage.empty,
-                  modelUsage = Map.empty,
-                  permissionDenials = Nil,
-                  errors = List("No result message in test responses")
-                )
-              )
-            )
-          }
+          QueryCollector.collect(
+            ZStream.fromZIO(responsesRef.get).flatMap(messages => ZStream.fromIterable(messages)),
+            collectionPolicy,
+            sink
+          )
     yield result
 
   override def queryRaw(

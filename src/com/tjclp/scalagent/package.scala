@@ -441,27 +441,11 @@ package object scalagent {
       *   .flatMap(r => Console.printLine(s"Cost: ${r.cost}"))
       * }}}
       */
-    def collectResult: ZIO[R, AgentError, QueryResult] =
-      stream.runCollect.map { chunk =>
-        val messages = chunk.toList
-        val outcome = messages.collectFirst { case AgentMessage.Result(o, _, _, _) => o }
-        QueryResult(
-          messages,
-          outcome.getOrElse(
-            ResultOutcome.Error(
-              reason = ErrorReason.DuringExecution,
-              durationMs = 0,
-              durationApiMs = 0,
-              numTurns = 0,
-              totalCostUsd = 0.0,
-              usage = ModelUsage.empty,
-              modelUsage = Map.empty,
-              permissionDenials = Nil,
-              errors = List("No result message received")
-            )
-          )
-        )
-      }
+    def collectResult(
+        policy: CollectionPolicy = CollectionPolicy.Full,
+        sink: QueryCollector.MessageSink = QueryCollector.noSink
+    ): ZIO[R, AgentError, QueryResult] =
+      QueryCollector.collect(stream, policy, sink)
 
     /** Extract only assistant messages from the stream.
       *

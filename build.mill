@@ -43,7 +43,7 @@ object agent extends ScalaJSModule with PublishModule {
   }
 
   def pomSettings = PomSettings(
-    description = "Scalagent - Type-safe Scala.js SDK for Claude Code CLI",
+    description = "Scalagent - Type-safe Scala.js wrapper for the Claude Agent SDK",
     organization = "com.tjclp",
     url = "https://github.com/TJC-LP/scalagent",
     licenses = Seq(License.MIT),

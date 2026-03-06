@@ -1,9 +1,9 @@
 {
   "name": "scalagent",
-  "version": "0.2.5-SNAPSHOT",
+  "version": "0.3.1-SNAPSHOT",
   "private": true,
   "type": "module",
-  "description": "Scalagent - Type-safe Scala.js SDK for Claude Code CLI",
+  "description": "Scalagent - Type-safe Scala.js wrapper for the Claude Agent SDK",
   "scripts": {
     "build": "mill agent.compile",
     "run": "mill examples.fastLinkJS && bun run out/examples/fastLinkJS.dest/main.js"
