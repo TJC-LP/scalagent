@@ -50,17 +50,17 @@ class SchemaToJsonSpec extends FunSuite:
     assertEquals(getString(json, "type"), Some("integer"))
     assertEquals(getString(json, "format"), Some("int64"))
 
-  test("Double schema converts to JSON Schema number with double format"):
+  test("Double schema converts to plain JSON Schema number"):
     val schema = Schema[Double]
     val json = SchemaToJson.convert(schema)
     assertEquals(getString(json, "type"), Some("number"))
-    assertEquals(getString(json, "format"), Some("double"))
+    assertEquals(getString(json, "format"), None)
 
-  test("Float schema converts to JSON Schema number with float format"):
+  test("Float schema converts to plain JSON Schema number"):
     val schema = Schema[Float]
     val json = SchemaToJson.convert(schema)
     assertEquals(getString(json, "type"), Some("number"))
-    assertEquals(getString(json, "format"), Some("float"))
+    assertEquals(getString(json, "format"), None)
 
   test("Boolean schema converts to JSON Schema boolean"):
     val schema = Schema[Boolean]

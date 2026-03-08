@@ -63,9 +63,11 @@ object Claude:
     *   The text response from Claude
     */
   def ask(prompt: String, options: AgentOptions = AgentOptions.default): IO[AgentError, String] =
-    query(prompt, options).runCollect.map { messages =>
-      messages.toList.flatMap(_.text).mkString("\n")
-    }
+    queryComplete(
+      prompt,
+      options,
+      CollectionPolicy.BoundedRecent(limit = 12, includeStreamingDeltas = false, stopAtResult = true)
+    ).flatMap(_.semanticTextOrFail)
 
   /** Send a query and stream the responses.
     *
@@ -110,8 +112,13 @@ object Claude:
     * @return
     *   A QueryResult with all messages and outcome
     */
-  def queryComplete(prompt: String, options: AgentOptions = AgentOptions.default): IO[AgentError, QueryResult] =
-    query(prompt, options).collectResult
+  def queryComplete(
+      prompt: String,
+      options: AgentOptions = AgentOptions.default,
+      collectionPolicy: CollectionPolicy = CollectionPolicy.Full,
+      sink: QueryCollector.MessageSink = QueryCollector.noSink
+  ): IO[AgentError, QueryResult] =
+    ClaudeAgent.queryComplete(prompt, options, collectionPolicy, sink).provideLayer(ClaudeAgent.live)
 
   // ============================================================================
   // Session Operations

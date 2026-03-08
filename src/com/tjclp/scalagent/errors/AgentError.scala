@@ -1,6 +1,7 @@
 package com.tjclp.scalagent.errors
 
 import zio.json.*
+import zio.json.ast.Json
 import com.tjclp.scalagent.types.{SessionId, ToolUseId}
 
 /** Typed error ADT for Claude Agent operations.
@@ -89,6 +90,14 @@ object AgentError:
   /** Unknown or unexpected error from SDK */
   final case class Unknown(
       message: String,
+      cause: Option[Throwable] = None
+  ) extends AgentError:
+    override def getCause: Throwable = cause.orNull
+
+  /** A streamed SDK payload could not be parsed into the Scala model. */
+  final case class MessageParseError(
+      message: String,
+      raw: Option[Json] = None,
       cause: Option[Throwable] = None
   ) extends AgentError:
     override def getCause: Throwable = cause.orNull

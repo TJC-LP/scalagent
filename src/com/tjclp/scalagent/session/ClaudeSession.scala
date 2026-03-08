@@ -6,10 +6,12 @@ import scala.scalajs.js.JSConverters.*
 import scala.concurrent.ExecutionContext.Implicits.global
 import zio.*
 import zio.stream.*
+import scala.util.Try
+import com.tjclp.scalagent.{CollectionPolicy, QueryCollector, QueryResult}
 import com.tjclp.scalagent.config.*
 import com.tjclp.scalagent.errors.*
 import com.tjclp.scalagent.messages.*
-import com.tjclp.scalagent.streaming.{AsyncIterator, AsyncIteratorOps, MessageConverter}
+import com.tjclp.scalagent.streaming.{AsyncGenerator, AsyncIteratorOps, CleanupFailure, MessageConverter}
 import com.tjclp.scalagent.types.SessionId
 
 /** A session-based interface for multi-turn conversations with Claude.
@@ -58,6 +60,13 @@ trait ClaudeSession[S <: SessionState]:
     */
   def sendComplete(message: String)(using S =:= Open): IO[AgentError, List[AgentMessage]]
 
+  /** Send a message and collect a policy-driven query result. */
+  def collect(
+      message: String,
+      collectionPolicy: CollectionPolicy = CollectionPolicy.Full,
+      sink: QueryCollector.MessageSink = QueryCollector.noSink
+  )(using S =:= Open): IO[AgentError, QueryResult]
+
   /** Send a message and get just the text response.
     *
     * Convenience method that extracts and concatenates all text content.
@@ -92,18 +101,19 @@ object ClaudeSession:
     (for
       runtime <- ZIO.runtime[Any]
       session <- ZIO.attempt {
-        val rawOptions = options.toRaw.asInstanceOf[js.Dynamic]
+        val preparedOptions = AgentOptionsCompatibility.prepare(options)
+        val rawOptions = preparedOptions.toRaw.asInstanceOf[js.Dynamic]
 
         // Wire up hooks if any are configured
-        if options.hooks.nonEmpty then
-          rawOptions.hooks = options.hooksToRaw(runtime)
+        if preparedOptions.hooks.nonEmpty then
+          rawOptions.hooks = preparedOptions.hooksToRaw(runtime)
 
         // Wire up subagents with runtime hook callbacks if present
-        if options.agents.nonEmpty then
-          rawOptions.agents = options.agentsToRaw(runtime)
+        if preparedOptions.agents.nonEmpty then
+          rawOptions.agents = preparedOptions.agentsToRaw(runtime)
 
         // Wire up canUseTool permission handler if configured
-        options.canUseToolToRaw(runtime).foreach { handler =>
+        preparedOptions.canUseToolToRaw(runtime).foreach { handler =>
           rawOptions.canUseTool = handler
         }
 
@@ -125,19 +135,20 @@ object ClaudeSession:
     (for
       runtime <- ZIO.runtime[Any]
       session <- ZIO.attempt {
-        val rawOptions = options.toRaw.asInstanceOf[js.Dynamic]
+        val preparedOptions = AgentOptionsCompatibility.prepare(options)
+        val rawOptions = preparedOptions.toRaw.asInstanceOf[js.Dynamic]
         rawOptions.resume = sessionId.value
 
         // Wire up hooks if any are configured
-        if options.hooks.nonEmpty then
-          rawOptions.hooks = options.hooksToRaw(runtime)
+        if preparedOptions.hooks.nonEmpty then
+          rawOptions.hooks = preparedOptions.hooksToRaw(runtime)
 
         // Wire up subagents with runtime hook callbacks if present
-        if options.agents.nonEmpty then
-          rawOptions.agents = options.agentsToRaw(runtime)
+        if preparedOptions.agents.nonEmpty then
+          rawOptions.agents = preparedOptions.agentsToRaw(runtime)
 
         // Wire up canUseTool permission handler if configured
-        options.canUseToolToRaw(runtime).foreach { handler =>
+        preparedOptions.canUseToolToRaw(runtime).foreach { handler =>
           rawOptions.canUseTool = handler
         }
 
@@ -146,58 +157,137 @@ object ClaudeSession:
       }
     yield ClaudeSessionLive(session.asInstanceOf[RawSession], runtime)).mapError(AgentError.fromThrowable)
 
+  private[scalagent] def fromRaw(
+      raw: RawSession,
+      runtime: Runtime[Any] = Runtime.default
+  ): ClaudeSession[Open] =
+    ClaudeSessionLive(raw, runtime)
+
 /** Live implementation of ClaudeSession wrapping the JS session. */
 private final class ClaudeSessionLive(
     raw: RawSession,
     runtime: Runtime[Any]
 ) extends ClaudeSession[Open]:
 
+  private final class ActiveTurn(
+      val generator: AsyncGenerator[js.Dynamic, Unit, Unit]
+  ):
+    var cleaned = false
+
+  private var closed = false
+  private var activeTurn: Option[ActiveTurn] = None
+  private val cleanupFailuresBuffer = scala.collection.mutable.ListBuffer.empty[CleanupFailure]
+  private lazy val closedSession: ClaudeSession[Closed] = ClosedSessionImpl(safeSessionId)
+
+  private def safeSessionId: SessionId =
+    Try(SessionId(raw.sessionId)).getOrElse(SessionId("<uninitialized-session>"))
+
+  private def toAgentError(throwable: Throwable): AgentError =
+    throwable match
+      case parseError: MessageConverter.MessageParseException =>
+        AgentError.MessageParseError(parseError.message, Some(parseError.raw), parseError.cause)
+      case other => AgentError.fromThrowable(other)
+
+  private def recordCleanupFailure(operation: String, throwable: Throwable): UIO[Unit] =
+    ZIO.succeed {
+      val message = Option(throwable.getMessage).getOrElse(throwable.toString)
+      cleanupFailuresBuffer += CleanupFailure(operation, message)
+    } *> ZIO.logWarning(s"ClaudeSession $operation cleanup failed: ${throwable.getMessage}")
+
+  private def cleanupTurn(turn: ActiveTurn, operation: String): UIO[Unit] =
+    ZIO.suspendSucceed {
+      if turn.cleaned then ZIO.unit
+      else
+        turn.cleaned = true
+        if activeTurn.contains(turn) then activeTurn = None
+        ZIO
+          .fromPromiseJS(turn.generator.`return`(js.undefined))
+          .unit
+          .catchAll(recordCleanupFailure(operation, _))
+    }
+
+  private def cleanupActiveTurn(operation: String): UIO[Unit] =
+    activeTurn match
+      case Some(turn) => cleanupTurn(turn, operation)
+      case None       => ZIO.unit
+
   // sessionId is a getter that may throw if called before first message
   // For simplicity, we access it lazily
-  override lazy val sessionId: SessionId = SessionId(raw.sessionId)
+  override lazy val sessionId: SessionId = safeSessionId
 
   override def send(message: String)(using Open =:= Open): ZStream[Any, AgentError, AgentMessage] =
     ZStream.unwrap {
-      // V2 API: send() returns Promise<void>, stream() returns AsyncGenerator
-      ZIO.fromPromiseJS(raw.send(message))
-        .as {
-          // After sending, stream the response
-          val asyncIter = raw.stream().asInstanceOf[AsyncIterator[js.Dynamic]]
-          AsyncIteratorOps
-            .toZStream(asyncIter)
-            .map(MessageConverter.fromRaw)
-            .mapError(AgentError.fromThrowable)
-        }
-        .mapError(AgentError.fromThrowable)
+      ZIO.suspendSucceed {
+        if closed then ZIO.fail(AgentError.SessionClosed(safeSessionId))
+        else
+          cleanupFailuresBuffer.clear()
+          cleanupActiveTurn("send") *>
+            ZIO.fromPromiseJS(raw.send(message))
+              .as {
+                val turn = new ActiveTurn(raw.stream().asInstanceOf[AsyncGenerator[js.Dynamic, Unit, Unit]])
+                activeTurn = Some(turn)
+
+                AsyncIteratorOps
+                  .toZStreamWithCleanup(turn.generator, cleanupTurn(turn, "stream"))
+                  .mapZIO(rawMessage => ZIO.attempt(MessageConverter.fromRaw(rawMessage)).mapError(toAgentError))
+                  .mapError(AgentError.fromThrowable)
+              }
+              .mapError(AgentError.fromThrowable)
+      }
     }
 
   override def sendComplete(message: String)(using Open =:= Open): IO[AgentError, List[AgentMessage]] =
-    send(message).runCollect.map(_.toList)
+    collect(message).map(_.messages)
+
+  override def collect(
+      message: String,
+      collectionPolicy: CollectionPolicy,
+      sink: QueryCollector.MessageSink
+  )(using Open =:= Open): IO[AgentError, QueryResult] =
+    for
+      result <- QueryCollector.collect(send(message), collectionPolicy, sink)
+    yield
+      if cleanupFailuresBuffer.isEmpty then result
+      else result.copy(warnings = result.warnings ++ cleanupFailuresBuffer.toList.map(_.description))
 
   override def ask(message: String)(using Open =:= Open): IO[AgentError, String] =
-    sendComplete(message).map { messages =>
-      messages.flatMap(_.text).mkString("\n")
-    }
+    collect(
+      message,
+      CollectionPolicy.BoundedRecent(limit = 12, includeStreamingDeltas = false, stopAtResult = true)
+    ).flatMap(_.semanticTextOrFail)
 
   override def interrupt(using Open =:= Open): IO[AgentError, Unit] =
-    val maybeInterrupt = raw
-      .asInstanceOf[js.Dynamic]
-      .interrupt
-      .asInstanceOf[js.UndefOr[js.Function0[js.Any]]]
-      .toOption
+    ZIO.suspendSucceed {
+      if closed then ZIO.unit
+      else
+        val maybeInterrupt = raw
+          .asInstanceOf[js.Dynamic]
+          .interrupt
+          .asInstanceOf[js.UndefOr[js.Function0[js.Any]]]
+          .toOption
 
-    maybeInterrupt match
-      case Some(interruptFn) =>
-        ZIO.fromPromiseJS(js.Promise.resolve(interruptFn.apply())).unit
-          .mapError(AgentError.fromThrowable)
-      case None =>
-        ZIO.fail(AgentError.Unknown("Session interrupt is not supported by this SDK session instance"))
+        val interruptEffect = maybeInterrupt match
+          case Some(interruptFn) =>
+            ZIO.fromPromiseJS(js.Promise.resolve(interruptFn.apply())).unit
+          case None => ZIO.unit
+
+        interruptEffect
+          .either
+          .flatMap {
+            case Left(error)  => cleanupActiveTurn("interrupt") *> ZIO.fail(AgentError.fromThrowable(error))
+            case Right(value) => cleanupActiveTurn("interrupt").as(value)
+          }
+    }
 
   override def close(using Open =:= Open): IO[AgentError, ClaudeSession[Closed]] =
-    // V2 API: close() returns void (synchronous)
-    ZIO.attempt(raw.close())
-      .as(ClosedSessionImpl(sessionId))
-      .mapError(AgentError.fromThrowable)
+    ZIO.suspendSucceed {
+      if closed then ZIO.succeed(closedSession)
+      else
+        closed = true
+        cleanupActiveTurn("close") *>
+          ZIO.attempt(raw.close()).unit.catchAll(recordCleanupFailure("close", _)) *>
+          ZIO.succeed(closedSession)
+    }
 
 /** Implementation for a closed session.
   *
@@ -218,6 +308,13 @@ private final class ClosedSessionImpl(
   override def sendComplete(message: String)(using Closed =:= Open): IO[AgentError, List[AgentMessage]] =
     throw new IllegalStateException("Cannot send on a closed session")
 
+  override def collect(
+      message: String,
+      collectionPolicy: CollectionPolicy,
+      sink: QueryCollector.MessageSink
+  )(using Closed =:= Open): IO[AgentError, QueryResult] =
+    throw new IllegalStateException("Cannot send on a closed session")
+
   override def ask(message: String)(using Closed =:= Open): IO[AgentError, String] =
     throw new IllegalStateException("Cannot send on a closed session")
 
@@ -229,7 +326,7 @@ private final class ClosedSessionImpl(
 
 /** Raw JavaScript session type matching SDKSession interface */
 @js.native
-private trait RawSession extends js.Object:
+private[scalagent] trait RawSession extends js.Object:
   // sessionId is a getter - available after first message, or immediately for resumed sessions
   def sessionId: String = js.native
   // send returns Promise<void>

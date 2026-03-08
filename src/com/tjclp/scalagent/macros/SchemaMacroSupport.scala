@@ -31,11 +31,20 @@ object SchemaMacroSupport:
   ): List[(String, q.reflect.TypeRepr, Boolean, Option[String])] =
     import q.reflect.*
 
+    // In Scala 3, @description annotations on case class fields live on the
+    // constructor parameter symbols, not on the val symbols from caseFields.
+    // Look up both to find descriptions reliably.
+    val ctorAnnotations: Map[String, List[Term]] =
+      ownerType.typeSymbol.primaryConstructor.paramSymss.flatten
+        .map(p => p.name -> p.annotations)
+        .toMap
+
     ownerType.typeSymbol.caseFields.map { field =>
       val fieldName = field.name
       val fieldType = ownerType.memberType(field)
       val (isOptional, innerType) = splitOptional(fieldType)
       val descriptionOpt = extractDescription(fieldName, field.annotations)
+        .orElse(ctorAnnotations.get(fieldName).flatMap(anns => extractDescription(fieldName, anns)))
       (fieldName, innerType, isOptional, descriptionOpt)
     }
 

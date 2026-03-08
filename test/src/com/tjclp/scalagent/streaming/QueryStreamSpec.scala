@@ -23,6 +23,36 @@ class QueryStreamSpec extends FunSuite:
     val iterator = iteratorFactory()
     iterator.next().asInstanceOf[js.Promise[js.Dynamic]].toFuture.map(_.value.asInstanceOf[js.Dynamic])
 
+  private def promptSuggestion(text: String, uuid: String): js.Dynamic =
+    js.Dynamic.literal(
+      `type` = "prompt_suggestion",
+      suggestion = text,
+      uuid = uuid,
+      session_id = "session-1"
+    )
+
+  private def rawQueryFromMessages(
+      messages: List[js.Dynamic],
+      onReturn: () => js.Promise[js.Any] = () => js.Promise.resolve(js.Dynamic.literal(done = true)),
+      onInterrupt: () => js.Promise[Unit] = () => js.Promise.resolve(()),
+      onClose: () => Unit = () => ()
+  ): RawQuery =
+    var index = 0
+    val query = js.Dynamic.literal(
+      next = () =>
+        if index < messages.length then
+          val value = messages(index)
+          index += 1
+          js.Promise.resolve(js.Dynamic.literal(done = false, value = value))
+        else
+          js.Promise.resolve(js.Dynamic.literal(done = true)),
+      interrupt = () => onInterrupt(),
+      close = () => onClose(),
+      streamInput = (_: js.Any) => js.Promise.resolve(())
+    )
+    query.updateDynamic("return")((_: js.UndefOr[Unit]) => onReturn())
+    query.asInstanceOf[RawQuery]
+
   test("streamUserMessage emits SDKUserMessage shape"):
     var capturedInput: Option[js.Any] = None
     val rawQuery = js.Dynamic.literal(
@@ -53,3 +83,129 @@ class QueryStreamSpec extends FunSuite:
       }
     }
 
+  test("messages cleanup runs on early consumer termination"):
+    var returnCalls = 0
+    val rawQuery = rawQueryFromMessages(
+      messages = List(promptSuggestion("first", "msg-1"), promptSuggestion("second", "msg-2")),
+      onReturn = () =>
+        returnCalls += 1
+        js.Promise.resolve(js.Dynamic.literal(done = true))
+    )
+
+    val queryStream = QueryStream(rawQuery)
+
+    runTask(queryStream.messages.take(1).runCollect).map { messages =>
+      assertEquals(messages.size, 1)
+      assertEquals(returnCalls, 1)
+    }
+
+  test("close is idempotent"):
+    var returnCalls = 0
+    var closeCalls = 0
+    val rawQuery = rawQueryFromMessages(
+      messages = Nil,
+      onReturn = () =>
+        returnCalls += 1
+        js.Promise.resolve(js.Dynamic.literal(done = true)),
+      onClose = () => closeCalls += 1
+    )
+
+    val queryStream = QueryStream(rawQuery)
+
+    runTask(queryStream.close() *> queryStream.close() *> queryStream.cleanupFailures).map { failures =>
+      assertEquals(returnCalls, 1)
+      assertEquals(closeCalls, 1)
+      assertEquals(failures, Nil)
+    }
+
+  test("cleanup failures are recorded without failing close"):
+    var closeCalls = 0
+    val rawQuery = rawQueryFromMessages(
+      messages = Nil,
+      onReturn = () => js.Promise.reject(js.Dynamic.literal(message = "boom")),
+      onClose = () => closeCalls += 1
+    )
+
+    val queryStream = QueryStream(rawQuery)
+
+    runTask(queryStream.close() *> queryStream.cleanupFailures).map { failures =>
+      assertEquals(closeCalls, 1)
+      assertEquals(failures.map(_.operation), List("return"))
+      assert(failures.headOption.exists(_.message.nonEmpty))
+    }
+
+  test("normal completion runs cleanup"):
+    var returnCalls = 0
+    val rawQuery = rawQueryFromMessages(
+      messages = List(promptSuggestion("only", "msg-1")),
+      onReturn = () =>
+        returnCalls += 1
+        js.Promise.resolve(js.Dynamic.literal(done = true))
+    )
+
+    val queryStream = QueryStream(rawQuery)
+
+    runTask(queryStream.messages.runCollect).map { messages =>
+      assertEquals(messages.size, 1)
+      assertEquals(returnCalls, 1)
+    }
+
+  test("interrupt runs cleanup"):
+    var returnCalls = 0
+    var interruptCalls = 0
+    val rawQuery = rawQueryFromMessages(
+      messages = Nil,
+      onReturn = () =>
+        returnCalls += 1
+        js.Promise.resolve(js.Dynamic.literal(done = true)),
+      onInterrupt = () =>
+        interruptCalls += 1
+        js.Promise.resolve(())
+    )
+
+    val queryStream = QueryStream(rawQuery)
+
+    runTask(queryStream.interrupt *> queryStream.cleanupFailures).map { failures =>
+      assertEquals(interruptCalls, 1)
+      assertEquals(returnCalls, 1)
+      assertEquals(failures, Nil)
+    }
+
+  test("close after normal completion is a no-op"):
+    var returnCalls = 0
+    var closeCalls = 0
+    val rawQuery = rawQueryFromMessages(
+      messages = List(promptSuggestion("only", "msg-1")),
+      onReturn = () =>
+        returnCalls += 1
+        js.Promise.resolve(js.Dynamic.literal(done = true)),
+      onClose = () => closeCalls += 1
+    )
+
+    val queryStream = QueryStream(rawQuery)
+
+    runTask(queryStream.messages.runDrain *> queryStream.close() *> queryStream.cleanupFailures).map { failures =>
+      assertEquals(returnCalls, 1)
+      assertEquals(closeCalls, 0)
+      assertEquals(failures, Nil)
+    }
+
+  test("double interrupt is idempotent"):
+    var interruptCalls = 0
+    var returnCalls = 0
+    val rawQuery = rawQueryFromMessages(
+      messages = Nil,
+      onReturn = () =>
+        returnCalls += 1
+        js.Promise.resolve(js.Dynamic.literal(done = true)),
+      onInterrupt = () =>
+        interruptCalls += 1
+        js.Promise.resolve(())
+    )
+
+    val queryStream = QueryStream(rawQuery)
+
+    runTask(queryStream.interrupt *> queryStream.interrupt).map { _ =>
+      assertEquals(interruptCalls, 1)
+      assertEquals(returnCalls, 1)
+    }

@@ -47,7 +47,9 @@ trait ClaudeAgent:
     */
   def queryComplete(
       prompt: String,
-      options: AgentOptions = AgentOptions.default
+      options: AgentOptions = AgentOptions.default,
+      collectionPolicy: CollectionPolicy = CollectionPolicy.Full,
+      sink: QueryCollector.MessageSink = QueryCollector.noSink
   ): IO[AgentError, QueryResult]
 
   /** Execute a query and return the raw QueryStream for advanced control.
@@ -69,7 +71,10 @@ trait ClaudeAgent:
 /** Result of a completed query */
 final case class QueryResult(
     messages: List[AgentMessage],
-    outcome: ResultOutcome
+    outcome: ResultOutcome,
+    totalMessages: Int = 0,
+    sawResult: Boolean = false,
+    warnings: CollectedWarnings = CollectedWarnings.empty
 ):
   /** Get the final text result, or fail with AgentError if not successful */
   def text: Either[AgentError, String] = outcome match
@@ -85,6 +90,10 @@ final case class QueryResult(
     case _: ResultOutcome.Success => true
     case _: ResultOutcome.Error   => false
 
+  /** Whether the SDK emitted an explicit result envelope. */
+  def hasFormalResult: Boolean =
+    sawResult
+
   /** Check if there were any permission denials */
   def hasPermissionDenials: Boolean = outcome.permissionDenials.nonEmpty
 
@@ -97,6 +106,36 @@ final case class QueryResult(
   /** Extract all text content from all messages */
   def allText: String =
     messages.flatMap(_.text).mkString("\n")
+
+  /** Semantic final answer for the query, falling back to assistant text only when no result exists. */
+  def semanticText: Either[AgentError, String] =
+    QueryCollector.semanticText(this)
+
+  /** Semantic final answer as a ZIO effect. */
+  def semanticTextOrFail: IO[AgentError, String] =
+    QueryCollector.semanticTextOrFail(this)
+
+  /** Lightweight summary of this collection result. */
+  def summary: QuerySummary =
+    QuerySummary(
+      outcome = outcome,
+      totalMessages = totalMessages,
+      retainedMessages = messages.size,
+      warnings = warnings
+    )
+
+  /** Outcome without transcript retention. */
+  def outcomeOnly: OutcomeOnly = OutcomeOnly(outcome)
+
+  /** Usage-focused view over the final result. */
+  def usageSummary: UsageSummary =
+    UsageSummary(
+      totalCostUsd = outcome.totalCostUsd,
+      numTurns = outcome.numTurns,
+      usage = outcome.usage,
+      modelUsage = outcome.modelUsage
+    )
+
 
 object ClaudeAgent:
 
@@ -113,9 +152,11 @@ object ClaudeAgent:
   /** Accessor for the queryComplete method */
   def queryComplete(
       prompt: String,
-      options: AgentOptions = AgentOptions.default
+      options: AgentOptions = AgentOptions.default,
+      collectionPolicy: CollectionPolicy = CollectionPolicy.Full,
+      sink: QueryCollector.MessageSink = QueryCollector.noSink
   ): ZIO[ClaudeAgent, AgentError, QueryResult] =
-    ZIO.serviceWithZIO[ClaudeAgent](_.queryComplete(prompt, options))
+    ZIO.serviceWithZIO[ClaudeAgent](_.queryComplete(prompt, options, collectionPolicy, sink))
 
   /** Accessor for the queryRaw method */
   def queryRaw(
@@ -135,28 +176,17 @@ private final class ClaudeAgentLive extends ClaudeAgent:
 
   override def queryComplete(
       prompt: String,
-      options: AgentOptions
+      options: AgentOptions,
+      collectionPolicy: CollectionPolicy,
+      sink: QueryCollector.MessageSink
   ): IO[AgentError, QueryResult] =
-    query(prompt, options).runCollect.map { chunk =>
-      val messages = chunk.toList
-      val outcome = messages.collectFirst { case AgentMessage.Result(o, _, _, _) => o }
-      QueryResult(
-        messages,
-        outcome.getOrElse(
-          ResultOutcome.Error(
-            reason = ErrorReason.DuringExecution,
-            durationMs = 0,
-            durationApiMs = 0,
-            numTurns = 0,
-            totalCostUsd = 0.0,
-            usage = ModelUsage.empty,
-            modelUsage = Map.empty,
-            permissionDenials = Nil,
-            errors = List("No result message received")
-          )
-        )
-      )
-    }
+    for
+      stream <- queryRaw(prompt, options)
+      result <- QueryCollector.collect(stream.messages, collectionPolicy, sink)
+      cleanupWarnings <- stream.cleanupFailures
+    yield
+      if cleanupWarnings.isEmpty then result
+      else result.copy(warnings = result.warnings ++ cleanupWarnings.map(_.description))
 
   override def queryRaw(
       prompt: String,
@@ -165,19 +195,21 @@ private final class ClaudeAgentLive extends ClaudeAgent:
     (for
       runtime <- ZIO.runtime[Any]
       stream <- ZIO.attempt {
+        val preparedOptions = AgentOptionsCompatibility.prepare(options)
+
         // Convert options to raw JS object
-        val rawOptions = options.toRaw.asInstanceOf[js.Dynamic]
+        val rawOptions = preparedOptions.toRaw.asInstanceOf[js.Dynamic]
 
         // Wire up hooks if any are configured
-        if options.hooks.nonEmpty then
-          rawOptions.hooks = options.hooksToRaw(runtime)
+        if preparedOptions.hooks.nonEmpty then
+          rawOptions.hooks = preparedOptions.hooksToRaw(runtime)
 
         // Wire up subagents with runtime hook callbacks if present
-        if options.agents.nonEmpty then
-          rawOptions.agents = options.agentsToRaw(runtime)
+        if preparedOptions.agents.nonEmpty then
+          rawOptions.agents = preparedOptions.agentsToRaw(runtime)
 
         // Wire up canUseTool permission handler if configured
-        options.canUseToolToRaw(runtime).foreach { handler =>
+        preparedOptions.canUseToolToRaw(runtime).foreach { handler =>
           rawOptions.canUseTool = handler
         }
 

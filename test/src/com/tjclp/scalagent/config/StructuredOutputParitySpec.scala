@@ -22,6 +22,17 @@ class StructuredOutputParitySpec extends FunSuite:
   test("macro schema matches SchemaToJson for primitive fields"):
     assertSchemaParity[BasicOutput]
 
+  case class FloatingPointOutput(
+      ratio: Float,
+      score: Double
+  ) derives JsonDecoder
+
+  object FloatingPointOutput:
+    given Schema[FloatingPointOutput] = DeriveSchema.gen[FloatingPointOutput]
+
+  test("macro schema matches SchemaToJson for float and double fields"):
+    assertSchemaParity[FloatingPointOutput]
+
   enum Severity derives JsonDecoder:
     case Low, Medium, High
 

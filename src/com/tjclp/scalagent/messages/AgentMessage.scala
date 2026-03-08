@@ -151,6 +151,11 @@ enum AgentMessage:
       sessionId: SessionId
   )
 
+  /** Forward-compatible fallback for unknown top-level SDK messages */
+  case Unknown(
+      envelope: UnknownEnvelope
+  )
+
 object AgentMessage:
   given JsonDecoder[AgentMessage] = DeriveJsonDecoder.gen[AgentMessage]
   given JsonEncoder[AgentMessage] = DeriveJsonEncoder.gen[AgentMessage]
@@ -332,6 +337,7 @@ enum StreamDelta:
   case TextDelta(text: String)
   case InputJsonDelta(partialJson: String)
   case ThinkingDelta(thinking: String)
+  case Unknown(envelope: UnknownEnvelope)
 
 object StreamDelta:
   given JsonDecoder[StreamDelta] = DeriveJsonDecoder.gen[StreamDelta]

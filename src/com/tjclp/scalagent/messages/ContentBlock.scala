@@ -35,6 +35,11 @@ enum ContentBlock:
       mediaType: String
   )
 
+  /** Forward-compatible fallback for unknown content blocks */
+  case Unknown(
+      envelope: UnknownEnvelope
+  )
+
 object ContentBlock:
   given JsonDecoder[ContentBlock] = DeriveJsonDecoder.gen[ContentBlock]
   given JsonEncoder[ContentBlock] = DeriveJsonEncoder.gen[ContentBlock]

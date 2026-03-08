@@ -81,8 +81,8 @@ object SchemaToJson:
       case StandardType.StringType         => JsonSchemaAst.string
       case StandardType.IntType            => JsonSchemaAst.integer
       case StandardType.LongType           => JsonSchemaAst.integerWithFormat("int64")
-      case StandardType.FloatType          => JsonSchemaAst.numberWithFormat("float")
-      case StandardType.DoubleType         => JsonSchemaAst.numberWithFormat("double")
+      case StandardType.FloatType          => JsonSchemaAst.number
+      case StandardType.DoubleType         => JsonSchemaAst.number
       case StandardType.BoolType           => JsonSchemaAst.boolean
       case StandardType.ShortType          => JsonSchemaAst.integerWithFormat("int32")
       case StandardType.ByteType           => JsonSchemaAst.integerWithFormat("int32")
