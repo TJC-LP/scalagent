@@ -133,7 +133,28 @@ final case class AgentOptions(
     toolConfig: Option[ToolConfig] = None,
 
     /** Inline settings object or path to a settings file. */
-    settings: Option[SettingsConfig] = None
+    settings: Option[SettingsConfig] = None,
+
+    // Runtime configuration
+
+    /** Runtime executable to use for spawning Claude Code.
+      * One of "bun", "deno", or "node".
+      */
+    executable: Option[String] = None,
+
+    /** Additional arguments to pass to the runtime executable. */
+    executableArgs: List[String] = Nil,
+
+    /** Path to the Claude Code executable binary. */
+    pathToClaudeCodeExecutable: Option[String] = None,
+
+    /** Route permission requests through an MCP tool instead of the default prompt. */
+    permissionPromptToolName: Option[String] = None,
+
+    /** Callback for capturing stderr output from the Claude Code process.
+      * This is a synchronous callback that does not require ZIO bridging.
+      */
+    stderr: Option[String => Unit] = None
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -220,6 +241,13 @@ final case class AgentOptions(
     if strictMcpConfig then obj.strictMcpConfig = true
     toolConfig.foreach(tc => obj.toolConfig = tc.toRaw)
     settings.foreach(s => obj.settings = s.toRaw)
+
+    // Runtime configuration
+    executable.foreach(e => obj.executable = e)
+    if executableArgs.nonEmpty then obj.executableArgs = executableArgs.toJSArray
+    pathToClaudeCodeExecutable.foreach(p => obj.pathToClaudeCodeExecutable = p)
+    permissionPromptToolName.foreach(n => obj.permissionPromptToolName = n)
+    stderr.foreach(cb => obj.stderr = js.Any.fromFunction1(cb))
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks
@@ -803,6 +831,26 @@ object AgentOptions:
       */
     def withSettings(config: SettingsConfig): AgentOptions =
       opts.copy(settings = Some(config))
+
+    /** Set the runtime executable for Claude Code ("bun", "deno", or "node"). */
+    def withExecutable(exe: String): AgentOptions =
+      opts.copy(executable = Some(exe))
+
+    /** Set additional arguments for the runtime executable. */
+    def withExecutableArgs(args: String*): AgentOptions =
+      opts.copy(executableArgs = args.toList)
+
+    /** Set the path to the Claude Code executable binary. */
+    def withPathToClaudeCode(path: String): AgentOptions =
+      opts.copy(pathToClaudeCodeExecutable = Some(path))
+
+    /** Route permission requests through an MCP tool. */
+    def withPermissionPromptToolName(name: String): AgentOptions =
+      opts.copy(permissionPromptToolName = Some(name))
+
+    /** Set a callback for capturing stderr output from Claude Code. */
+    def withStderr(callback: String => Unit): AgentOptions =
+      opts.copy(stderr = Some(callback))
 
 /** System prompt configuration */
 enum SystemPromptConfig:

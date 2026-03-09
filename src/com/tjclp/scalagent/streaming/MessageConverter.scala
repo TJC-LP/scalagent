@@ -403,7 +403,10 @@ object MessageConverter:
       taskId = requiredString(obj, "task_id", raw),
       description = stringField(obj, "description").getOrElse(""),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
+      toolUseId = stringField(obj, "tool_use_id"),
+      taskType = stringField(obj, "task_type"),
+      prompt = stringField(obj, "prompt")
     )
 
   private def parseTaskProgress(obj: js.Dynamic, raw: Json): AgentMessage.TaskProgress =

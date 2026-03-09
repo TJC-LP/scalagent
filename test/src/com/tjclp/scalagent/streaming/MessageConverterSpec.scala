@@ -297,9 +297,9 @@ class MessageConverterSpec extends FunSuite:
     )
 
     MessageConverter.fromRaw(raw) match
-      case AgentMessage.TaskStarted(taskId, description, _, _) =>
-        assertEquals(taskId, "task-1")
-        assertEquals(description, "Running code review")
+      case ts: AgentMessage.TaskStarted =>
+        assertEquals(ts.taskId, "task-1")
+        assertEquals(ts.description, "Running code review")
       case other =>
         fail(s"Expected TaskStarted, got: $other")
 

@@ -1,6 +1,6 @@
 # Compatibility Matrix
 
-Baseline: `@anthropic-ai/claude-agent-sdk` `^0.2.69`
+Baseline: `@anthropic-ai/claude-agent-sdk` `^0.2.71`
 
 This document tracks the current compatibility posture of `scalagent` against the installed TypeScript SDK baseline.
 
@@ -8,7 +8,8 @@ This document tracks the current compatibility posture of `scalagent` against th
 
 | Surface | Status | Notes |
 |--------|--------|-------|
-| `Options` core fields | Exact / adapted mirror | Strongly-typed Scala wrappers over SDK options such as `model`, `cwd`, `systemPrompt`, `tools`, `allowedTools`, `disallowedTools`, `maxTurns`, `mcpServers`, `thinking`, `effort`, `promptSuggestions`, `sessionId`, and debug controls. |
+| `Options` core fields | Exact / adapted mirror | Strongly-typed Scala wrappers over SDK options such as `model`, `cwd`, `systemPrompt`, `tools`, `allowedTools`, `disallowedTools`, `maxTurns`, `mcpServers`, `thinking`, `effort`, `promptSuggestions`, `sessionId`, debug controls, `executable`, `executableArgs`, `pathToClaudeCodeExecutable`, `permissionPromptToolName`, and `stderr`. |
+| `AgentDefinition.maxTurns` | Exact mirror | Per-agent turn limit exposed via builder and JSON codecs. |
 | Top-level `Options.skills` | Scala-only compatibility shim | The installed SDK typings do not expose top-level `skills`; `AgentOptions.withSkills(...)` prefers a synthesized or augmented main agent, then falls back to prompt injection when needed. |
 | `AgentDefinition.skills` | Exact mirror | Passed through natively and used as the preferred compatibility path for preloaded skills. |
 | `Query` lifecycle | Adapted mirror | Wrapped by `QueryStream`, which preserves SDK control methods and adds cleanup-aware `ZStream` semantics plus idempotent `close()`. |
@@ -82,5 +83,14 @@ The following checks currently guard compatibility-sensitive behavior:
 - `test/src/com/tjclp/scalagent/streaming/QueryStreamSpec.scala`
 - `test/src/com/tjclp/scalagent/QueryCollectionSpec.scala`
 - `test/src/com/tjclp/scalagent/config/AgentOptionsSpec.scala`
+
+## Deferred Fields
+
+The following SDK fields are not yet exposed in the Scala facades due to complex type requirements:
+
+| Field | Reason |
+|-------|--------|
+| `onElicitation` | Requires `ElicitationRequest`/`ElicitationResult` facade types and async Promise bridging with AbortSignal |
+| `spawnClaudeCodeProcess` | Requires `SpawnOptions`/`SpawnedProcess` facades with Node.js stream types (Readable, Writable) |
 
 When bumping the SDK baseline, update this document alongside the relevant tests.

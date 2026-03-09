@@ -59,7 +59,9 @@ final case class AgentDefinition(
     /** Skill names to preload into the agent context.
       * Added in SDK 0.2.31.
       */
-    skills: List[String] = Nil
+    skills: List[String] = Nil,
+    /** Maximum number of turns this agent is allowed to take. */
+    maxTurns: Option[Int] = None
 ):
   /** Convert to raw JavaScript object for SDK.
     *
@@ -80,6 +82,7 @@ final case class AgentDefinition(
     // When false, rely on explicit tools whitelist
     // Note: hooks are not included here - use toRawWithHooks when hooks are configured
     if skills.nonEmpty then obj.skills = skills.toJSArray
+    maxTurns.foreach(mt => obj.maxTurns = mt)
     obj.asInstanceOf[js.Object]
 
   /** Convert to raw JavaScript object with hooks.
@@ -182,7 +185,8 @@ object AgentDefinition:
     val skillsField = Option.when(agent.skills.nonEmpty) {
       "skills" -> Json.Arr(agent.skills.map(Json.Str(_))*)
     }
-    val fields = baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField ++ skillsField
+    val maxTurnsField = agent.maxTurns.map(mt => "maxTurns" -> Json.Num(mt))
+    val fields = baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField ++ skillsField ++ maxTurnsField
     Json.Obj(zio.Chunk.fromIterable(fields)*)
   }
 
@@ -206,6 +210,7 @@ object AgentDefinition:
           case None => Map.empty
 
         val skillsList = fields.get("skills").flatMap(_.asArray).map(_.flatMap(_.asString).toList).getOrElse(Nil)
+        val maxTurnsOpt = fields.get("maxTurns").flatMap(_.asNumber).map(n => BigDecimal(n.value).toInt)
 
         AgentDefinition(
           description = description,
@@ -217,7 +222,8 @@ object AgentDefinition:
           inheritMcpTools = fields.get("inheritMcpTools").flatMap(_.asBoolean).getOrElse(true),
           permissionMode = fields.get("permissionMode").flatMap(_.asString).map(PermissionMode.fromString),
           hooks = hooksMap,
-          skills = skillsList
+          skills = skillsList,
+          maxTurns = maxTurnsOpt
         )
     case _ => Left("Expected JSON object")
   }
@@ -257,3 +263,7 @@ object AgentDefinition:
       */
     def withSkills(skillNames: String*): AgentDefinition =
       agent.copy(skills = skillNames.toList)
+
+    /** Set maximum turns for this agent. */
+    def withMaxTurns(n: Int): AgentDefinition =
+      agent.copy(maxTurns = Some(n))

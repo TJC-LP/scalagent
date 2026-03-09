@@ -140,7 +140,10 @@ enum AgentMessage:
       taskId: String,
       description: String,
       uuid: MessageUuid,
-      sessionId: SessionId
+      sessionId: SessionId,
+      toolUseId: Option[String] = None,
+      taskType: Option[String] = None,
+      prompt: Option[String] = None
   )
 
   /** Task progress update */
