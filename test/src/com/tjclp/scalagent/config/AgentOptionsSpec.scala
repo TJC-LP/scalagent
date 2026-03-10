@@ -497,11 +497,11 @@ class AgentOptionsSpec extends FunSuite:
   // ============================================
 
   test("withExecutable sets runtime executable"):
-    val opts = AgentOptions.default.withExecutable("bun")
-    assertEquals(opts.executable, Some("bun"))
+    val opts = AgentOptions.default.withExecutable(Executable.Bun)
+    assertEquals(opts.executable, Some(Executable.Bun))
 
   test("toRaw includes executable when set"):
-    val opts = AgentOptions.default.withExecutable("node")
+    val opts = AgentOptions.default.withExecutable(Executable.Node)
     val raw = opts.toRaw.asInstanceOf[js.Dynamic]
     assertEquals(raw.executable.asInstanceOf[String], "node")
 
@@ -559,6 +559,14 @@ class AgentOptionsSpec extends FunSuite:
   test("AgentDefinition withMaxTurns sets max turns"):
     val agent = AgentDefinition("Desc", "Prompt").withMaxTurns(5)
     assertEquals(agent.maxTurns, Some(5))
+
+  test("AgentDefinition withMaxTurns rejects non-positive values"):
+    intercept[IllegalArgumentException] {
+      AgentDefinition("Desc", "Prompt").withMaxTurns(0)
+    }
+    intercept[IllegalArgumentException] {
+      AgentDefinition("Desc", "Prompt").withMaxTurns(-3)
+    }
 
   test("AgentDefinition toRaw includes maxTurns when set"):
     val agent = AgentDefinition("Desc", "Prompt").withMaxTurns(10)

@@ -2,6 +2,7 @@ package com.tjclp.scalagent.config
 
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
+import scala.annotation.targetName
 import zio.json.*
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.mcp.McpToolName
@@ -210,7 +211,10 @@ object AgentDefinition:
           case None => Map.empty
 
         val skillsList = fields.get("skills").flatMap(_.asArray).map(_.flatMap(_.asString).toList).getOrElse(Nil)
-        val maxTurnsOpt = fields.get("maxTurns").flatMap(_.asNumber).map(n => BigDecimal(n.value).toInt)
+        val maxTurnsOpt = fields.get("maxTurns").flatMap(_.asNumber).flatMap { n =>
+          val bd = BigDecimal(n.value)
+          if bd.isValidInt then Some(bd.toInt) else None
+        }
 
         AgentDefinition(
           description = description,
@@ -264,6 +268,14 @@ object AgentDefinition:
     def withSkills(skillNames: String*): AgentDefinition =
       agent.copy(skills = skillNames.toList)
 
-    /** Set maximum turns for this agent. */
+    /** Set maximum turns for this agent.
+      * @throws IllegalArgumentException if n <= 0
+      */
     def withMaxTurns(n: Int): AgentDefinition =
+      require(n > 0, s"maxTurns must be positive, got: $n")
       agent.copy(maxTurns = Some(n))
+
+    /** Set maximum turns using a validated positive integer. */
+    @targetName("withMaxTurnsPositive")
+    def withMaxTurns(n: PositiveInt): AgentDefinition =
+      agent.copy(maxTurns = Some(n.value))

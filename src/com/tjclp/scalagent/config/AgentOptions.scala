@@ -137,10 +137,8 @@ final case class AgentOptions(
 
     // Runtime configuration
 
-    /** Runtime executable to use for spawning Claude Code.
-      * One of "bun", "deno", or "node".
-      */
-    executable: Option[String] = None,
+    /** Runtime executable to use for spawning Claude Code. */
+    executable: Option[Executable] = None,
 
     /** Additional arguments to pass to the runtime executable. */
     executableArgs: List[String] = Nil,
@@ -243,7 +241,7 @@ final case class AgentOptions(
     settings.foreach(s => obj.settings = s.toRaw)
 
     // Runtime configuration
-    executable.foreach(e => obj.executable = e)
+    executable.foreach(e => obj.executable = e.raw)
     if executableArgs.nonEmpty then obj.executableArgs = executableArgs.toJSArray
     pathToClaudeCodeExecutable.foreach(p => obj.pathToClaudeCodeExecutable = p)
     permissionPromptToolName.foreach(n => obj.permissionPromptToolName = n)
@@ -832,8 +830,8 @@ object AgentOptions:
     def withSettings(config: SettingsConfig): AgentOptions =
       opts.copy(settings = Some(config))
 
-    /** Set the runtime executable for Claude Code ("bun", "deno", or "node"). */
-    def withExecutable(exe: String): AgentOptions =
+    /** Set the runtime executable for Claude Code. */
+    def withExecutable(exe: Executable): AgentOptions =
       opts.copy(executable = Some(exe))
 
     /** Set additional arguments for the runtime executable. */
@@ -944,3 +942,9 @@ enum SettingsConfig:
   def toRaw: js.Any = this match
     case Path(p)       => p.asInstanceOf[js.Any]
     case Inline(obj)   => obj.asInstanceOf[js.Any]
+
+/** Runtime executable for spawning Claude Code. */
+enum Executable(val raw: String):
+  case Bun  extends Executable("bun")
+  case Deno extends Executable("deno")
+  case Node extends Executable("node")
