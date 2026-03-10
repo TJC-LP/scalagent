@@ -492,6 +492,105 @@ class AgentOptionsSpec extends FunSuite:
     val raw = opts.toRaw.asInstanceOf[js.Dynamic]
     assert(js.isUndefined(raw.agent))
 
+  // ============================================
+  // Runtime Configuration Fields (SDK 0.2.71)
+  // ============================================
+
+  test("withExecutable sets runtime executable"):
+    val opts = AgentOptions.default.withExecutable(Executable.Bun)
+    assertEquals(opts.executable, Some(Executable.Bun))
+
+  test("toRaw includes executable when set"):
+    val opts = AgentOptions.default.withExecutable(Executable.Node)
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.executable.asInstanceOf[String], "node")
+
+  test("toRaw omits executable when not set"):
+    val raw = AgentOptions.default.toRaw.asInstanceOf[js.Dynamic]
+    assert(js.isUndefined(raw.executable))
+
+  test("withExecutableArgs sets runtime args"):
+    val opts = AgentOptions.default.withExecutableArgs("--max-old-space-size=4096", "--harmony")
+    assertEquals(opts.executableArgs, List("--max-old-space-size=4096", "--harmony"))
+
+  test("toRaw includes executableArgs when non-empty"):
+    val opts = AgentOptions.default.withExecutableArgs("--flag")
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    val args = raw.executableArgs.asInstanceOf[js.Array[String]]
+    assertEquals(args.length, 1)
+    assertEquals(args(0), "--flag")
+
+  test("toRaw omits executableArgs when empty"):
+    val raw = AgentOptions.default.toRaw.asInstanceOf[js.Dynamic]
+    assert(js.isUndefined(raw.executableArgs))
+
+  test("withPathToClaudeCode sets executable path"):
+    val opts = AgentOptions.default.withPathToClaudeCode("/usr/local/bin/claude")
+    assertEquals(opts.pathToClaudeCodeExecutable, Some("/usr/local/bin/claude"))
+
+  test("toRaw includes pathToClaudeCodeExecutable when set"):
+    val opts = AgentOptions.default.withPathToClaudeCode("/usr/local/bin/claude")
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.pathToClaudeCodeExecutable.asInstanceOf[String], "/usr/local/bin/claude")
+
+  test("withPermissionPromptToolName sets MCP tool routing"):
+    val opts = AgentOptions.default.withPermissionPromptToolName("mcp__auth__approve")
+    assertEquals(opts.permissionPromptToolName, Some("mcp__auth__approve"))
+
+  test("toRaw includes permissionPromptToolName when set"):
+    val opts = AgentOptions.default.withPermissionPromptToolName("mcp__auth__approve")
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.permissionPromptToolName.asInstanceOf[String], "mcp__auth__approve")
+
+  test("withStderr sets stderr callback"):
+    var captured = ""
+    val opts = AgentOptions.default.withStderr(s => captured = s)
+    assert(opts.stderr.isDefined)
+
+  test("toRaw includes stderr as JS function when set"):
+    val opts = AgentOptions.default.withStderr(_ => ())
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(js.typeOf(raw.stderr), "function")
+
+  // ============================================
+  // AgentDefinition.maxTurns (SDK 0.2.71)
+  // ============================================
+
+  test("AgentDefinition withMaxTurns sets max turns"):
+    val agent = AgentDefinition("Desc", "Prompt").withMaxTurns(5)
+    assertEquals(agent.maxTurns, Some(5))
+
+  test("AgentDefinition withMaxTurns rejects non-positive values"):
+    intercept[IllegalArgumentException] {
+      AgentDefinition("Desc", "Prompt").withMaxTurns(0)
+    }
+    intercept[IllegalArgumentException] {
+      AgentDefinition("Desc", "Prompt").withMaxTurns(-3)
+    }
+
+  test("AgentDefinition toRaw includes maxTurns when set"):
+    val agent = AgentDefinition("Desc", "Prompt").withMaxTurns(10)
+    val raw = agent.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.maxTurns.asInstanceOf[Int], 10)
+
+  test("AgentDefinition toRaw omits maxTurns when not set"):
+    val agent = AgentDefinition("Desc", "Prompt")
+    val raw = agent.toRaw.asInstanceOf[js.Dynamic]
+    assert(js.isUndefined(raw.maxTurns))
+
+  test("AgentDefinition maxTurns JSON round-trip"):
+    import zio.json.*
+    val agent = AgentDefinition("Desc", "Prompt").withMaxTurns(7)
+    val json = agent.toJson
+    val decoded = json.fromJson[AgentDefinition]
+    decoded match
+      case Right(a) => assertEquals(a.maxTurns, Some(7))
+      case Left(err) => fail(s"Decode failed: $err")
+
+  // ============================================
+  // Misc
+  // ============================================
+
   test("PermissionMode.fromString parses unknown modes"):
     val custom = PermissionMode.fromString("some-custom-mode")
     assertEquals(custom.toRaw, "some-custom-mode")

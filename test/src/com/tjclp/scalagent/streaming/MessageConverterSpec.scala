@@ -297,9 +297,33 @@ class MessageConverterSpec extends FunSuite:
     )
 
     MessageConverter.fromRaw(raw) match
-      case AgentMessage.TaskStarted(taskId, description, _, _) =>
-        assertEquals(taskId, "task-1")
-        assertEquals(description, "Running code review")
+      case ts: AgentMessage.TaskStarted =>
+        assertEquals(ts.taskId, "task-1")
+        assertEquals(ts.description, "Running code review")
+        assertEquals(ts.toolUseId, None)
+        assertEquals(ts.taskType, None)
+        assertEquals(ts.prompt, None)
+      case other =>
+        fail(s"Expected TaskStarted, got: $other")
+
+  test("parses task_started with optional fields"):
+    val raw = js.Dynamic.literal(
+      `type` = "system",
+      subtype = "task_started",
+      task_id = "task-2",
+      description = "Running analysis",
+      uuid = "msg-14",
+      session_id = "session-1",
+      tool_use_id = "tu-abc",
+      task_type = "background",
+      prompt = "Analyze this code"
+    )
+
+    MessageConverter.fromRaw(raw) match
+      case ts: AgentMessage.TaskStarted =>
+        assertEquals(ts.toolUseId, Some("tu-abc"))
+        assertEquals(ts.taskType, Some("background"))
+        assertEquals(ts.prompt, Some("Analyze this code"))
       case other =>
         fail(s"Expected TaskStarted, got: $other")
 

@@ -2,6 +2,7 @@ package com.tjclp.scalagent.config
 
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
+import scala.annotation.targetName
 import zio.json.*
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.mcp.McpToolName
@@ -59,7 +60,9 @@ final case class AgentDefinition(
     /** Skill names to preload into the agent context.
       * Added in SDK 0.2.31.
       */
-    skills: List[String] = Nil
+    skills: List[String] = Nil,
+    /** Maximum number of turns this agent is allowed to take. */
+    maxTurns: Option[Int] = None
 ):
   /** Convert to raw JavaScript object for SDK.
     *
@@ -80,6 +83,7 @@ final case class AgentDefinition(
     // When false, rely on explicit tools whitelist
     // Note: hooks are not included here - use toRawWithHooks when hooks are configured
     if skills.nonEmpty then obj.skills = skills.toJSArray
+    maxTurns.foreach(mt => obj.maxTurns = mt)
     obj.asInstanceOf[js.Object]
 
   /** Convert to raw JavaScript object with hooks.
@@ -182,7 +186,8 @@ object AgentDefinition:
     val skillsField = Option.when(agent.skills.nonEmpty) {
       "skills" -> Json.Arr(agent.skills.map(Json.Str(_))*)
     }
-    val fields = baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField ++ skillsField
+    val maxTurnsField = agent.maxTurns.map(mt => "maxTurns" -> Json.Num(mt))
+    val fields = baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField ++ skillsField ++ maxTurnsField
     Json.Obj(zio.Chunk.fromIterable(fields)*)
   }
 
@@ -206,6 +211,10 @@ object AgentDefinition:
           case None => Map.empty
 
         val skillsList = fields.get("skills").flatMap(_.asArray).map(_.flatMap(_.asString).toList).getOrElse(Nil)
+        val maxTurnsOpt = fields.get("maxTurns").flatMap(_.asNumber).flatMap { n =>
+          val bd = BigDecimal(n.value)
+          if bd.isValidInt then Some(bd.toInt) else None
+        }
 
         AgentDefinition(
           description = description,
@@ -217,7 +226,8 @@ object AgentDefinition:
           inheritMcpTools = fields.get("inheritMcpTools").flatMap(_.asBoolean).getOrElse(true),
           permissionMode = fields.get("permissionMode").flatMap(_.asString).map(PermissionMode.fromString),
           hooks = hooksMap,
-          skills = skillsList
+          skills = skillsList,
+          maxTurns = maxTurnsOpt
         )
     case _ => Left("Expected JSON object")
   }
@@ -257,3 +267,15 @@ object AgentDefinition:
       */
     def withSkills(skillNames: String*): AgentDefinition =
       agent.copy(skills = skillNames.toList)
+
+    /** Set maximum turns for this agent.
+      * @throws IllegalArgumentException if n <= 0
+      */
+    def withMaxTurns(n: Int): AgentDefinition =
+      require(n > 0, s"maxTurns must be positive, got: $n")
+      agent.copy(maxTurns = Some(n))
+
+    /** Set maximum turns using a validated positive integer. */
+    @targetName("withMaxTurnsPositive")
+    def withMaxTurns(n: PositiveInt): AgentDefinition =
+      agent.copy(maxTurns = Some(n.value))
