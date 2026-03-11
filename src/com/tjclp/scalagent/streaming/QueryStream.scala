@@ -399,7 +399,8 @@ final case class ModelInfo(
     supportsEffort: Option[Boolean] = None,
     supportedEffortLevels: Option[List[String]] = None,
     supportsAdaptiveThinking: Option[Boolean] = None,
-    supportsFastMode: Option[Boolean] = None
+    supportsFastMode: Option[Boolean] = None,
+    supportsAutoMode: Option[Boolean] = None
 )
 
 object ModelInfo:
@@ -411,7 +412,8 @@ object ModelInfo:
       supportsEffort = obj.supportsEffort.asInstanceOf[js.UndefOr[Boolean]].toOption,
       supportedEffortLevels = obj.supportedEffortLevels.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList),
       supportsAdaptiveThinking = obj.supportsAdaptiveThinking.asInstanceOf[js.UndefOr[Boolean]].toOption,
-      supportsFastMode = obj.supportsFastMode.asInstanceOf[js.UndefOr[Boolean]].toOption
+      supportsFastMode = obj.supportsFastMode.asInstanceOf[js.UndefOr[Boolean]].toOption,
+      supportsAutoMode = obj.supportsAutoMode.asInstanceOf[js.UndefOr[Boolean]].toOption
     )
 
 /** Information about a supported subagent */
