@@ -60,6 +60,7 @@ final case class AgentCard(
     skills: List[AgentSkill] = Nil,
     security: List[SecurityRequirement] = Nil,
     securitySchemes: Map[String, SecurityScheme] = Map.empty,
+    signatures: List[AgentCardSignature] = Nil,
     supportsAuthenticatedExtendedCard: Boolean = false
 )
 object AgentCard:
@@ -73,7 +74,7 @@ object AgentCard:
 /** Agent provider/organization information */
 final case class AgentProvider(
     organization: String,
-    url: Option[String] = None
+    url: String
 )
 object AgentProvider:
   given JsonEncoder[AgentProvider] = DeriveJsonEncoder.gen[AgentProvider]
@@ -84,13 +85,24 @@ final case class AgentCapabilities(
     streaming: Boolean = true,
     pushNotifications: Boolean = false,
     stateTransitionHistory: Boolean = false,
-    extensions: List[String] = Nil
+    extensions: List[AgentExtension] = Nil
 )
 object AgentCapabilities:
   val default: AgentCapabilities = AgentCapabilities()
 
   given JsonEncoder[AgentCapabilities] = DeriveJsonEncoder.gen[AgentCapabilities]
   given JsonDecoder[AgentCapabilities] = DeriveJsonDecoder.gen[AgentCapabilities]
+
+/** Protocol extension declaration */
+final case class AgentExtension(
+    uri: String,
+    description: Option[String] = None,
+    params: Option[zio.json.ast.Json] = None,
+    required: Boolean = false
+)
+object AgentExtension:
+  given JsonEncoder[AgentExtension] = DeriveJsonEncoder.gen[AgentExtension]
+  given JsonDecoder[AgentExtension] = DeriveJsonDecoder.gen[AgentExtension]
 
 /** Alternative interface for agent communication */
 final case class AgentInterface(
@@ -109,11 +121,22 @@ final case class AgentSkill(
     tags: List[String] = Nil,
     examples: List[String] = Nil,
     inputModes: List[String] = Nil,
-    outputModes: List[String] = Nil
+    outputModes: List[String] = Nil,
+    security: List[SecurityRequirement] = Nil
 )
 object AgentSkill:
   given JsonEncoder[AgentSkill] = DeriveJsonEncoder.gen[AgentSkill]
   given JsonDecoder[AgentSkill] = DeriveJsonDecoder.gen[AgentSkill]
+
+/** AgentCard JWS signature (RFC 7515) */
+final case class AgentCardSignature(
+    `protected`: String,
+    signature: String,
+    header: Option[zio.json.ast.Json] = None
+)
+object AgentCardSignature:
+  given JsonEncoder[AgentCardSignature] = DeriveJsonEncoder.gen[AgentCardSignature]
+  given JsonDecoder[AgentCardSignature] = DeriveJsonDecoder.gen[AgentCardSignature]
 
 /** Security requirement (references a security scheme) */
 final case class SecurityRequirement(

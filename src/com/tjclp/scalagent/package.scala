@@ -354,6 +354,15 @@ package object scalagent {
   type AgentSkill = a2a.AgentSkill
   val AgentSkill = a2a.AgentSkill
 
+  type AgentExtension = a2a.AgentExtension
+  val AgentExtension = a2a.AgentExtension
+
+  type AgentCardSignature = a2a.AgentCardSignature
+  val AgentCardSignature = a2a.AgentCardSignature
+
+  type MessageSendConfiguration = a2a.MessageSendConfiguration
+  val MessageSendConfiguration = a2a.MessageSendConfiguration
+
   // --- macros package ---
   type Tool = macros.Tool
   type Param = macros.Param

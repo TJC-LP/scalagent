@@ -93,12 +93,15 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
       // Create request handler
       val requestHandler = new JsDefaultRequestHandler(card, taskStore, executor)
 
+      // Create transport handler for automatic JSON-RPC routing
+      val transportHandler = new JsJsonRpcTransportHandler(requestHandler.asInstanceOf[js.Dynamic])
+
       // Start Bun server with routes
       bunServer = BunServer.serve(
         js.Dynamic.literal(
           hostname = config.host,
           port = config.port,
-          fetch = createFetchHandler(requestHandler, card)
+          fetch = createFetchHandler(transportHandler, card)
         )
       )
 
@@ -158,7 +161,7 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
 
   /** Create the fetch handler for Bun.serve */
   private def createFetchHandler(
-      requestHandler: JsDefaultRequestHandler,
+      transportHandler: JsJsonRpcTransportHandler,
       card: JsAgentCard
   ): js.Function1[js.Dynamic, js.Promise[js.Dynamic]] =
     (req: js.Dynamic) => {
@@ -178,12 +181,12 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
           )
         )
       else if pathname == "/" && method == "POST" then
-        // JSON-RPC endpoint
+        // JSON-RPC endpoint - delegate to transport handler
         req
           .text()
           .asInstanceOf[js.Promise[String]]
           .`then`[js.Dynamic] { body =>
-            handleJsonRpc(body, requestHandler)
+            handleJsonRpc(body, transportHandler)
           }
       else
         // 404
@@ -195,43 +198,20 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         )
     }
 
-  /** Handle JSON-RPC request */
-  private def handleJsonRpc(body: String, requestHandler: JsDefaultRequestHandler): js.Promise[js.Dynamic] =
+  /** Handle JSON-RPC request via transport handler */
+  private def handleJsonRpc(body: String, transportHandler: JsJsonRpcTransportHandler): js.Promise[js.Dynamic] =
     val Response = js.Dynamic.global.Response
     val headers = js.Dynamic.literal(`Content-Type` = "application/json")
 
-    // Parse the JSON-RPC request with error handling
     try
       val request = JsJSON.parse(body)
-      val method = request.method.asInstanceOf[String]
-      val params = request.params
-      val requestId = request.id
-
-      // Route to the appropriate handler method
-      val resultPromise: js.Promise[js.Dynamic] = method match
-        case "message/send" => requestHandler.sendMessage(params, js.undefined)
-        case "tasks/get"    => requestHandler.getTask(params, js.undefined)
-        case "tasks/cancel" => requestHandler.cancelTask(params, js.undefined)
-        case _ =>
-          js.Promise.resolve(
-            js.Dynamic.literal(
-              error = js.Dynamic.literal(
-                code = -32601,
-                message = s"Method not found: $method"
-              )
-            )
-          )
-
-      // Wrap result in JSON-RPC response format
-      resultPromise
+      transportHandler
+        .handle(request)
         .`then`[js.Dynamic] { result =>
-          val response = js.Dynamic.literal(
-            jsonrpc = "2.0",
-            result = result,
-            id = requestId
-          )
+          // Check if result is an AsyncGenerator (streaming) or a regular response
+          val responseBody = JsJSON.stringify(result)
           js.Dynamic.newInstance(Response)(
-            JsJSON.stringify(response),
+            responseBody,
             js.Dynamic.literal(status = 200, headers = headers)
           )
         }
@@ -240,7 +220,7 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
           val response = js.Dynamic.literal(
             jsonrpc = "2.0",
             error = js.Dynamic.literal(code = -32603, message = errorMsg),
-            id = requestId
+            id = null
           )
           js.Dynamic.newInstance(Response)(
             JsJSON.stringify(response),
@@ -249,7 +229,6 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         }
     catch
       case e: Exception =>
-        // Return JSON-RPC parse error (-32700) for malformed JSON
         val response = js.Dynamic.literal(
           jsonrpc = "2.0",
           error = js.Dynamic.literal(code = -32700, message = s"Parse error: ${e.getMessage}"),

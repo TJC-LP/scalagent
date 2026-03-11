@@ -67,18 +67,21 @@ object A2AProtocol:
 /** Standard A2A transport types */
 enum A2ATransport:
   case JSONRPC
-  case REST
+  case GRPC
+  case HTTP_JSON
 
   def toRaw: String = this match
-    case JSONRPC => "JSONRPC"
-    case REST    => "REST"
+    case JSONRPC   => "JSONRPC"
+    case GRPC      => "GRPC"
+    case HTTP_JSON => "HTTP+JSON"
 
 object A2ATransport:
   given JsonEncoder[A2ATransport] = StringEnumJsonCodec.encoder(_.toRaw)
   given JsonDecoder[A2ATransport] = StringEnumJsonCodec.decoderOrFail {
-    case "JSONRPC" => Right(A2ATransport.JSONRPC)
-    case "REST"    => Right(A2ATransport.REST)
-    case other     => Left(s"Unknown transport: $other")
+    case "JSONRPC"  => Right(A2ATransport.JSONRPC)
+    case "GRPC"     => Right(A2ATransport.GRPC)
+    case "HTTP+JSON" => Right(A2ATransport.HTTP_JSON)
+    case other      => Left(s"Unknown transport: $other")
   }
 
 /** Standard well-known paths */

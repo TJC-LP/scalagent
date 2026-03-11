@@ -21,12 +21,14 @@ trait JsRequestContext extends js.Object:
   val taskId: String = js.native
   val contextId: String = js.native
   val task: js.UndefOr[JsTask] = js.native
+  val referenceTasks: js.UndefOr[js.Array[JsTask]] = js.native
+  val context: js.UndefOr[js.Dynamic] = js.native // ServerCallContext
 
 /** Event bus for publishing responses */
 @js.native
 trait JsExecutionEventBus extends js.Object:
-  /** Publish an event (Message or Task) */
-  def publish(event: JsMessage | JsTask): Unit = js.native
+  /** Publish an event (Message, Task, TaskStatusUpdateEvent, or TaskArtifactUpdateEvent) */
+  def publish(event: js.Any): Unit = js.native
 
   /** Signal that execution is finished */
   def finished(): Unit = js.native
@@ -37,30 +39,57 @@ trait JsExecutionEventBus extends js.Object:
 class JsDefaultRequestHandler(
     agentCard: JsAgentCard,
     taskStore: JsTaskStore,
-    executor: JsAgentExecutor
+    executor: JsAgentExecutor,
+    eventBusManager: js.UndefOr[js.Dynamic] = js.undefined,
+    pushNotificationStore: js.UndefOr[js.Dynamic] = js.undefined,
+    pushNotificationSender: js.UndefOr[js.Dynamic] = js.undefined,
+    extendedAgentCardProvider: js.UndefOr[js.Dynamic] = js.undefined
 ) extends js.Object:
-  def getAgentCard(): JsAgentCard = js.native
-
-  /** Send a message and get a task/message response */
+  def getAgentCard(): js.Promise[JsAgentCard] = js.native
+  def getAuthenticatedExtendedAgentCard(context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[JsAgentCard] = js.native
   def sendMessage(params: js.Dynamic, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] = js.native
-
-  /** Get task by ID */
+  def sendMessageStream(params: js.Dynamic, context: js.UndefOr[js.Dynamic] = js.undefined): js.Any = js.native // AsyncGenerator
   def getTask(params: js.Dynamic, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] = js.native
-
-  /** Cancel a running task */
   def cancelTask(params: js.Dynamic, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] = js.native
+  def setTaskPushNotificationConfig(params: js.Dynamic, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] =
+    js.native
+  def getTaskPushNotificationConfig(params: js.Dynamic, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] =
+    js.native
+  def listTaskPushNotificationConfigs(params: js.Dynamic, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] =
+    js.native
+  def deleteTaskPushNotificationConfig(params: js.Dynamic, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] =
+    js.native
+  def resubscribe(params: js.Dynamic, context: js.UndefOr[js.Dynamic] = js.undefined): js.Any = js.native // AsyncGenerator
 
 /** Task store interface */
 @js.native
 trait JsTaskStore extends js.Object:
-  def get(taskId: String): js.Promise[JsTask | Null] = js.native
-  def save(task: JsTask): js.Promise[Unit] = js.native
-  def delete(taskId: String): js.Promise[Unit] = js.native
+  def load(taskId: String, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[JsTask | Null] = js.native
+  def save(task: JsTask, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[Unit] = js.native
 
 /** In-memory task store */
 @js.native
 @JSImport("@a2a-js/sdk/server", "InMemoryTaskStore")
 class JsInMemoryTaskStore extends JsTaskStore
+
+/** Push notification store interface */
+@js.native
+trait JsPushNotificationStore extends js.Object:
+  def save(taskId: String, pushNotificationConfig: js.Dynamic): js.Promise[Unit] = js.native
+  def load(taskId: String): js.Promise[js.Array[js.Dynamic]] = js.native
+  def delete(taskId: String, configId: js.UndefOr[String] = js.undefined): js.Promise[Unit] = js.native
+
+/** In-memory push notification store */
+@js.native
+@JSImport("@a2a-js/sdk/server", "InMemoryPushNotificationStore")
+class JsInMemoryPushNotificationStore extends JsPushNotificationStore
+
+/** JSON-RPC transport handler - routes requests to A2ARequestHandler */
+@js.native
+@JSImport("@a2a-js/sdk/server", "JsonRpcTransportHandler")
+class JsJsonRpcTransportHandler(requestHandler: js.Dynamic) extends js.Object:
+  /** Handle an incoming JSON-RPC request. Returns Promise or AsyncGenerator. */
+  def handle(requestBody: js.Dynamic, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] = js.native
 
 /** Express handler for agent card */
 @js.native
@@ -79,26 +108,6 @@ object JsJsonRpcHandler extends js.Object:
 @JSImport("@a2a-js/sdk/server/express", "restHandler")
 object JsRestHandler extends js.Object:
   def apply(options: js.Dynamic): js.Function3[js.Dynamic, js.Dynamic, js.Function0[Unit], Unit] = js.native
-
-/** User builder for authentication */
-@js.native
-@JSImport("@a2a-js/sdk/server/authentication", "UserBuilder")
-object JsUserBuilder extends js.Object:
-  def noAuthentication(): js.Dynamic = js.native
-
-/** Alternative module paths */
-object A2AServerModule:
-  @js.native
-  @JSImport("@a2a-js/sdk", "DefaultRequestHandler")
-  class DefaultRequestHandler(
-      agentCard: JsAgentCard,
-      taskStore: JsTaskStore,
-      executor: JsAgentExecutor
-  ) extends js.Object
-
-  @js.native
-  @JSImport("@a2a-js/sdk", "InMemoryTaskStore")
-  class InMemoryTaskStore extends JsTaskStore
 
 /** Helper to create an AgentExecutor from a Scala function */
 object JsExecutorBuilder:

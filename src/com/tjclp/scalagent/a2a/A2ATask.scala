@@ -24,7 +24,7 @@ import zio.json.ast.Json
   */
 final case class A2ATask(
     id: TaskId,
-    contextId: Option[ContextId],
+    contextId: ContextId,
     status: TaskStatus,
     artifacts: List[Artifact] = Nil,
     history: List[A2AMessage] = Nil,
@@ -44,20 +44,18 @@ object A2ATask:
   given JsonDecoder[A2ATask] = DeriveJsonDecoder.gen[A2ATask]
 
   /** Create a new task in submitted state */
-  def submitted(contextId: Option[ContextId] = None): A2ATask =
+  def submitted(contextId: ContextId = ContextId.generate): A2ATask =
     A2ATask(
       id = TaskId.generate,
       contextId = contextId,
       status = TaskStatus.submitted
     )
 
-/** Task status with state, optional message, and timestamps */
+/** Task status with state, optional message, and timestamp */
 final case class TaskStatus(
     state: TaskState,
     message: Option[A2AMessage] = None,
-    createdAt: Option[String] = None,
-    updatedAt: Option[String] = None,
-    stateTransitionHistory: List[StateTransition] = Nil
+    timestamp: Option[String] = None
 )
 object TaskStatus:
   given JsonEncoder[TaskStatus] = DeriveJsonEncoder.gen[TaskStatus]
@@ -66,28 +64,28 @@ object TaskStatus:
   private def now: String = java.time.Instant.now().toString
 
   def submitted: TaskStatus =
-    TaskStatus(state = TaskState.Submitted, createdAt = Some(now), updatedAt = Some(now))
+    TaskStatus(state = TaskState.Submitted, timestamp = Some(now))
 
   def working(message: Option[A2AMessage] = None): TaskStatus =
-    TaskStatus(state = TaskState.Working, message = message, updatedAt = Some(now))
+    TaskStatus(state = TaskState.Working, message = message, timestamp = Some(now))
 
   def inputRequired(message: A2AMessage): TaskStatus =
-    TaskStatus(state = TaskState.InputRequired, message = Some(message), updatedAt = Some(now))
+    TaskStatus(state = TaskState.InputRequired, message = Some(message), timestamp = Some(now))
 
   def completed(message: A2AMessage): TaskStatus =
-    TaskStatus(state = TaskState.Completed, message = Some(message), updatedAt = Some(now))
+    TaskStatus(state = TaskState.Completed, message = Some(message), timestamp = Some(now))
 
   def canceled: TaskStatus =
-    TaskStatus(state = TaskState.Canceled, updatedAt = Some(now))
+    TaskStatus(state = TaskState.Canceled, timestamp = Some(now))
 
   def failed(message: A2AMessage): TaskStatus =
-    TaskStatus(state = TaskState.Failed, message = Some(message), updatedAt = Some(now))
+    TaskStatus(state = TaskState.Failed, message = Some(message), timestamp = Some(now))
 
   def rejected(message: A2AMessage): TaskStatus =
-    TaskStatus(state = TaskState.Rejected, message = Some(message), updatedAt = Some(now))
+    TaskStatus(state = TaskState.Rejected, message = Some(message), timestamp = Some(now))
 
   def authRequired(message: A2AMessage): TaskStatus =
-    TaskStatus(state = TaskState.AuthRequired, message = Some(message), updatedAt = Some(now))
+    TaskStatus(state = TaskState.AuthRequired, message = Some(message), timestamp = Some(now))
 
 /** Task state enumeration (A2A spec) */
 enum TaskState:
@@ -145,6 +143,7 @@ object StateTransition:
 /** Push notification configuration for task updates */
 final case class PushNotificationConfig(
     url: String,
+    id: Option[String] = None,
     token: Option[String] = None,
     authentication: Option[PushNotificationAuth] = None
 )

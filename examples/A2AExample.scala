@@ -152,12 +152,12 @@ object A2AExample extends ZIOAppDefault:
         .streamText("Explain quantum computing in simple terms.")
         .tap { event =>
           event match
-            case A2AResponse.StreamEvent.TaskStatusUpdate(_, status, _) =>
+            case A2AResponse.StreamEvent.TaskStatusUpdate(_, _, status, _) =>
               Console.printLine(s"Status: ${status.state}")
-            case A2AResponse.StreamEvent.TaskMessage(_, msg) =>
+            case A2AResponse.StreamEvent.TaskMessage(_, _, msg) =>
               Console.printLine(s"Message: ${msg.text}")
-            case A2AResponse.StreamEvent.TaskArtifactUpdate(_, artifact) =>
-              Console.printLine(s"Artifact: ${artifact.name}")
+            case A2AResponse.StreamEvent.TaskArtifactUpdate(_, _, artifact, _, _) =>
+              Console.printLine(s"Artifact: ${artifact.name.getOrElse("unnamed")}")
         }
         .runDrain
     yield ()
