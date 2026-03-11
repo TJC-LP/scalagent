@@ -338,8 +338,26 @@ class MessageConverterSpec extends FunSuite:
     )
 
     MessageConverter.fromRaw(raw) match
-      case AgentMessage.TaskProgress(taskId, progress, _, _) =>
-        assertEquals(taskId, "task-1")
-        assertEquals(progress, "50% complete")
+      case tp: AgentMessage.TaskProgress =>
+        assertEquals(tp.taskId, "task-1")
+        assertEquals(tp.progress, "50% complete")
+        assertEquals(tp.summary, None)
+      case other =>
+        fail(s"Expected TaskProgress, got: $other")
+
+  test("parses task_progress with summary"):
+    val raw = js.Dynamic.literal(
+      `type` = "system",
+      subtype = "task_progress",
+      task_id = "task-2",
+      description = "Analyzing code",
+      uuid = "msg-15",
+      session_id = "session-1",
+      summary = "Reviewing authentication module for security issues"
+    )
+
+    MessageConverter.fromRaw(raw) match
+      case tp: AgentMessage.TaskProgress =>
+        assertEquals(tp.summary, Some("Reviewing authentication module for security issues"))
       case other =>
         fail(s"Expected TaskProgress, got: $other")

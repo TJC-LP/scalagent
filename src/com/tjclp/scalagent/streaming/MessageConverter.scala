@@ -414,7 +414,8 @@ object MessageConverter:
       taskId = requiredString(obj, "task_id", raw),
       progress = firstString(obj, "description", "progress").getOrElse(""),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
+      summary = stringField(obj, "summary")
     )
 
   private def parseApiAssistantMessage(

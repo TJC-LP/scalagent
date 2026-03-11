@@ -1,6 +1,6 @@
 # Compatibility Matrix
 
-Baseline: `@anthropic-ai/claude-agent-sdk` `^0.2.71`
+Baseline: `@anthropic-ai/claude-agent-sdk` `^0.2.72`
 
 This document tracks the current compatibility posture of `scalagent` against the installed TypeScript SDK baseline.
 
@@ -10,6 +10,10 @@ This document tracks the current compatibility posture of `scalagent` against th
 |--------|--------|-------|
 | `Options` core fields | Exact / adapted mirror | Strongly-typed Scala wrappers over SDK options such as `model`, `cwd`, `systemPrompt`, `tools`, `allowedTools`, `disallowedTools`, `maxTurns`, `mcpServers`, `thinking`, `effort`, `promptSuggestions`, `sessionId`, debug controls, `executable`, `executableArgs`, `pathToClaudeCodeExecutable`, `permissionPromptToolName`, and `stderr`. |
 | `AgentDefinition.maxTurns` | Exact mirror | Per-agent turn limit exposed via builder and JSON codecs. |
+| `agentProgressSummaries` | Exact mirror | Enables periodic AI-generated progress summaries for subagents. |
+| `TaskProgress.summary` | Exact mirror | AI-generated progress summary text on task_progress events. |
+| `ModelInfo.supportsAutoMode` | Exact mirror | Whether a model supports auto mode. |
+| `gcpAuthRefresh` | Exact mirror | GCP authentication refresh command. |
 | Top-level `Options.skills` | Scala-only compatibility shim | The installed SDK typings do not expose top-level `skills`; `AgentOptions.withSkills(...)` prefers a synthesized or augmented main agent, then falls back to prompt injection when needed. |
 | `AgentDefinition.skills` | Exact mirror | Passed through natively and used as the preferred compatibility path for preloaded skills. |
 | `Query` lifecycle | Adapted mirror | Wrapped by `QueryStream`, which preserves SDK control methods and adds cleanup-aware `ZStream` semantics plus idempotent `close()`. |

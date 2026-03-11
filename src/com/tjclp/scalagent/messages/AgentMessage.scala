@@ -151,7 +151,8 @@ enum AgentMessage:
       taskId: String,
       progress: String,
       uuid: MessageUuid,
-      sessionId: SessionId
+      sessionId: SessionId,
+      summary: Option[String] = None
   )
 
   /** Forward-compatible fallback for unknown top-level SDK messages */

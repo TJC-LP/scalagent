@@ -152,7 +152,16 @@ final case class AgentOptions(
     /** Callback for capturing stderr output from the Claude Code process.
       * This is a synchronous callback that does not require ZIO bridging.
       */
-    stderr: Option[String => Unit] = None
+    stderr: Option[String => Unit] = None,
+
+    /** Enable periodic AI-generated progress summaries for running subagents.
+      * When enabled, the subagent's conversation is forked every ~30 seconds to
+      * produce a short present-tense description emitted on task_progress events.
+      */
+    agentProgressSummaries: Boolean = false,
+
+    /** GCP authentication refresh command (e.g., "gcloud auth application-default login"). */
+    gcpAuthRefresh: Option[String] = None
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -246,6 +255,8 @@ final case class AgentOptions(
     pathToClaudeCodeExecutable.foreach(p => obj.pathToClaudeCodeExecutable = p)
     permissionPromptToolName.foreach(n => obj.permissionPromptToolName = n)
     stderr.foreach(cb => obj.stderr = js.Any.fromFunction1(cb))
+    if agentProgressSummaries then obj.agentProgressSummaries = true
+    gcpAuthRefresh.foreach(cmd => obj.gcpAuthRefresh = cmd)
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks
@@ -849,6 +860,14 @@ object AgentOptions:
     /** Set a callback for capturing stderr output from Claude Code. */
     def withStderr(callback: String => Unit): AgentOptions =
       opts.copy(stderr = Some(callback))
+
+    /** Enable periodic AI-generated progress summaries for subagents. */
+    def withAgentProgressSummaries: AgentOptions =
+      opts.copy(agentProgressSummaries = true)
+
+    /** Set GCP authentication refresh command. */
+    def withGcpAuthRefresh(command: String): AgentOptions =
+      opts.copy(gcpAuthRefresh = Some(command))
 
 /** System prompt configuration */
 enum SystemPromptConfig:

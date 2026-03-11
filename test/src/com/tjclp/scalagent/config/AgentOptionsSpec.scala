@@ -553,6 +553,32 @@ class AgentOptionsSpec extends FunSuite:
     assertEquals(js.typeOf(raw.stderr), "function")
 
   // ============================================
+  // Agent Progress Summaries (SDK 0.2.72)
+  // ============================================
+
+  test("withAgentProgressSummaries enables summaries"):
+    val opts = AgentOptions.default.withAgentProgressSummaries
+    assertEquals(opts.agentProgressSummaries, true)
+
+  test("toRaw includes agentProgressSummaries when enabled"):
+    val opts = AgentOptions.default.withAgentProgressSummaries
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.agentProgressSummaries.asInstanceOf[Boolean], true)
+
+  test("toRaw omits agentProgressSummaries when disabled"):
+    val raw = AgentOptions.default.toRaw.asInstanceOf[js.Dynamic]
+    assert(js.isUndefined(raw.agentProgressSummaries))
+
+  test("withGcpAuthRefresh sets GCP auth command"):
+    val opts = AgentOptions.default.withGcpAuthRefresh("gcloud auth application-default login")
+    assertEquals(opts.gcpAuthRefresh, Some("gcloud auth application-default login"))
+
+  test("toRaw includes gcpAuthRefresh when set"):
+    val opts = AgentOptions.default.withGcpAuthRefresh("gcloud auth login")
+    val raw = opts.toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(raw.gcpAuthRefresh.asInstanceOf[String], "gcloud auth login")
+
+  // ============================================
   // AgentDefinition.maxTurns (SDK 0.2.71)
   // ============================================
 
