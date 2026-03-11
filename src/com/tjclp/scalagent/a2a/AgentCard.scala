@@ -71,7 +71,10 @@ object AgentCard:
   def minimal(name: String, description: String, url: String): AgentCard =
     AgentCard(name = name, description = description, url = url)
 
-/** Agent provider/organization information */
+/** Agent provider/organization information.
+  *
+  * The `url` field is required by the A2A 0.3.12 SDK schema.
+  */
 final case class AgentProvider(
     organization: String,
     url: String

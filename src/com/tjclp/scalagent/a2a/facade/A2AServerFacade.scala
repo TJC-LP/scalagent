@@ -89,7 +89,7 @@ class JsInMemoryPushNotificationStore extends JsPushNotificationStore
 @JSImport("@a2a-js/sdk/server", "JsonRpcTransportHandler")
 class JsJsonRpcTransportHandler(requestHandler: js.Dynamic) extends js.Object:
   /** Handle an incoming JSON-RPC request. Returns Promise or AsyncGenerator. */
-  def handle(requestBody: js.Dynamic, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] = js.native
+  def handle(requestBody: js.Any, context: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] = js.native
 
 /** Express handler for agent card */
 @js.native

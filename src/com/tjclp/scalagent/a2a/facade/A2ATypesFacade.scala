@@ -166,6 +166,11 @@ trait JsPushNotificationConfig extends js.Object:
   val authentication: js.UndefOr[JsPushNotificationAuth] = js.native
 
 @js.native
+trait JsTaskPushNotificationConfig extends js.Object:
+  val taskId: String = js.native
+  val pushNotificationConfig: JsPushNotificationConfig = js.native
+
+@js.native
 trait JsPushNotificationAuth extends js.Object:
   val schemes: js.Array[String] = js.native
   val credentials: js.UndefOr[String] = js.native
@@ -221,13 +226,28 @@ object JsBuilders:
   def messageSendConfiguration(
       acceptedOutputModes: Option[List[String]] = None,
       blocking: Option[Boolean] = None,
-      historyLength: Option[Int] = None
+      historyLength: Option[Int] = None,
+      pushNotificationConfig: Option[JsPushNotificationConfig] = None
   ): JsMessageSendConfiguration =
     val obj = js.Dynamic.literal()
     acceptedOutputModes.foreach(m => obj.acceptedOutputModes = js.Array(m*))
     blocking.foreach(b => obj.blocking = b)
     historyLength.foreach(h => obj.historyLength = h)
+    pushNotificationConfig.foreach(c => obj.pushNotificationConfig = c)
     obj.asInstanceOf[JsMessageSendConfiguration]
+
+  def taskPushNotificationConfigParams(taskId: String, pushNotificationConfig: JsPushNotificationConfig): js.Dynamic =
+    js.Dynamic.literal(
+      taskId = taskId,
+      pushNotificationConfig = pushNotificationConfig
+    )
+
+  def deletePushNotificationConfigParams(id: String, pushNotificationConfigId: String): js.Dynamic =
+    // The SDK uses `id` for the task identifier and a separate config id for the callback.
+    js.Dynamic.literal(
+      id = id,
+      pushNotificationConfigId = pushNotificationConfigId
+    )
 
   def taskQueryParams(id: String, historyLength: Option[Int] = None): js.Dynamic =
     val obj = js.Dynamic.literal(id = id)

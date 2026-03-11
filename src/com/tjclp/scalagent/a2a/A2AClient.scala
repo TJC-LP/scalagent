@@ -88,36 +88,33 @@ object A2AClient:
 /** Live implementation wrapping the JS client */
 private final class A2AClientLive(jsClient: JsA2AClient) extends A2AClient:
 
+  private def toJsConfig(config: MessageSendConfiguration): JsMessageSendConfiguration =
+    JsBuilders.messageSendConfiguration(
+      acceptedOutputModes = Some(config.acceptedOutputModes),
+      blocking = config.blocking,
+      historyLength = config.historyLength,
+      pushNotificationConfig = config.pushNotificationConfig.map(A2AConverters.toJs)
+    )
+
   override def agentCard: Task[AgentCard] =
     getAgentCard
 
   override def send(message: A2AMessage, config: Option[MessageSendConfiguration]): Task[A2ATask] =
     ZIO.fromPromiseJS {
       val jsMessage = A2AConverters.toJs(message)
-      val jsConfig = config.map { c =>
-        JsBuilders.messageSendConfiguration(
-          acceptedOutputModes = Some(c.acceptedOutputModes),
-          blocking = c.blocking,
-          historyLength = c.historyLength
-        )
-      }
+      val jsConfig = config.map(toJsConfig)
       val params = JsBuilders.sendMessageParams(jsMessage, jsConfig)
       jsClient.sendMessage(params)
     }.flatMap { result =>
-      // Result can be Message or Task - we always return Task
       val dyn = result.asInstanceOf[js.Dynamic]
-      if dyn.kind.asInstanceOf[String] == "task" then ZIO.succeed(A2AConverters.toScala(result.asInstanceOf[JsTask]))
-      else
-        // If we got a message back, wrap it in a completed task
-        val msg = A2AConverters.toScala(result.asInstanceOf[JsMessage])
-        ZIO.succeed(
-          A2ATask(
-            id = TaskId.generate,
-            contextId = msg.contextId.getOrElse(ContextId.generate),
-            status = TaskStatus.completed(msg),
-            history = List(message, msg)
-          )
-        )
+      dyn.kind.asInstanceOf[js.UndefOr[String]].toOption match
+        case Some("task") =>
+          ZIO.succeed(A2AConverters.toScala(result.asInstanceOf[JsTask]))
+        case Some("message") =>
+          val msg = A2AConverters.toScala(result.asInstanceOf[JsMessage])
+          ZIO.succeed(A2AStreamEventParser.taskFromMessage(message, msg))
+        case other =>
+          ZIO.fail(new IllegalArgumentException(s"Unexpected A2A send result kind: ${other.getOrElse("<missing>")}"))
     }
 
   override def stream(
@@ -127,19 +124,12 @@ private final class A2AClientLive(jsClient: JsA2AClient) extends A2AClient:
     ZStream.unwrap {
       ZIO.attempt {
         val jsMessage = A2AConverters.toJs(message)
-        val jsConfig = config.map { c =>
-          JsBuilders.messageSendConfiguration(
-            acceptedOutputModes = Some(c.acceptedOutputModes),
-            blocking = c.blocking,
-            historyLength = c.historyLength
-          )
-        }
+        val jsConfig = config.map(toJsConfig)
         val params = JsBuilders.sendMessageParams(jsMessage, jsConfig)
         val asyncGen = jsClient.sendMessageStream(params)
-        // Convert JS AsyncGenerator to ZStream
         AsyncIteratorOps
           .toZStream(asyncGen.asInstanceOf[AsyncIterator[js.Any]])
-          .map(parseStreamEvent)
+          .mapZIO(A2AStreamEventParser.parse)
       }
     }
 
@@ -159,7 +149,7 @@ private final class A2AClientLive(jsClient: JsA2AClient) extends A2AClient:
         val asyncGen = jsClient.resubscribeTask(JsBuilders.taskIdParams(taskId.value))
         AsyncIteratorOps
           .toZStream(asyncGen.asInstanceOf[AsyncIterator[js.Any]])
-          .map(parseStreamEvent)
+          .mapZIO(A2AStreamEventParser.parse)
       }
     }
 
@@ -168,66 +158,27 @@ private final class A2AClientLive(jsClient: JsA2AClient) extends A2AClient:
 
   override def setPushNotificationConfig(taskId: TaskId, config: PushNotificationConfig): Task[PushNotificationConfig] =
     ZIO.fromPromiseJS {
-      val params = js.Dynamic.literal(
-        taskId = taskId.value,
-        pushNotificationConfig = A2AConverters.toJs(config)
-      )
+      val params = JsBuilders.taskPushNotificationConfigParams(taskId.value, A2AConverters.toJs(config))
       jsClient.setTaskPushNotificationConfig(params)
-    }.map(result => A2AConverters.toScala(result.asInstanceOf[JsPushNotificationConfig]))
+    }.map(A2AConverters.toScalaPushNotificationConfigResult)
 
   override def getPushNotificationConfig(taskId: TaskId): Task[PushNotificationConfig] =
     ZIO.fromPromiseJS {
       jsClient.getTaskPushNotificationConfig(JsBuilders.taskIdParams(taskId.value))
-    }.map(result => A2AConverters.toScala(result.asInstanceOf[JsPushNotificationConfig]))
+    }.map(A2AConverters.toScalaPushNotificationConfigResult)
 
   override def listPushNotificationConfigs(taskId: TaskId): Task[List[PushNotificationConfig]] =
     ZIO.fromPromiseJS {
       jsClient.listTaskPushNotificationConfig(JsBuilders.taskIdParams(taskId.value))
     }.map { result =>
-      result.asInstanceOf[js.Array[JsPushNotificationConfig]].toList.map(A2AConverters.toScala)
+      A2AConverters.toScalaPushNotificationConfigResults(result.asInstanceOf[js.Array[js.Any]])
     }
 
   override def deletePushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
     ZIO.fromPromiseJS {
-      val params = js.Dynamic.literal(id = taskId.value, pushNotificationConfigId = configId)
+      val params = JsBuilders.deletePushNotificationConfigParams(taskId.value, configId)
       jsClient.deleteTaskPushNotificationConfig(params)
     }.unit
-
-  /** Parse a JS stream event into a Scala StreamEvent */
-  private def parseStreamEvent(jsEvent: js.Any): A2AResponse.StreamEvent =
-    val dyn = jsEvent.asInstanceOf[js.Dynamic]
-    val kind = dyn.kind.asInstanceOf[String]
-    kind match
-      case "task" =>
-        val task = A2AConverters.toScala(jsEvent.asInstanceOf[JsTask])
-        A2AResponse.StreamEvent.TaskStatusUpdate(task.id, task.contextId, task.status, task.isTerminal)
-      case "message" =>
-        val msg = A2AConverters.toScala(jsEvent.asInstanceOf[JsMessage])
-        A2AResponse.StreamEvent.TaskMessage(
-          msg.taskId.getOrElse(TaskId.generate),
-          msg.contextId.getOrElse(ContextId.generate),
-          msg
-        )
-      case "status-update" =>
-        val taskId = TaskId(dyn.taskId.asInstanceOf[String])
-        val contextId = ContextId(dyn.contextId.asInstanceOf[String])
-        val status = A2AConverters.toScala(dyn.status.asInstanceOf[JsTaskStatus])
-        val isFinal = dyn.`final`.asInstanceOf[Boolean]
-        A2AResponse.StreamEvent.TaskStatusUpdate(taskId, contextId, status, isFinal)
-      case "artifact-update" =>
-        val taskId = TaskId(dyn.taskId.asInstanceOf[String])
-        val contextId = ContextId(dyn.contextId.asInstanceOf[String])
-        val artifact = A2AConverters.toScala(dyn.artifact.asInstanceOf[JsArtifact])
-        val append = dyn.append.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
-        val lastChunk = dyn.lastChunk.asInstanceOf[js.UndefOr[Boolean]].getOrElse(true)
-        A2AResponse.StreamEvent.TaskArtifactUpdate(taskId, contextId, artifact, append, lastChunk)
-      case _ =>
-        A2AResponse.StreamEvent.TaskStatusUpdate(
-          TaskId.generate,
-          ContextId.generate,
-          TaskStatus.working(),
-          false
-        )
 
 /** Extension methods for convenient message sending */
 extension (client: A2AClient)

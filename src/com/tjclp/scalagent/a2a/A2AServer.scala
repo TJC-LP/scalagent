@@ -200,46 +200,19 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
 
   /** Handle JSON-RPC request via transport handler */
   private def handleJsonRpc(body: String, transportHandler: JsJsonRpcTransportHandler): js.Promise[js.Dynamic] =
-    val Response = js.Dynamic.global.Response
-    val headers = js.Dynamic.literal(`Content-Type` = "application/json")
+    val requestId = BunJsonRpcResponses.requestIdOf(body)
 
-    try
-      val request = JsJSON.parse(body)
-      transportHandler
-        .handle(request)
-        .`then`[js.Dynamic] { result =>
-          // Check if result is an AsyncGenerator (streaming) or a regular response
-          val responseBody = JsJSON.stringify(result)
-          js.Dynamic.newInstance(Response)(
-            responseBody,
-            js.Dynamic.literal(status = 200, headers = headers)
-          )
-        }
-        .`catch`[js.Dynamic] { error =>
-          val errorMsg = if error != null then error.toString else "Unknown error"
-          val response = js.Dynamic.literal(
-            jsonrpc = "2.0",
-            error = js.Dynamic.literal(code = -32603, message = errorMsg),
-            id = null
-          )
-          js.Dynamic.newInstance(Response)(
-            JsJSON.stringify(response),
-            js.Dynamic.literal(status = 200, headers = headers)
-          )
-        }
-    catch
-      case e: Exception =>
-        val response = js.Dynamic.literal(
-          jsonrpc = "2.0",
-          error = js.Dynamic.literal(code = -32700, message = s"Parse error: ${e.getMessage}"),
-          id = null
-        )
-        js.Promise.resolve(
-          js.Dynamic.newInstance(Response)(
-            JsJSON.stringify(response),
-            js.Dynamic.literal(status = 200, headers = headers)
-          )
-        )
+    transportHandler
+      .handle(body)
+      .`then`[js.Dynamic](result => BunJsonRpcResponses.fromResult(result, requestId))
+      .`catch`[js.Dynamic] { error =>
+        val errorMsg =
+          if error == null || js.isUndefined(error) then "Internal error"
+          else
+            val dyn = error.asInstanceOf[js.Dynamic]
+            dyn.selectDynamic("message").asInstanceOf[js.UndefOr[String]].toOption.getOrElse(error.toString)
+        BunJsonRpcResponses.jsonRpcError(A2AErrorCode.InternalError, errorMsg, requestId)
+      }
 
 /** Bun.serve binding */
 @js.native

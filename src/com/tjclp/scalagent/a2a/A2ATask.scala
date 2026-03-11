@@ -51,7 +51,10 @@ object A2ATask:
       status = TaskStatus.submitted
     )
 
-/** Task status with state, optional message, and timestamp */
+/** Task status with state, optional message, and timestamp.
+  *
+  * SDK 0.3.12 no longer includes `stateTransitionHistory` on `TaskStatus`.
+  */
 final case class TaskStatus(
     state: TaskState,
     message: Option[A2AMessage] = None,
@@ -130,7 +133,11 @@ object TaskState:
     case other            => Left(s"Unknown task state: $other")
   }
 
-/** State transition record for history */
+/** State transition record retained for callers that persist transition history separately.
+  *
+  * The A2A 0.3.12 SDK does not emit these on `TaskStatus`, but keeping the model avoids an
+  * unnecessary source break for downstream code that still stores transition history.
+  */
 final case class StateTransition(
     state: TaskState,
     timestamp: String,
