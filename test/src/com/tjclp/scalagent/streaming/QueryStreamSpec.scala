@@ -209,3 +209,26 @@ class QueryStreamSpec extends FunSuite:
       assertEquals(interruptCalls, 1)
       assertEquals(returnCalls, 1)
     }
+
+  // ============================================
+  // ModelInfo parsing
+  // ============================================
+
+  test("ModelInfo.fromRaw extracts supportsAutoMode"):
+    val raw = js.Dynamic.literal(
+      value = "claude-opus-4-6",
+      displayName = "Opus 4.6",
+      description = "Most capable model",
+      supportsAutoMode = true
+    )
+    val info = ModelInfo.fromRaw(raw)
+    assertEquals(info.supportsAutoMode, Some(true))
+
+  test("ModelInfo.fromRaw defaults supportsAutoMode to None when absent"):
+    val raw = js.Dynamic.literal(
+      value = "claude-sonnet-4-6",
+      displayName = "Sonnet 4.6",
+      description = "Fast model"
+    )
+    val info = ModelInfo.fromRaw(raw)
+    assertEquals(info.supportsAutoMode, None)
