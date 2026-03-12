@@ -9,7 +9,7 @@ object A2ARequest:
   /** Parameters for message/send and message/stream */
   final case class MessageSend(
       message: A2AMessage,
-      configuration: Option[TaskConfiguration] = None
+      configuration: Option[MessageSendConfiguration] = None
   )
   object MessageSend:
     given JsonEncoder[MessageSend] = DeriveJsonEncoder.gen[MessageSend]
@@ -49,13 +49,19 @@ object A2ARequest:
     given JsonDecoder[PushNotificationConfigSet] = DeriveJsonDecoder.gen[PushNotificationConfigSet]
 
   /** Parameters for tasks/pushNotificationConfig/get */
-  final case class PushNotificationConfigGet(id: TaskId)
+  final case class PushNotificationConfigGet(
+      id: TaskId,
+      pushNotificationConfigId: Option[String] = None
+  )
   object PushNotificationConfigGet:
     given JsonEncoder[PushNotificationConfigGet] = DeriveJsonEncoder.gen[PushNotificationConfigGet]
     given JsonDecoder[PushNotificationConfigGet] = DeriveJsonDecoder.gen[PushNotificationConfigGet]
 
   /** Parameters for tasks/pushNotificationConfig/delete */
-  final case class PushNotificationConfigDelete(id: TaskId)
+  final case class PushNotificationConfigDelete(
+      id: TaskId,
+      pushNotificationConfigId: String
+  )
   object PushNotificationConfigDelete:
     given JsonEncoder[PushNotificationConfigDelete] = DeriveJsonEncoder.gen[PushNotificationConfigDelete]
     given JsonDecoder[PushNotificationConfigDelete] = DeriveJsonDecoder.gen[PushNotificationConfigDelete]
@@ -66,14 +72,19 @@ object A2ARequest:
     given JsonEncoder[GetAuthenticatedExtendedCard] = DeriveJsonEncoder.gen[GetAuthenticatedExtendedCard]
     given JsonDecoder[GetAuthenticatedExtendedCard] = DeriveJsonDecoder.gen[GetAuthenticatedExtendedCard]
 
-/** Task configuration for requests */
-final case class TaskConfiguration(
+/** Message send configuration (A2A spec: MessageSendConfiguration) */
+final case class MessageSendConfiguration(
     acceptedOutputModes: List[String] = List("text/plain"),
+    blocking: Option[Boolean] = None,
     historyLength: Option[Int] = None,
     pushNotificationConfig: Option[PushNotificationConfig] = None
 )
-object TaskConfiguration:
-  given JsonEncoder[TaskConfiguration] = DeriveJsonEncoder.gen[TaskConfiguration]
-  given JsonDecoder[TaskConfiguration] = DeriveJsonDecoder.gen[TaskConfiguration]
+object MessageSendConfiguration:
+  given JsonEncoder[MessageSendConfiguration] = DeriveJsonEncoder.gen[MessageSendConfiguration]
+  given JsonDecoder[MessageSendConfiguration] = DeriveJsonDecoder.gen[MessageSendConfiguration]
 
-  val default: TaskConfiguration = TaskConfiguration()
+  val default: MessageSendConfiguration = MessageSendConfiguration()
+
+/** Backwards-compatible alias */
+type TaskConfiguration = MessageSendConfiguration
+val TaskConfiguration = MessageSendConfiguration

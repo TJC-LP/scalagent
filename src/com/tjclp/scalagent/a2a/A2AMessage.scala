@@ -28,7 +28,7 @@ import zio.json.ast.Json
 final case class A2AMessage(
     role: A2ARole,
     parts: List[Part],
-    messageId: Option[MessageId] = None,
+    messageId: MessageId = MessageId.generate,
     contextId: Option[ContextId] = None,
     taskId: Option[TaskId] = None,
     referenceTaskIds: List[TaskId] = Nil,
@@ -36,7 +36,7 @@ final case class A2AMessage(
     extensions: List[String] = Nil
 ):
   /** Extract all text content from this message */
-  def text: String = parts.collect { case Part.Text(t) => t }.mkString("\n")
+  def text: String = parts.collect { case Part.Text(t, _) => t }.mkString("\n")
 
   /** Check if message has any text content */
   def hasText: Boolean = parts.exists(_.isInstanceOf[Part.Text])
@@ -50,7 +50,6 @@ object A2AMessage:
     A2AMessage(
       role = A2ARole.User,
       parts = List(Part.Text(text)),
-      messageId = Some(MessageId.generate),
       contextId = contextId
     )
 
@@ -59,7 +58,6 @@ object A2AMessage:
     A2AMessage(
       role = A2ARole.Agent,
       parts = List(Part.Text(text)),
-      messageId = Some(MessageId.generate),
       contextId = contextId
     )
 
@@ -67,8 +65,7 @@ object A2AMessage:
   def multi(role: A2ARole, parts: Part*): A2AMessage =
     A2AMessage(
       role = role,
-      parts = parts.toList,
-      messageId = Some(MessageId.generate)
+      parts = parts.toList
     )
 
 /** Message sender role */
@@ -90,79 +87,102 @@ object A2ARole:
 
 /** Message part - discriminated union of content types */
 enum Part:
-  case Text(text: String)
-  case File(file: FileContent, name: Option[String] = None, mimeType: Option[String] = None)
-  case Data(data: Json, name: Option[String] = None, mimeType: Option[String] = None)
+  case Text(text: String, metadata: Option[Json] = None)
+  case File(file: FileContent, metadata: Option[Json] = None)
+  case Data(data: Json, metadata: Option[Json] = None)
 
 object Part:
+  private def mergeLegacyFileFields(partFields: Map[String, Json], fileJson: Json): Json =
+    fileJson.asObject match
+      case Some(fileObj) =>
+        val fileFieldMap = fileObj.toMap
+        var merged = fileObj
+        if !fileFieldMap.contains("name") then
+          partFields.get("name").foreach(name => merged = merged.add("name", name))
+        if !fileFieldMap.contains("mimeType") then
+          partFields.get("mimeType").foreach(mimeType => merged = merged.add("mimeType", mimeType))
+        merged
+      case None => fileJson
+
   // Manual codec for discriminated union with "kind" field
   given JsonEncoder[Part] = JsonEncoder[Json].contramap { part =>
     part match
-      case Text(text) =>
-        Json.Obj("kind" -> Json.Str("text"), "text" -> Json.Str(text))
-      case File(file, name, mimeType) =>
-        var obj = Json.Obj("kind" -> Json.Str("file"), "file" -> file.toJsonAST.toOption.get)
-        name.foreach(n => obj = obj.add("name", Json.Str(n)))
-        mimeType.foreach(m => obj = obj.add("mimeType", Json.Str(m)))
+      case Text(text, metadata) =>
+        var obj = Json.Obj("kind" -> Json.Str("text"), "text" -> Json.Str(text))
+        metadata.foreach(m => obj = obj.add("metadata", m))
         obj
-      case Data(data, name, mimeType) =>
+      case File(file, metadata) =>
+        var obj = Json.Obj("kind" -> Json.Str("file"), "file" -> file.toJsonAST.toOption.get)
+        metadata.foreach(m => obj = obj.add("metadata", m))
+        obj
+      case Data(data, metadata) =>
         var obj = Json.Obj("kind" -> Json.Str("data"), "data" -> data)
-        name.foreach(n => obj = obj.add("name", Json.Str(n)))
-        mimeType.foreach(m => obj = obj.add("mimeType", Json.Str(m)))
+        metadata.foreach(m => obj = obj.add("metadata", m))
         obj
   }
 
   given JsonDecoder[Part] = JsonDecoder[Json].mapOrFail { json =>
     json.asObject.toRight("Part must be an object").flatMap { jsonObj =>
       val fields = jsonObj.toMap
+      val metadata = fields.get("metadata")
       fields.get("kind").flatMap(_.asString).toRight("Missing 'kind' field").flatMap {
         case "text" =>
-          fields.get("text").flatMap(_.asString).toRight("Missing 'text' field").map(Text(_))
+          fields.get("text").flatMap(_.asString).toRight("Missing 'text' field").map(Text(_, metadata))
         case "file" =>
           for
             fileJson <- fields.get("file").toRight("Missing 'file' field")
-            file     <- fileJson.as[FileContent]
-            name = fields.get("name").flatMap(_.asString)
-            mimeType = fields.get("mimeType").flatMap(_.asString)
-          yield File(file, name, mimeType)
+            file     <- mergeLegacyFileFields(fields, fileJson).as[FileContent]
+          yield File(file, metadata)
         case "data" =>
           for dataJson <- fields.get("data").toRight("Missing 'data' field")
-          yield Data(dataJson, fields.get("name").flatMap(_.asString), fields.get("mimeType").flatMap(_.asString))
+          yield Data(dataJson, metadata)
         case other => Left(s"Unknown part kind: $other")
       }
     }
   }
 
-/** File content - either bytes (base64) or URI reference */
+/** File content - either bytes (base64) or URI reference.
+  * Name and mimeType live on the file object per A2A spec.
+  */
 enum FileContent:
-  case Bytes(bytes: String) // base64-encoded
-  case Uri(uri: String)
+  case Bytes(bytes: String, name: Option[String] = None, mimeType: Option[String] = None)
+  case Uri(uri: String, name: Option[String] = None, mimeType: Option[String] = None)
 
 object FileContent:
   given JsonEncoder[FileContent] = JsonEncoder[Json].contramap {
-    case Bytes(bytes) => Json.Obj("bytes" -> Json.Str(bytes))
-    case Uri(uri)     => Json.Obj("uri" -> Json.Str(uri))
+    case Bytes(bytes, name, mimeType) =>
+      var obj = Json.Obj("bytes" -> Json.Str(bytes))
+      name.foreach(n => obj = obj.add("name", Json.Str(n)))
+      mimeType.foreach(m => obj = obj.add("mimeType", Json.Str(m)))
+      obj
+    case Uri(uri, name, mimeType) =>
+      var obj = Json.Obj("uri" -> Json.Str(uri))
+      name.foreach(n => obj = obj.add("name", Json.Str(n)))
+      mimeType.foreach(m => obj = obj.add("mimeType", Json.Str(m)))
+      obj
   }
 
   given JsonDecoder[FileContent] = JsonDecoder[Json].mapOrFail { json =>
     json.asObject.toRight("FileContent must be an object").flatMap { jsonObj =>
       val fields = jsonObj.toMap
+      val name = fields.get("name").flatMap(_.asString)
+      val mimeType = fields.get("mimeType").flatMap(_.asString)
       fields.get("bytes").flatMap(_.asString) match
-        case Some(bytesVal) => Right(Bytes(bytesVal))
+        case Some(bytesVal) => Right(Bytes(bytesVal, name, mimeType))
         case None =>
           fields.get("uri").flatMap(_.asString) match
-            case Some(uriVal) => Right(Uri(uriVal))
+            case Some(uriVal) => Right(Uri(uriVal, name, mimeType))
             case None         => Left("FileContent must have either 'bytes' or 'uri'")
     }
   }
 
 /** Artifact - output produced by an agent during task execution */
 final case class Artifact(
-    name: String,
+    artifactId: String,
     parts: List[Part],
-    index: Int = 0,
-    append: Boolean = false,
-    lastChunk: Boolean = true,
+    name: Option[String] = None,
+    description: Option[String] = None,
+    extensions: List[String] = Nil,
     metadata: Option[Json] = None
 )
 object Artifact:
@@ -171,8 +191,12 @@ object Artifact:
 
   /** Create a simple text artifact */
   def text(name: String, content: String): Artifact =
-    Artifact(name = name, parts = List(Part.Text(content)))
+    Artifact(artifactId = java.util.UUID.randomUUID().toString, parts = List(Part.Text(content)), name = Some(name))
 
   /** Create a file artifact */
   def file(name: String, uri: String, mimeType: Option[String] = None): Artifact =
-    Artifact(name = name, parts = List(Part.File(FileContent.Uri(uri), Some(name), mimeType)))
+    Artifact(
+      artifactId = java.util.UUID.randomUUID().toString,
+      parts = List(Part.File(FileContent.Uri(uri, name = Some(name), mimeType = mimeType))),
+      name = Some(name)
+    )

@@ -60,6 +60,7 @@ final case class AgentCard(
     skills: List[AgentSkill] = Nil,
     security: List[SecurityRequirement] = Nil,
     securitySchemes: Map[String, SecurityScheme] = Map.empty,
+    signatures: List[AgentCardSignature] = Nil,
     supportsAuthenticatedExtendedCard: Boolean = false
 )
 object AgentCard:
@@ -70,27 +71,47 @@ object AgentCard:
   def minimal(name: String, description: String, url: String): AgentCard =
     AgentCard(name = name, description = description, url = url)
 
-/** Agent provider/organization information */
+/** Agent provider/organization information.
+  *
+  * The `url` field is required by the A2A 0.3.12 SDK schema.
+  */
 final case class AgentProvider(
     organization: String,
-    url: Option[String] = None
+    url: String
 )
 object AgentProvider:
   given JsonEncoder[AgentProvider] = DeriveJsonEncoder.gen[AgentProvider]
-  given JsonDecoder[AgentProvider] = DeriveJsonDecoder.gen[AgentProvider]
+  given JsonDecoder[AgentProvider] = JsonDecoder[zio.json.ast.Json].mapOrFail { json =>
+    json.asObject.toRight("AgentProvider must be an object").flatMap { obj =>
+      val fields = obj.toMap
+      for org <- fields.get("organization").flatMap(_.asString).toRight("Missing 'organization'")
+      yield AgentProvider(org, fields.get("url").flatMap(_.asString).getOrElse(""))
+    }
+  }
 
 /** Agent capabilities */
 final case class AgentCapabilities(
     streaming: Boolean = true,
     pushNotifications: Boolean = false,
     stateTransitionHistory: Boolean = false,
-    extensions: List[String] = Nil
+    extensions: List[AgentExtension] = Nil
 )
 object AgentCapabilities:
   val default: AgentCapabilities = AgentCapabilities()
 
   given JsonEncoder[AgentCapabilities] = DeriveJsonEncoder.gen[AgentCapabilities]
   given JsonDecoder[AgentCapabilities] = DeriveJsonDecoder.gen[AgentCapabilities]
+
+/** Protocol extension declaration */
+final case class AgentExtension(
+    uri: String,
+    description: Option[String] = None,
+    params: Option[zio.json.ast.Json] = None,
+    required: Boolean = false
+)
+object AgentExtension:
+  given JsonEncoder[AgentExtension] = DeriveJsonEncoder.gen[AgentExtension]
+  given JsonDecoder[AgentExtension] = DeriveJsonDecoder.gen[AgentExtension]
 
 /** Alternative interface for agent communication */
 final case class AgentInterface(
@@ -109,20 +130,36 @@ final case class AgentSkill(
     tags: List[String] = Nil,
     examples: List[String] = Nil,
     inputModes: List[String] = Nil,
-    outputModes: List[String] = Nil
+    outputModes: List[String] = Nil,
+    security: List[SecurityRequirement] = Nil
 )
 object AgentSkill:
   given JsonEncoder[AgentSkill] = DeriveJsonEncoder.gen[AgentSkill]
   given JsonDecoder[AgentSkill] = DeriveJsonDecoder.gen[AgentSkill]
 
-/** Security requirement (references a security scheme) */
+/** AgentCard JWS signature (RFC 7515) */
+final case class AgentCardSignature(
+    `protected`: String,
+    signature: String,
+    header: Option[zio.json.ast.Json] = None
+)
+object AgentCardSignature:
+  given JsonEncoder[AgentCardSignature] = DeriveJsonEncoder.gen[AgentCardSignature]
+  given JsonDecoder[AgentCardSignature] = DeriveJsonDecoder.gen[AgentCardSignature]
+
+/** Security requirement (OpenAPI style: each key is a scheme name, value is list of scopes).
+  *
+  * Multiple keys in a single `SecurityRequirement` represent a logical AND of those schemes.
+  */
 final case class SecurityRequirement(
-    scheme: String,
-    scopes: List[String] = Nil
+    schemes: Map[String, List[String]] = Map.empty
 )
 object SecurityRequirement:
-  given JsonEncoder[SecurityRequirement] = DeriveJsonEncoder.gen[SecurityRequirement]
-  given JsonDecoder[SecurityRequirement] = DeriveJsonDecoder.gen[SecurityRequirement]
+  given JsonEncoder[SecurityRequirement] =
+    JsonEncoder[Map[String, List[String]]].contramap(_.schemes)
+
+  given JsonDecoder[SecurityRequirement] =
+    JsonDecoder[Map[String, List[String]]].map(SecurityRequirement(_))
 
 /** Security scheme definition (OpenAPI-style) */
 enum SecurityScheme:
