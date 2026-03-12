@@ -36,13 +36,19 @@ trait A2AClient:
   /** Set push notification config for a task */
   def setPushNotificationConfig(taskId: TaskId, config: PushNotificationConfig): Task[PushNotificationConfig]
 
-  /** Get push notification config for a task */
-  def getPushNotificationConfig(taskId: TaskId): Task[PushNotificationConfig]
+  /** Get push notification config for a task.
+    * @param taskId The task identifier
+    * @param configId Optional push notification configuration identifier for non-default configs
+    */
+  def getPushNotificationConfig(taskId: TaskId, configId: Option[String] = None): Task[PushNotificationConfig]
 
   /** List push notification configs for a task */
   def listPushNotificationConfigs(taskId: TaskId): Task[List[PushNotificationConfig]]
 
-  /** Delete push notification config for a task */
+  /** Delete push notification config for a task.
+    * @param taskId The task identifier (passed as `id` per SDK 0.3.12 DeleteTaskPushNotificationConfigParams)
+    * @param configId The push notification configuration identifier
+    */
   def deletePushNotificationConfig(taskId: TaskId, configId: String): Task[Unit]
 
 object A2AClient:
@@ -162,9 +168,9 @@ private final class A2AClientLive(jsClient: JsA2AClient) extends A2AClient:
       jsClient.setTaskPushNotificationConfig(params)
     }.map(A2AConverters.toScalaPushNotificationConfigResult)
 
-  override def getPushNotificationConfig(taskId: TaskId): Task[PushNotificationConfig] =
+  override def getPushNotificationConfig(taskId: TaskId, configId: Option[String]): Task[PushNotificationConfig] =
     ZIO.fromPromiseJS {
-      jsClient.getTaskPushNotificationConfig(JsBuilders.taskIdParams(taskId.value))
+      jsClient.getTaskPushNotificationConfig(JsBuilders.getPushNotificationConfigParams(taskId.value, configId))
     }.map(A2AConverters.toScalaPushNotificationConfigResult)
 
   override def listPushNotificationConfigs(taskId: TaskId): Task[List[PushNotificationConfig]] =

@@ -49,7 +49,10 @@ object A2ARequest:
     given JsonDecoder[PushNotificationConfigSet] = DeriveJsonDecoder.gen[PushNotificationConfigSet]
 
   /** Parameters for tasks/pushNotificationConfig/get */
-  final case class PushNotificationConfigGet(id: TaskId)
+  final case class PushNotificationConfigGet(
+      id: TaskId,
+      pushNotificationConfigId: Option[String] = None
+  )
   object PushNotificationConfigGet:
     given JsonEncoder[PushNotificationConfigGet] = DeriveJsonEncoder.gen[PushNotificationConfigGet]
     given JsonDecoder[PushNotificationConfigGet] = DeriveJsonDecoder.gen[PushNotificationConfigGet]

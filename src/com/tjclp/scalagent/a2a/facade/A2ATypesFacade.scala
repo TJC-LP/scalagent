@@ -242,6 +242,11 @@ object JsBuilders:
       pushNotificationConfig = pushNotificationConfig
     )
 
+  def getPushNotificationConfigParams(taskId: String, pushNotificationConfigId: Option[String] = None): js.Dynamic =
+    val obj = js.Dynamic.literal(id = taskId)
+    pushNotificationConfigId.foreach(configId => obj.pushNotificationConfigId = configId)
+    obj
+
   def deletePushNotificationConfigParams(id: String, pushNotificationConfigId: String): js.Dynamic =
     // The SDK uses `id` for the task identifier and a separate config id for the callback.
     js.Dynamic.literal(

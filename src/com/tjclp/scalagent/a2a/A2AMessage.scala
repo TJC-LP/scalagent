@@ -92,6 +92,18 @@ enum Part:
   case Data(data: Json, metadata: Option[Json] = None)
 
 object Part:
+  private def mergeLegacyFileFields(partFields: Map[String, Json], fileJson: Json): Json =
+    fileJson.asObject match
+      case Some(fileObj) =>
+        val fileFieldMap = fileObj.toMap
+        var merged = fileObj
+        if !fileFieldMap.contains("name") then
+          partFields.get("name").foreach(name => merged = merged.add("name", name))
+        if !fileFieldMap.contains("mimeType") then
+          partFields.get("mimeType").foreach(mimeType => merged = merged.add("mimeType", mimeType))
+        merged
+      case None => fileJson
+
   // Manual codec for discriminated union with "kind" field
   given JsonEncoder[Part] = JsonEncoder[Json].contramap { part =>
     part match
@@ -119,7 +131,7 @@ object Part:
         case "file" =>
           for
             fileJson <- fields.get("file").toRight("Missing 'file' field")
-            file     <- fileJson.as[FileContent]
+            file     <- mergeLegacyFileFields(fields, fileJson).as[FileContent]
           yield File(file, metadata)
         case "data" =>
           for dataJson <- fields.get("data").toRight("Missing 'data' field")

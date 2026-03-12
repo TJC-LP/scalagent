@@ -78,10 +78,10 @@ enum A2ATransport:
 object A2ATransport:
   given JsonEncoder[A2ATransport] = StringEnumJsonCodec.encoder(_.toRaw)
   given JsonDecoder[A2ATransport] = StringEnumJsonCodec.decoderOrFail {
-    case "JSONRPC"  => Right(A2ATransport.JSONRPC)
-    case "GRPC"     => Right(A2ATransport.GRPC)
-    case "HTTP+JSON" => Right(A2ATransport.HTTP_JSON)
-    case other      => Left(s"Unknown transport: $other")
+    case "JSONRPC"            => Right(A2ATransport.JSONRPC)
+    case "GRPC"               => Right(A2ATransport.GRPC)
+    case "HTTP+JSON" | "REST" => Right(A2ATransport.HTTP_JSON)
+    case other                => Left(s"Unknown transport: $other")
   }
 
 /** Standard well-known paths */

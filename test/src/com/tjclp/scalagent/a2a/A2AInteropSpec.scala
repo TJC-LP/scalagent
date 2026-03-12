@@ -61,6 +61,15 @@ class A2AInteropSpec extends FunSuite:
     assertEquals(params.pushNotificationConfigId.asInstanceOf[String], "cfg-456")
     assert(js.isUndefined(params.selectDynamic("taskId")))
 
+  test("get push notification params include optional config id"):
+    val defaultParams = JsBuilders.getPushNotificationConfigParams("task-123").asInstanceOf[js.Dynamic]
+    val specificParams = JsBuilders.getPushNotificationConfigParams("task-123", Some("cfg-456")).asInstanceOf[js.Dynamic]
+
+    assertEquals(defaultParams.id.asInstanceOf[String], "task-123")
+    assert(js.isUndefined(defaultParams.selectDynamic("pushNotificationConfigId")))
+    assertEquals(specificParams.id.asInstanceOf[String], "task-123")
+    assertEquals(specificParams.pushNotificationConfigId.asInstanceOf[String], "cfg-456")
+
   test("push notification wrapper results are unwrapped before conversion"):
     val wrapped = js.Dynamic.literal(
       taskId = "task-123",
@@ -87,6 +96,42 @@ class A2AInteropSpec extends FunSuite:
     val dataPart = js.Dynamic.literal(kind = "data").asInstanceOf[JsPart]
 
     assertEquals(A2AConverters.toScalaPart(dataPart), Part.Data(Json.Null))
+
+  test("legacy file parts preserve top-level name and mime type"):
+    val json =
+      """{
+        |  "role": "user",
+        |  "parts": [
+        |    {
+        |      "kind": "file",
+        |      "name": "report.pdf",
+        |      "mimeType": "application/pdf",
+        |      "file": {
+        |        "uri": "https://example.com/report.pdf"
+        |      }
+        |    }
+        |  ],
+        |  "messageId": "msg-legacy"
+        |}""".stripMargin
+
+    assertEquals(
+      json.fromJson[A2AMessage],
+      Right(
+        A2AMessage(
+          role = A2ARole.User,
+          parts = List(
+            Part.File(
+              FileContent.Uri(
+                uri = "https://example.com/report.pdf",
+                name = Some("report.pdf"),
+                mimeType = Some("application/pdf")
+              )
+            )
+          ),
+          messageId = MessageId("msg-legacy")
+        )
+      )
+    )
 
   test("OAuth2 security schemes round-trip through JS facades"):
     val flows = OAuth2Flows(
@@ -194,6 +239,70 @@ class A2AInteropSpec extends FunSuite:
     val event: A2AResponse.StreamEvent = A2AResponse.StreamEvent.TaskSnapshot(task)
 
     assertEquals(event.toJson.fromJson[A2AResponse.StreamEvent], Right(event))
+
+  test("legacy artifact stream events decode append semantics and fallback artifact id"):
+    val json =
+      """{
+        |  "kind": "artifact",
+        |  "taskId": "task-legacy",
+        |  "artifact": {
+        |    "parts": [
+        |      {
+        |        "kind": "text",
+        |        "text": "partial chunk"
+        |      }
+        |    ],
+        |    "append": true,
+        |    "lastChunk": false,
+        |    "name": "partial"
+        |  }
+        |}""".stripMargin
+
+    assertEquals(
+      json.fromJson[A2AResponse.StreamEvent],
+      Right(
+        A2AResponse.StreamEvent.TaskArtifactUpdate(
+          id = TaskId("task-legacy"),
+          contextId = ContextId("task-legacy"),
+          artifact = Artifact(
+            artifactId = "task-legacy",
+            parts = List(Part.Text("partial chunk")),
+            name = Some("partial")
+          ),
+          append = true,
+          lastChunk = false
+        )
+      )
+    )
+
+  test("stream parser accepts legacy artifact events"):
+    val event = js.Dynamic.literal(
+      kind = "artifact",
+      taskId = "task-legacy",
+      artifact = js.Dynamic.literal(
+        parts = js.Array(js.Dynamic.literal(kind = "text", text = "partial chunk")),
+        append = true,
+        lastChunk = false,
+        name = "partial"
+      )
+    )
+
+    runTask(A2AStreamEventParser.parse(event)).map { parsed =>
+      assertEquals(
+        parsed,
+        A2AResponse.StreamEvent.TaskArtifactUpdate(
+          id = TaskId("task-legacy"),
+          contextId = ContextId("task-legacy"),
+          artifact = Artifact(
+            artifactId = "task-legacy",
+            parts = List(Part.Text("partial chunk")),
+            name = Some("partial")
+          ),
+          append = true,
+          lastChunk = false
+        )
+      )
+    }
 
   test("Bun JSON-RPC responses stream async iterables as SSE"):
     val rpcEvent = js.Dynamic.literal(

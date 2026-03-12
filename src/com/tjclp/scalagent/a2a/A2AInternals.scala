@@ -17,6 +17,9 @@ private[a2a] object A2AEventIds:
   def contextIdFor(taskId: TaskId, explicitContextId: Option[String]): ContextId =
     explicitContextId.map(ContextId(_)).getOrElse(ContextId(taskId.value))
 
+  def artifactIdFor(taskId: TaskId, explicitArtifactId: Option[String]): String =
+    explicitArtifactId.getOrElse(taskId.value)
+
 private[a2a] object A2AStreamEventParser:
   def taskFromMessage(requestMessage: A2AMessage, responseMessage: A2AMessage): A2ATask =
     A2ATask(
@@ -48,15 +51,23 @@ private[a2a] object A2AStreamEventParser:
           val status = A2AConverters.toScala(dyn.status.asInstanceOf[JsTaskStatus])
           val isFinal = dyn.selectDynamic("final").asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
           A2AResponse.StreamEvent.TaskStatusUpdate(taskId, contextId, status, isFinal)
-        case "artifact-update" =>
+        case "artifact-update" | "artifact" =>
           val taskId = TaskId(requiredString(dyn, "taskId", jsEvent))
           val contextId = A2AEventIds.contextIdFor(
             taskId,
             optionalString(dyn, "contextId")
           )
-          val artifact = A2AConverters.toScala(dyn.artifact.asInstanceOf[JsArtifact])
-          val append = dyn.append.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
-          val lastChunk = dyn.lastChunk.asInstanceOf[js.UndefOr[Boolean]].getOrElse(true)
+          val artifactDyn = dyn.artifact.asInstanceOf[js.Dynamic]
+          val artifactId = optionalString(artifactDyn, "artifactId")
+            .orElse(optionalString(dyn, "artifactId"))
+          if artifactId.isEmpty then artifactDyn.updateDynamic("artifactId")(A2AEventIds.artifactIdFor(taskId, artifactId))
+          val artifact = A2AConverters.toScala(artifactDyn.asInstanceOf[JsArtifact])
+          val append = dyn.append.asInstanceOf[js.UndefOr[Boolean]].toOption
+            .orElse(artifactDyn.append.asInstanceOf[js.UndefOr[Boolean]].toOption)
+            .getOrElse(false)
+          val lastChunk = dyn.lastChunk.asInstanceOf[js.UndefOr[Boolean]].toOption
+            .orElse(artifactDyn.lastChunk.asInstanceOf[js.UndefOr[Boolean]].toOption)
+            .getOrElse(true)
           A2AResponse.StreamEvent.TaskArtifactUpdate(taskId, contextId, artifact, append, lastChunk)
         case other =>
           throw new IllegalArgumentException(

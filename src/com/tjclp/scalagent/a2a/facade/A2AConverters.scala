@@ -81,10 +81,10 @@ object A2AConverters:
       preferredTransport = js.preferredTransport.toOption
         .flatMap(s =>
           s match
-            case "JSONRPC"   => Some(A2ATransport.JSONRPC)
-            case "GRPC"      => Some(A2ATransport.GRPC)
-            case "HTTP+JSON" => Some(A2ATransport.HTTP_JSON)
-            case _           => None
+            case "JSONRPC"            => Some(A2ATransport.JSONRPC)
+            case "GRPC"               => Some(A2ATransport.GRPC)
+            case "HTTP+JSON" | "REST" => Some(A2ATransport.HTTP_JSON)
+            case _                    => None
         )
         .getOrElse(A2ATransport.JSONRPC),
       additionalInterfaces = js.additionalInterfaces.toOption.map(_.toList.map(toScala)).getOrElse(Nil),
@@ -194,10 +194,10 @@ object A2AConverters:
 
   def toScala(js: JsAgentInterface): AgentInterface =
     val transport = js.transport match
-      case "JSONRPC"   => A2ATransport.JSONRPC
-      case "GRPC"      => A2ATransport.GRPC
-      case "HTTP+JSON" => A2ATransport.HTTP_JSON
-      case _           => A2ATransport.JSONRPC
+      case "JSONRPC"            => A2ATransport.JSONRPC
+      case "GRPC"               => A2ATransport.GRPC
+      case "HTTP+JSON" | "REST" => A2ATransport.HTTP_JSON
+      case _                    => A2ATransport.JSONRPC
     AgentInterface(transport = transport, url = js.url)
 
   def toJs(i: AgentInterface): JsAgentInterface =
@@ -223,14 +223,14 @@ object A2AConverters:
   // Security helpers (use js.Dynamic since these are complex Map-based types)
   private def toScalaSecurityRequirement(dyn: js.Dynamic): SecurityRequirement =
     val obj = dyn.asInstanceOf[js.Dictionary[js.Array[String]]]
-    val entries = obj.toMap
-    entries.headOption match
-      case Some((scheme, scopes)) => SecurityRequirement(scheme = scheme, scopes = scopes.toList)
-      case None                   => SecurityRequirement(scheme = "")
+    val schemes = obj.toMap.map { case (k, v) => k -> v.toList }
+    SecurityRequirement(schemes = schemes)
 
   private def toJsSecurityRequirement(req: SecurityRequirement): js.Dynamic =
     val obj = js.Dynamic.literal()
-    obj.updateDynamic(req.scheme)(req.scopes.toJSArray)
+    req.schemes.foreach { case (scheme, scopes) =>
+      obj.updateDynamic(scheme)(scopes.toJSArray)
+    }
     obj
 
   private def toScalaSecuritySchemes(dyn: js.Dynamic): Map[String, SecurityScheme] =

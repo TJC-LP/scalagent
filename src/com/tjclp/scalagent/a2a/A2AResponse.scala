@@ -59,6 +59,15 @@ object A2AResponse:
       case _                            => false
 
   object StreamEvent:
+    private def artifactJsonWithFallbackId(taskId: TaskId, artifactJson: Json): Either[String, Json] =
+      artifactJson.asObject.toRight("Artifact must be an object").map { artifactObj =>
+        if artifactObj.toMap.contains("artifactId") then artifactJson
+        else artifactObj.add("artifactId", Json.Str(taskId.value))
+      }
+
+    private def nestedBooleanField(json: Json, field: String): Option[Boolean] =
+      json.asObject.flatMap(_.toMap.get(field)).flatMap(_.asBoolean)
+
     given JsonEncoder[StreamEvent] = JsonEncoder[Json].contramap {
       case TaskSnapshot(task) =>
         val base = task.toJsonAST.toOption.get.asObject.get.toMap
@@ -104,10 +113,12 @@ object A2AResponse:
           yield TaskStatusUpdate(id, contextId, status, isFinal)
         case "artifact-update" | "artifact" =>
           for
-            id       <- taskId
-            artifact <- fields.get("artifact").toRight("Missing artifact").flatMap(_.as[Artifact])
-            append = fields.get("append").flatMap(_.asBoolean).getOrElse(false)
-            lastChunk = fields.get("lastChunk").flatMap(_.asBoolean).getOrElse(true)
+            id           <- taskId
+            artifactJson <- fields.get("artifact").toRight("Missing artifact")
+            artifact     <- artifactJsonWithFallbackId(id, artifactJson).flatMap(_.as[Artifact])
+            append = fields.get("append").flatMap(_.asBoolean).orElse(nestedBooleanField(artifactJson, "append")).getOrElse(false)
+            lastChunk =
+              fields.get("lastChunk").flatMap(_.asBoolean).orElse(nestedBooleanField(artifactJson, "lastChunk")).getOrElse(true)
             contextId = fields.get("contextId").flatMap(_.asString).map(ContextId(_)).getOrElse(ContextId(id.value))
           yield TaskArtifactUpdate(id, contextId, artifact, append, lastChunk)
         case "message" =>

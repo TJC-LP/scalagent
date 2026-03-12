@@ -81,7 +81,13 @@ final case class AgentProvider(
 )
 object AgentProvider:
   given JsonEncoder[AgentProvider] = DeriveJsonEncoder.gen[AgentProvider]
-  given JsonDecoder[AgentProvider] = DeriveJsonDecoder.gen[AgentProvider]
+  given JsonDecoder[AgentProvider] = JsonDecoder[zio.json.ast.Json].mapOrFail { json =>
+    json.asObject.toRight("AgentProvider must be an object").flatMap { obj =>
+      val fields = obj.toMap
+      for org <- fields.get("organization").flatMap(_.asString).toRight("Missing 'organization'")
+      yield AgentProvider(org, fields.get("url").flatMap(_.asString).getOrElse(""))
+    }
+  }
 
 /** Agent capabilities */
 final case class AgentCapabilities(
@@ -141,14 +147,19 @@ object AgentCardSignature:
   given JsonEncoder[AgentCardSignature] = DeriveJsonEncoder.gen[AgentCardSignature]
   given JsonDecoder[AgentCardSignature] = DeriveJsonDecoder.gen[AgentCardSignature]
 
-/** Security requirement (references a security scheme) */
+/** Security requirement (OpenAPI style: each key is a scheme name, value is list of scopes).
+  *
+  * Multiple keys in a single `SecurityRequirement` represent a logical AND of those schemes.
+  */
 final case class SecurityRequirement(
-    scheme: String,
-    scopes: List[String] = Nil
+    schemes: Map[String, List[String]] = Map.empty
 )
 object SecurityRequirement:
-  given JsonEncoder[SecurityRequirement] = DeriveJsonEncoder.gen[SecurityRequirement]
-  given JsonDecoder[SecurityRequirement] = DeriveJsonDecoder.gen[SecurityRequirement]
+  given JsonEncoder[SecurityRequirement] =
+    JsonEncoder[Map[String, List[String]]].contramap(_.schemes)
+
+  given JsonDecoder[SecurityRequirement] =
+    JsonDecoder[Map[String, List[String]]].map(SecurityRequirement(_))
 
 /** Security scheme definition (OpenAPI-style) */
 enum SecurityScheme:
