@@ -226,6 +226,20 @@ object Claude:
     * @return
     *   A list of session messages
     */
+  /** Rename a session.
+    *
+    * @param sessionId The session UUID
+    * @param title New title for the session
+    * @param dir Optional project directory path; when omitted, all project directories are searched
+    */
+  def renameSession(sessionId: SessionId, title: String, dir: Option[String] = None): IO[AgentError, Unit] =
+    val opts: js.UndefOr[js.Dynamic] = dir match
+      case Some(d) => js.Dynamic.literal(dir = d)
+      case None    => js.undefined
+    ZIO
+      .fromPromiseJS(SdkModule.renameSession(sessionId.value, title, opts))
+      .mapError(AgentError.fromThrowable)
+
   def getSessionMessages(sessionId: SessionId, dir: String): IO[AgentError, List[SessionMessage]] =
     ZIO
       .fromPromiseJS(

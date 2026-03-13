@@ -4,7 +4,7 @@ A type-safe Scala.js wrapper for `@anthropic-ai/claude-agent-sdk`, with idiomati
 
 ## Status
 
-- SDK baseline: `@anthropic-ai/claude-agent-sdk` `^0.2.72`
+- SDK baseline: `@anthropic-ai/claude-agent-sdk` `0.2.74`
 - Current repo build version: `0.4.0`
 - Scala version: `3.7.4`
 - Preferred JS runtime: `bun`

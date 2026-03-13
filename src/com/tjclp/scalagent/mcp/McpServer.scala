@@ -76,6 +76,40 @@ object McpServer:
       rawServerConfig = serverConfig.asInstanceOf[js.Object]
     )
 
+  /** Create a lazy MCP server factory — safe for concurrent use.
+    *
+    * Unlike `create` which returns a single Protocol instance (not safe for concurrent sessions),
+    * `createFactory` returns a factory that creates a fresh Protocol instance each time `toRaw` is called.
+    * Use this when the MCP server will be used by multiple concurrent A2A sessions.
+    *
+    * @param name
+    *   Name of the MCP server
+    * @param tools
+    *   List of tool definitions to expose
+    * @param version
+    *   Version string (default "1.0.0")
+    * @param runtime
+    *   ZIO runtime for executing tool handlers
+    * @return
+    *   MCP server factory configuration that creates a fresh instance per session
+    */
+  def createFactory(
+      name: String,
+      tools: List[ToolDef[?]],
+      version: String = "1.0.0",
+      runtime: Runtime[Any],
+  ): McpServerConfig.SdkFactory =
+    McpServerConfig.SdkFactory(
+      name = name,
+      version = version,
+      factory = () => {
+        val sdkTools = tools.map(_.toSdkTool(runtime)).toJSArray
+        createSdkMcpServer(
+          js.Dynamic.literal(name = name, version = version, tools = sdkTools)
+        ).asInstanceOf[js.Object]
+      }
+    )
+
   /** Create a server with a single tool */
   def withTool[A: JsonDecoder](
       serverName: String,

@@ -8,6 +8,22 @@ import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.mcp.McpToolName
 import com.tjclp.scalagent.hooks.{HookCallback, HookConfig, HookEvent}
 
+/** MCP server specification for subagents.
+  *
+  * Matches SDK `AgentMcpServerSpec = string | Record<string, McpServerConfigForProcessTransport>`.
+  */
+enum AgentMcpServerSpec:
+  /** Reference an MCP server by name (must be defined in parent AgentOptions.mcpServers) */
+  case ByName(name: String)
+
+  /** Inline MCP server configuration keyed by server name */
+  case ByConfig(servers: Map[String, McpServerConfig])
+
+  def toRaw: js.Any = this match
+    case ByName(name) => name.asInstanceOf[js.Any]
+    case ByConfig(servers) =>
+      js.Dictionary(servers.view.mapValues(_.toRaw).toSeq*).asInstanceOf[js.Any]
+
 /** Subagent definition for specialized AI assistants.
   *
   * Subagents provide context isolation, parallelization, and specialized expertise. They can have restricted tool
@@ -57,12 +73,18 @@ final case class AgentDefinition(
       * Added in Claude Code 2.1.0.
       */
     hooks: Map[HookEvent, List[HookConfig]] = Map.empty,
+    /** MCP server specifications for this agent.
+      * Each entry is either a server name (referencing parent config) or an inline config.
+      */
+    mcpServers: List[AgentMcpServerSpec] = Nil,
     /** Skill names to preload into the agent context.
       * Added in SDK 0.2.31.
       */
     skills: List[String] = Nil,
     /** Maximum number of turns this agent is allowed to take. */
-    maxTurns: Option[Int] = None
+    maxTurns: Option[Int] = None,
+    /** Experimental: Critical reminder added to system prompt. */
+    criticalSystemReminder: Option[String] = None
 ):
   /** Convert to raw JavaScript object for SDK.
     *
@@ -82,8 +104,10 @@ final case class AgentDefinition(
     // inheritMcpTools is SDK default behavior (true), no flag needed
     // When false, rely on explicit tools whitelist
     // Note: hooks are not included here - use toRawWithHooks when hooks are configured
+    if mcpServers.nonEmpty then obj.mcpServers = mcpServers.map(_.toRaw).toJSArray
     if skills.nonEmpty then obj.skills = skills.toJSArray
     maxTurns.foreach(mt => obj.maxTurns = mt)
+    criticalSystemReminder.foreach(r => obj.updateDynamic("criticalSystemReminder_EXPERIMENTAL")(r))
     obj.asInstanceOf[js.Object]
 
   /** Convert to raw JavaScript object with hooks.
@@ -183,11 +207,19 @@ object AgentDefinition:
       }
       "hooks" -> Json.Obj(zio.Chunk.fromIterable(hooksJson.toSeq)*)
     }
+    val mcpServersField = Option.when(agent.mcpServers.nonEmpty) {
+      "mcpServers" -> Json.Arr(agent.mcpServers.map {
+        case AgentMcpServerSpec.ByName(name) => Json.Str(name)
+        case AgentMcpServerSpec.ByConfig(servers) =>
+          Json.Obj(zio.Chunk.fromIterable(servers.map { case (k, _) => k -> Json.Str("<config>") }.toSeq)*)
+      }*)
+    }
     val skillsField = Option.when(agent.skills.nonEmpty) {
       "skills" -> Json.Arr(agent.skills.map(Json.Str(_))*)
     }
     val maxTurnsField = agent.maxTurns.map(mt => "maxTurns" -> Json.Num(mt))
-    val fields = baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField ++ skillsField ++ maxTurnsField
+    val criticalReminderField = agent.criticalSystemReminder.map(r => "criticalSystemReminder" -> Json.Str(r))
+    val fields = baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField ++ mcpServersField ++ skillsField ++ maxTurnsField ++ criticalReminderField
     Json.Obj(zio.Chunk.fromIterable(fields)*)
   }
 
@@ -210,11 +242,16 @@ object AgentDefinition:
             }
           case None => Map.empty
 
+        val mcpServersList = fields.get("mcpServers").flatMap(_.asArray).map(_.flatMap { json =>
+          json.asString.map(AgentMcpServerSpec.ByName(_))
+          // ByConfig can't round-trip through JSON (contains non-serializable configs)
+        }.toList).getOrElse(Nil)
         val skillsList = fields.get("skills").flatMap(_.asArray).map(_.flatMap(_.asString).toList).getOrElse(Nil)
         val maxTurnsOpt = fields.get("maxTurns").flatMap(_.asNumber).flatMap { n =>
           val bd = BigDecimal(n.value)
           if bd.isValidInt then Some(bd.toInt) else None
         }
+        val criticalReminderOpt = fields.get("criticalSystemReminder").flatMap(_.asString)
 
         AgentDefinition(
           description = description,
@@ -226,8 +263,10 @@ object AgentDefinition:
           inheritMcpTools = fields.get("inheritMcpTools").flatMap(_.asBoolean).getOrElse(true),
           permissionMode = fields.get("permissionMode").flatMap(_.asString).map(PermissionMode.fromString),
           hooks = hooksMap,
+          mcpServers = mcpServersList,
           skills = skillsList,
-          maxTurns = maxTurnsOpt
+          maxTurns = maxTurnsOpt,
+          criticalSystemReminder = criticalReminderOpt
         )
     case _ => Left("Expected JSON object")
   }
@@ -267,6 +306,18 @@ object AgentDefinition:
       */
     def withSkills(skillNames: String*): AgentDefinition =
       agent.copy(skills = skillNames.toList)
+
+    /** Add MCP server specs to this agent. */
+    def withMcpServers(specs: AgentMcpServerSpec*): AgentDefinition =
+      agent.copy(mcpServers = agent.mcpServers ++ specs)
+
+    /** Add MCP servers by name (referencing parent AgentOptions.mcpServers). */
+    def withMcpServerNames(names: String*): AgentDefinition =
+      agent.copy(mcpServers = agent.mcpServers ++ names.map(AgentMcpServerSpec.ByName(_)))
+
+    /** Set critical system reminder (experimental). */
+    def withCriticalSystemReminder(reminder: String): AgentDefinition =
+      agent.copy(criticalSystemReminder = Some(reminder))
 
     /** Set maximum turns for this agent.
       * @throws IllegalArgumentException if n <= 0

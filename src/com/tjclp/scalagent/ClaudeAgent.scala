@@ -235,3 +235,4 @@ private[scalagent] object SdkModule extends js.Object:
       sessionId: String,
       options: js.UndefOr[js.Dynamic] = js.undefined
   ): js.Promise[js.Array[js.Dynamic]] = js.native
+  def renameSession(sessionId: String, title: String, options: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[Unit] = js.native

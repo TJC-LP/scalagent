@@ -35,6 +35,16 @@ enum McpServerConfig:
       rawServerConfig: js.Object
   )
 
+  /** In-process SDK MCP server created lazily per session.
+    * Safe for concurrent use — each call to toRaw creates a fresh Protocol instance.
+    * Use McpServer.createFactory to construct this variant.
+    */
+  case SdkFactory(
+      name: String,
+      version: String = "1.0.0",
+      factory: () => js.Object
+  )
+
   /** Claude AI Proxy MCP server (SDK 0.2.31).
     * Used for proxying to Claude.ai services.
     */
@@ -64,6 +74,10 @@ enum McpServerConfig:
     case Sdk(_, _, rawConfig) =>
       // SDK server config is already in raw format
       rawConfig
+
+    case SdkFactory(_, _, factory) =>
+      // Create a fresh Protocol instance per session
+      factory()
 
     case ClaudeAIProxy(url, id) =>
       js.Dynamic
