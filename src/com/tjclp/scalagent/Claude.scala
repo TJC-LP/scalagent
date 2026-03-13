@@ -251,7 +251,7 @@ object Claude:
       case Some(d) => js.Dynamic.literal(dir = d)
       case None    => js.undefined
     ZIO
-      .fromPromiseJS(SdkModule.tagSession(sessionId.value, tag.getOrElse(null), opts))
+      .fromPromiseJS(SdkModule.tagSession(sessionId.value, tag.orNull, opts))
       .mapError(AgentError.fromThrowable)
 
   /** Get info about a specific session.

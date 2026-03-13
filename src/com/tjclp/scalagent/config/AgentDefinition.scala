@@ -16,7 +16,10 @@ enum AgentMcpServerSpec:
   /** Reference an MCP server by name (must be defined in parent AgentOptions.mcpServers) */
   case ByName(name: String)
 
-  /** Inline MCP server configuration keyed by server name */
+  /** Inline MCP server configuration keyed by server name.
+    * Note: ByConfig does not survive JSON round-trips (contains non-serializable configs).
+    * Only ByName variants are preserved through JSON serialization.
+    */
   case ByConfig(servers: Map[String, McpServerConfig])
 
   def toRaw: js.Any = this match

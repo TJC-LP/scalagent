@@ -68,7 +68,13 @@ object SessionLogger:
     if !ensureDir() then return
     val dir = logDir.get
     val ts = new js.Date().toISOString().asInstanceOf[String]
-    val escaped = data.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+    val escaped = data
+      .replace("\\", "\\\\")
+      .replace("\"", "\\\"")
+      .replace("\n", "\\n")
+      .replace("\r", "\\r")
+      .replace("\t", "\\t")
+      .replaceAll("[\\x00-\\x1f]", "")
     val line = s"""{"ts":"$ts","taskId":"$taskId","event":"$event","data":"$escaped"}"""
     try Fs.appendFileSync(s"$dir/$taskId.jsonl", line + "\n")
     catch case _: Throwable => ()
@@ -83,7 +89,7 @@ object A2AServer:
       port: Int = 3000,
       agentOptions: AgentOptions = AgentOptions.default,
       skills: List[AgentSkill] = Nil,
-      sessionLogDir: Option[String] = Some("/tmp/agent-sessions"),
+      sessionLogDir: Option[String] = None,
   ):
     def url: String = s"http://$host:$port"
 
