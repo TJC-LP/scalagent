@@ -226,6 +226,49 @@ object Claude:
     * @return
     *   A list of session messages
     */
+  /** Rename a session.
+    *
+    * @param sessionId The session UUID
+    * @param title New title for the session
+    * @param dir Optional project directory path; when omitted, all project directories are searched
+    */
+  def renameSession(sessionId: SessionId, title: String, dir: Option[String] = None): IO[AgentError, Unit] =
+    val opts: js.UndefOr[js.Dynamic] = dir match
+      case Some(d) => js.Dynamic.literal(dir = d)
+      case None    => js.undefined
+    ZIO
+      .fromPromiseJS(SdkModule.renameSession(sessionId.value, title, opts))
+      .mapError(AgentError.fromThrowable)
+
+  /** Tag a session. Pass None to clear the tag.
+    *
+    * @param sessionId The session UUID
+    * @param tag Tag string, or None to clear
+    * @param dir Optional project directory path
+    */
+  def tagSession(sessionId: SessionId, tag: Option[String], dir: Option[String] = None): IO[AgentError, Unit] =
+    val opts: js.UndefOr[js.Dynamic] = dir match
+      case Some(d) => js.Dynamic.literal(dir = d)
+      case None    => js.undefined
+    ZIO
+      .fromPromiseJS(SdkModule.tagSession(sessionId.value, tag.orNull, opts))
+      .mapError(AgentError.fromThrowable)
+
+  /** Get info about a specific session.
+    *
+    * @param sessionId The session UUID
+    * @param dir Optional project directory path
+    * @return Session info if found
+    */
+  def getSessionInfo(sessionId: SessionId, dir: Option[String] = None): IO[AgentError, Option[SessionInfo]] =
+    val opts: js.UndefOr[js.Dynamic] = dir match
+      case Some(d) => js.Dynamic.literal(dir = d)
+      case None    => js.undefined
+    ZIO
+      .fromPromiseJS(SdkModule.getSessionInfo(sessionId.value, opts))
+      .map(_.toOption.map(dyn => SessionInfo.fromRaw(dyn.asInstanceOf[js.Dynamic])))
+      .mapError(AgentError.fromThrowable)
+
   def getSessionMessages(sessionId: SessionId, dir: String): IO[AgentError, List[SessionMessage]] =
     ZIO
       .fromPromiseJS(

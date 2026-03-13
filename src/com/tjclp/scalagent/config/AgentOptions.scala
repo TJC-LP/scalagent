@@ -161,7 +161,14 @@ final case class AgentOptions(
     agentProgressSummaries: Boolean = false,
 
     /** GCP authentication refresh command (e.g., "gcloud auth application-default login"). */
-    gcpAuthRefresh: Option[String] = None
+    gcpAuthRefresh: Option[String] = None,
+
+    /** Callback for handling MCP elicitation requests.
+      * Called when an MCP server requests user input and no hook handles it.
+      * The callback receives an `ElicitationRequest` and options with `signal: AbortSignal`,
+      * and must return a `Promise<ElicitationResult>`.
+      */
+    onElicitation: Option[js.Function2[js.Dynamic, js.Dynamic, js.Promise[js.Dynamic]]] = None
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -257,6 +264,7 @@ final case class AgentOptions(
     stderr.foreach(cb => obj.stderr = js.Any.fromFunction1(cb))
     if agentProgressSummaries then obj.agentProgressSummaries = true
     gcpAuthRefresh.foreach(cmd => obj.gcpAuthRefresh = cmd)
+    onElicitation.foreach(cb => obj.onElicitation = cb)
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks
@@ -374,6 +382,12 @@ object AgentOptions:
 
     def withMcpServer(name: String, config: McpServerConfig): AgentOptions =
       opts.copy(mcpServers = opts.mcpServers + (name -> config))
+
+    /** Register an MCP server factory — creates a fresh Protocol instance per session.
+      * Use this instead of withMcpServer when the server will be used by concurrent A2A sessions.
+      */
+    def withMcpServerFactory(name: String, factory: McpServerConfig.SdkFactory): AgentOptions =
+      opts.copy(mcpServers = opts.mcpServers + (name -> factory))
 
     def withIncludePartialMessages: AgentOptions =
       opts.copy(includePartialMessages = true)
@@ -868,6 +882,10 @@ object AgentOptions:
     /** Set GCP authentication refresh command. */
     def withGcpAuthRefresh(command: String): AgentOptions =
       opts.copy(gcpAuthRefresh = Some(command))
+
+    /** Set the elicitation callback for handling MCP user-input requests. */
+    def withOnElicitation(callback: js.Function2[js.Dynamic, js.Dynamic, js.Promise[js.Dynamic]]): AgentOptions =
+      opts.copy(onElicitation = Some(callback))
 
 /** System prompt configuration */
 enum SystemPromptConfig:
