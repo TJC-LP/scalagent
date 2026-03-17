@@ -100,7 +100,9 @@ object ToolInputMacros:
         }
 
       case t if t.typeSymbol.flags.is(Flags.Case) =>
-        generateSchemaExpr(caseClassFieldInfos(t))
+        trySummonToolInput(t).getOrElse {
+          generateSchemaExpr(caseClassFieldInfos(t))
+        }
 
       case other =>
         // Try to summon a user-provided ToolInput before falling back
