@@ -19,6 +19,7 @@ object Zod extends js.Object:
   def `enum`(values: js.Array[String]): ZodType = js.native
   def array(schema: ZodType): ZodType = js.native
   def `object`(shape: js.Dictionary[ZodType]): ZodType = js.native
+  def union(types: js.Array[ZodType]): ZodType = js.native
 
 @js.native
 trait ZodType extends js.Object:
@@ -60,3 +61,4 @@ object ZodConverter:
       case JsonSchema.EnumType(values) => Zod.`enum`(values.toJSArray)
       case JsonSchema.ArrayType(items) => Zod.array(toZodType(items))
       case obj: JsonSchema.ObjectType => Zod.`object`(toZodRawShape(obj))
+      case JsonSchema.AnyOfType(schemas) => Zod.union(schemas.map(toZodType).toJSArray)
