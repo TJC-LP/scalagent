@@ -90,13 +90,34 @@ object ToolInputMacros:
         '{ JsonSchema.obj().additionalProperties.build }
 
       case t if t.typeSymbol.flags.is(Flags.Enum) =>
-        val enumCases = enumCaseNames(t)
-        val casesExpr = Expr(enumCases)
-        '{ JsonSchema.enumOf($casesExpr*) }
+        // Try to summon a user-provided ToolInput for this type first.
+        // This handles ADT enums with custom JSON encoding (e.g. BodyContent)
+        // where the wire format can't be inferred from the case names.
+        trySummonToolInput(t).getOrElse {
+          val enumCases = enumCaseNames(t)
+          val casesExpr = Expr(enumCases)
+          '{ JsonSchema.enumOf($casesExpr*) }
+        }
 
       case t if t.typeSymbol.flags.is(Flags.Case) =>
-        generateSchemaExpr(caseClassFieldInfos(t))
+        trySummonToolInput(t).getOrElse {
+          generateSchemaExpr(caseClassFieldInfos(t))
+        }
 
       case other =>
-        report.warning(s"Unknown type ${other.show}, using object schema")
-        '{ JsonSchema.obj().build }
+        // Try to summon a user-provided ToolInput before falling back
+        trySummonToolInput(other).getOrElse {
+          report.warning(s"Unknown type ${other.show}, using object schema")
+          '{ JsonSchema.obj().build }
+        }
+
+  /** Try to summon a ToolInput[T] given in scope and extract its schema. */
+  private def trySummonToolInput(using Quotes)(
+      tpe: quotes.reflect.TypeRepr
+  ): Option[Expr[JsonSchema]] =
+    import quotes.reflect.*
+    tpe.asType match
+      case '[t] =>
+        Expr.summon[ToolInput[t]].map { ti =>
+          '{ $ti.jsonSchema }
+        }

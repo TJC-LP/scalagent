@@ -318,6 +318,11 @@ object JsonSchema:
     def toRaw: js.Object =
       js.Dynamic.literal(`type` = "string", `enum` = values.toJSArray).asInstanceOf[js.Object]
 
+  /** Union type (anyOf) — for types that accept multiple formats (e.g. string | array) */
+  final case class AnyOfType(schemas: List[JsonSchema]) extends JsonSchema:
+    def toRaw: js.Object =
+      js.Dynamic.literal(anyOf = schemas.map(_.toRaw).toJSArray).asInstanceOf[js.Object]
+
   /** Object type */
   final case class ObjectType(
       properties: Map[String, JsonSchema],
@@ -360,6 +365,9 @@ object JsonSchema:
 
   /** Enum schema */
   def enumOf(values: String*): JsonSchema = EnumType(values.toList)
+
+  /** Union schema (anyOf) */
+  def anyOf(schemas: JsonSchema*): JsonSchema = AnyOfType(schemas.toList)
 
   /** Object schema builder */
   def obj(properties: (String, JsonSchema)*): ObjectBuilder =

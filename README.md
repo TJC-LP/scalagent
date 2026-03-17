@@ -5,7 +5,7 @@ A type-safe Scala.js wrapper for `@anthropic-ai/claude-agent-sdk`, with idiomati
 ## Status
 
 - SDK baseline: `@anthropic-ai/claude-agent-sdk` `0.2.75`
-- Current repo build version: `0.4.0`
+- Current repo build version: `0.4.1`
 - Scala version: `3.7.4`
 - Preferred JS runtime: `bun`
 - Runtime requirement: `ANTHROPIC_API_KEY`
@@ -25,20 +25,20 @@ For a compatibility inventory against the installed SDK baseline, see `docs/COMP
 
 ## Installation
 
-Use the current published release when consuming from Maven Central. For local development against this repo, the build version is `0.4.0`.
+Use the current published release when consuming from Maven Central. For local development against this repo, the build version is `0.4.1`.
 
 ### Mill
 
 ```scala
 def ivyDeps = Seq(
-  mvn"com.tjclp::scalagent::0.4.0"
+  mvn"com.tjclp::scalagent::0.4.1"
 )
 ```
 
 ### SBT
 
 ```scala
-libraryDependencies += "com.tjclp" %%% "scalagent" % "0.4.0"
+libraryDependencies += "com.tjclp" %%% "scalagent" % "0.4.1"
 ```
 
 ### Maven
@@ -47,7 +47,7 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.4.0"
 <dependency>
   <groupId>com.tjclp</groupId>
   <artifactId>scalagent_sjs1_3</artifactId>
-  <version>0.4.0</version>
+  <version>0.4.1</version>
 </dependency>
 ```
 
