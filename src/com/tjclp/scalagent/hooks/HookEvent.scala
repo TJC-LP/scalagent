@@ -44,6 +44,9 @@ enum HookEvent:
   /** Before context compaction */
   case PreCompact
 
+  /** After context compaction completes */
+  case PostCompact
+
   /** Setup hook - triggered during initialization or maintenance */
   case Setup
 
@@ -85,6 +88,7 @@ enum HookEvent:
     case SubagentStart      => "SubagentStart"
     case SubagentStop       => "SubagentStop"
     case PreCompact         => "PreCompact"
+    case PostCompact        => "PostCompact"
     case Setup              => "Setup"
     case TeammateIdle       => "TeammateIdle"
     case TaskCompleted      => "TaskCompleted"
@@ -110,6 +114,7 @@ object HookEvent:
     case "SubagentStart"     => Right(SubagentStart)
     case "SubagentStop"      => Right(SubagentStop)
     case "PreCompact"        => Right(PreCompact)
+    case "PostCompact"       => Right(PostCompact)
     case "Setup"             => Right(Setup)
     case "TeammateIdle"      => Right(TeammateIdle)
     case "TaskCompleted"     => Right(TaskCompleted)
@@ -135,6 +140,7 @@ object HookEvent:
     case "SubagentStart"     => SubagentStart
     case "SubagentStop"      => SubagentStop
     case "PreCompact"        => PreCompact
+    case "PostCompact"       => PostCompact
     case "Setup"             => Setup
     case "TeammateIdle"      => TeammateIdle
     case "TaskCompleted"     => TaskCompleted

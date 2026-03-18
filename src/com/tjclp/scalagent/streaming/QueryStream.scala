@@ -71,6 +71,9 @@ trait RawQuery extends AsyncGenerator[js.Any, Unit, Unit]:
   /** Get the full initialization result including commands, models, account info */
   def initializationResult(): js.Promise[js.Dynamic] = js.native
 
+  /** Apply settings mid-session (only available in streaming input mode) */
+  def applyFlagSettings(settings: js.Dynamic): js.Promise[Unit] = js.native
+
 /** Wrapper for SDK Query that provides ZIO/ZStream interface.
   *
   * This class wraps the raw JavaScript Query object and provides:
@@ -355,6 +358,17 @@ final class QueryStream private (rawQuery: RawQuery):
       .fromPromiseJS(rawQuery.initializationResult())
       .map(InitializationResult.fromRaw)
 
+  /** Apply settings mid-session, dynamically updating the active configuration.
+    *
+    * Equivalent to passing a `settings` object to `query()` but applies during an ongoing session.
+    * Only available in streaming input mode.
+    *
+    * @param settings
+    *   A raw JS settings object to merge into the flag settings layer
+    */
+  def applyFlagSettings(settings: js.Dynamic): Task[Unit] =
+    ZIO.fromPromiseJS(rawQuery.applyFlagSettings(settings))
+
 object QueryStream:
 
   /** Create a QueryStream from a raw SDK Query object.
@@ -486,7 +500,8 @@ final case class AccountInfo(
     organization: Option[String],
     subscriptionType: Option[String],
     tokenSource: Option[String],
-    apiKeySource: Option[String]
+    apiKeySource: Option[String],
+    apiProvider: Option[String] = None
 )
 
 object AccountInfo:
@@ -496,7 +511,8 @@ object AccountInfo:
       organization = obj.organization.asInstanceOf[js.UndefOr[String]].toOption,
       subscriptionType = obj.subscriptionType.asInstanceOf[js.UndefOr[String]].toOption,
       tokenSource = obj.tokenSource.asInstanceOf[js.UndefOr[String]].toOption,
-      apiKeySource = obj.apiKeySource.asInstanceOf[js.UndefOr[String]].toOption
+      apiKeySource = obj.apiKeySource.asInstanceOf[js.UndefOr[String]].toOption,
+      apiProvider = obj.apiProvider.asInstanceOf[js.UndefOr[String]].toOption
     )
 
 /** Result of a rewindFiles operation */

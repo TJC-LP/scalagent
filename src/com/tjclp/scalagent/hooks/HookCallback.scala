@@ -164,7 +164,10 @@ object HookCallback:
           permissionMode = permissionMode,
           toolUseId = firstString(raw, "tool_use_id", "toolUseId").map(ToolUseId.apply),
           agentId = baseAgentId,
-          hookAgentType = baseAgentType
+          hookAgentType = baseAgentType,
+          title = firstString(raw, "title"),
+          displayName = firstString(raw, "display_name", "displayName"),
+          description = firstString(raw, "description")
         )
 
       case "Notification" =>
@@ -247,6 +250,20 @@ object HookCallback:
           agentId = SubagentId(firstString(raw, "agent_id", "agentId").getOrElse("")),
           agentTranscriptPath = firstString(raw, "agent_transcript_path", "agentTranscriptPath").getOrElse(""),
           agentType = firstString(raw, "agent_type", "agentType").getOrElse(""),
+          permissionMode = permissionMode
+        )
+
+      case "PostCompact" =>
+        HookInput.PostCompact(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          trigger = CompactTrigger.fromString(
+            firstString(raw, "trigger").getOrElse("auto")
+          ),
+          compactSummary = firstString(raw, "compact_summary", "compactSummary").getOrElse(""),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
           permissionMode = permissionMode
         )
 

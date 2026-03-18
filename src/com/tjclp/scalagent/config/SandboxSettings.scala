@@ -189,17 +189,25 @@ object SandboxNetworkConfig:
   *   Paths/patterns to deny write access
   * @param denyRead
   *   Paths/patterns to deny read access
+  * @param allowRead
+  *   Paths to re-allow reading within denyRead regions (takes precedence over denyRead)
+  * @param allowManagedReadPathsOnly
+  *   When true, only allowRead paths from policySettings are used
   */
 final case class SandboxFilesystemConfig(
     allowWrite: List[String] = Nil,
     denyWrite: List[String] = Nil,
-    denyRead: List[String] = Nil
+    denyRead: List[String] = Nil,
+    allowRead: List[String] = Nil,
+    allowManagedReadPathsOnly: Boolean = false
 ):
   def toRaw: js.Object =
     val obj = js.Dynamic.literal()
     if allowWrite.nonEmpty then obj.allowWrite = allowWrite.toJSArray
     if denyWrite.nonEmpty then obj.denyWrite = denyWrite.toJSArray
     if denyRead.nonEmpty then obj.denyRead = denyRead.toJSArray
+    if allowRead.nonEmpty then obj.allowRead = allowRead.toJSArray
+    if allowManagedReadPathsOnly then obj.allowManagedReadPathsOnly = true
     obj.asInstanceOf[js.Object]
 
 object SandboxFilesystemConfig:

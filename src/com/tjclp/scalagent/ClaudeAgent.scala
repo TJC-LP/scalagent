@@ -238,3 +238,4 @@ private[scalagent] object SdkModule extends js.Object:
   def renameSession(sessionId: String, title: String, options: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[Unit] = js.native
   def tagSession(sessionId: String, tag: String | Null, options: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[Unit] = js.native
   def getSessionInfo(sessionId: String, options: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.UndefOr[js.Dynamic]] = js.native
+  def forkSession(sessionId: String, options: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] = js.native

@@ -269,6 +269,37 @@ object Claude:
       .map(_.toOption.map(dyn => SessionInfo.fromRaw(dyn.asInstanceOf[js.Dynamic])))
       .mapError(AgentError.fromThrowable)
 
+  /** Fork a session into a new branch with fresh UUIDs.
+    *
+    * The forked session can be resumed with [[ClaudeSession.resume]] or via the `resume` session mode.
+    *
+    * @param sessionId
+    *   UUID of the source session to fork
+    * @param upToMessageId
+    *   Slice the transcript up to this message UUID (inclusive). If omitted, the full transcript is copied.
+    * @param title
+    *   Custom title for the fork. If omitted, derives from the original title + " (fork)".
+    * @param dir
+    *   Optional project directory path
+    * @return
+    *   The session ID of the newly forked session
+    */
+  def forkSession(
+      sessionId: SessionId,
+      upToMessageId: Option[String] = None,
+      title: Option[String] = None,
+      dir: Option[String] = None
+  ): IO[AgentError, SessionId] =
+    val opts = js.Dynamic.literal()
+    upToMessageId.foreach(id => opts.upToMessageId = id)
+    title.foreach(t => opts.title = t)
+    dir.foreach(d => opts.dir = d)
+    val jsOpts: js.UndefOr[js.Dynamic] = opts
+    ZIO
+      .fromPromiseJS(SdkModule.forkSession(sessionId.value, jsOpts))
+      .map(result => SessionId(result.sessionId.asInstanceOf[String]))
+      .mapError(AgentError.fromThrowable)
+
   def getSessionMessages(sessionId: SessionId, dir: String): IO[AgentError, List[SessionMessage]] =
     ZIO
       .fromPromiseJS(

@@ -199,6 +199,10 @@ object MessageConverter:
       case Some("task_started")      => parseTaskStarted(obj, raw)
       case Some("local_command_output") => parseLocalCommandOutput(obj, raw)
       case Some("elicitation_complete") => parseElicitationComplete(obj, raw)
+      case Some("api_retry") =>
+        guardTopLevelUnknown(raw, "system", Some("api_retry"), context) {
+          parseApiRetryMessage(obj, raw)
+        }
       case other =>
         AgentMessage.System(
           event = parseSystemEvent(obj, raw, other, context),
@@ -407,6 +411,17 @@ object MessageConverter:
       toolUseId = stringField(obj, "tool_use_id"),
       taskType = stringField(obj, "task_type"),
       prompt = stringField(obj, "prompt")
+    )
+
+  private def parseApiRetryMessage(obj: js.Dynamic, raw: Json): AgentMessage.ApiRetry =
+    AgentMessage.ApiRetry(
+      attempt = intField(obj, "attempt").getOrElse(0),
+      maxRetries = intField(obj, "max_retries").getOrElse(0),
+      retryDelayMs = longField(obj, "retry_delay_ms").getOrElse(0L),
+      errorStatus = intField(obj, "error_status"),
+      error = stringField(obj, "error").map(AssistantMessageError.fromString).getOrElse(AssistantMessageError.Unknown),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
     )
 
   private def parseTaskProgress(obj: js.Dynamic, raw: Json): AgentMessage.TaskProgress =
