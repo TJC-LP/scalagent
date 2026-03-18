@@ -295,14 +295,17 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
                 // Log completion
                 SessionLogger.logEvent(taskId.value, "completed", responseText.take(500))
 
-                // Publish response
-                bus.publish(jsMsg)
+                // Publish completed status BEFORE the message event.
+                // The A2A SDK's event queue breaks on whichever comes first
+                // ("message" or final "status-update"), so the status-update
+                // must come first to ensure the task store transitions to "completed".
                 publishStatusUpdate(
                   ctx,
                   bus,
                   com.tjclp.scalagent.a2a.TaskStatus.completed(responseMsg),
                   finalUpdate = true
                 )
+                bus.publish(jsMsg)
                 bus.finished()
               }
               .catchAll { error =>
@@ -315,13 +318,14 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
                   // Log failure
                   SessionLogger.logEvent(taskId.value, "failed", errorText)
 
-                  bus.publish(A2AConverters.toJs(errorMsg))
+                  // Publish failed status BEFORE the message event (same ordering rationale).
                   publishStatusUpdate(
                     ctx,
                     bus,
                     com.tjclp.scalagent.a2a.TaskStatus.failed(errorMsg),
                     finalUpdate = true
                   )
+                  bus.publish(A2AConverters.toJs(errorMsg))
                   bus.finished()
                 }
               }
