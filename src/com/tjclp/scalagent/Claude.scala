@@ -301,7 +301,13 @@ object Claude:
       else js.undefined
     ZIO
       .fromPromiseJS(SdkModule.forkSession(sessionId.value, jsOpts))
-      .map(result => SessionId(result.sessionId.asInstanceOf[String]))
+      .flatMap { result =>
+        val sid = result.sessionId.asInstanceOf[js.UndefOr[String]].toOption
+        ZIO.fromOption(sid).mapError(_ =>
+          new RuntimeException("forkSession: missing sessionId in response")
+        )
+      }
+      .map(SessionId(_))
       .mapError(AgentError.fromThrowable)
 
   def getSessionMessages(sessionId: SessionId, dir: String): IO[AgentError, List[SessionMessage]] =

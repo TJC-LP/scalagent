@@ -345,6 +345,49 @@ class MessageConverterSpec extends FunSuite:
       case other =>
         fail(s"Expected TaskProgress, got: $other")
 
+  test("parses api_retry message"):
+    val raw = js.Dynamic.literal(
+      `type` = "system",
+      subtype = "api_retry",
+      attempt = 2,
+      max_retries = 5,
+      retry_delay_ms = 3000,
+      error_status = 529,
+      error = "rate_limit",
+      uuid = "msg-retry-1",
+      session_id = "session-1"
+    )
+
+    MessageConverter.fromRaw(raw) match
+      case ar: AgentMessage.ApiRetry =>
+        assertEquals(ar.attempt, 2)
+        assertEquals(ar.maxRetries, 5)
+        assertEquals(ar.retryDelayMs, 3000L)
+        assertEquals(ar.errorStatus, Some(529))
+        assertEquals(ar.error, AssistantMessageError.RateLimit)
+      case other =>
+        fail(s"Expected ApiRetry, got: $other")
+
+  test("parses api_retry with null error_status"):
+    val raw = js.Dynamic.literal(
+      `type` = "system",
+      subtype = "api_retry",
+      attempt = 1,
+      max_retries = 3,
+      retry_delay_ms = 1000,
+      error_status = null,
+      error = "server_error",
+      uuid = "msg-retry-2",
+      session_id = "session-1"
+    )
+
+    MessageConverter.fromRaw(raw) match
+      case ar: AgentMessage.ApiRetry =>
+        assertEquals(ar.errorStatus, None)
+        assertEquals(ar.error, AssistantMessageError.ServerError)
+      case other =>
+        fail(s"Expected ApiRetry, got: $other")
+
   test("parses task_progress with summary"):
     val raw = js.Dynamic.literal(
       `type` = "system",
