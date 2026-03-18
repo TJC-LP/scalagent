@@ -166,6 +166,13 @@ enum AgentMessage:
       sessionId: SessionId
   )
 
+  /** Bridge metadata message carrying slash commands */
+  case BridgeMetadata(
+      slashCommands: List[String],
+      uuid: MessageUuid,
+      sessionId: SessionId
+  )
+
   /** Forward-compatible fallback for unknown top-level SDK messages */
   case Unknown(
       envelope: UnknownEnvelope

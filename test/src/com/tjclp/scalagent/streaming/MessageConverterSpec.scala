@@ -388,6 +388,21 @@ class MessageConverterSpec extends FunSuite:
       case other =>
         fail(s"Expected ApiRetry, got: $other")
 
+  test("parses bridge_metadata message"):
+    val raw = js.Dynamic.literal(
+      `type` = "system",
+      subtype = "bridge_metadata",
+      slash_commands = js.Array("/help", "/commit", "/review-pr"),
+      uuid = "msg-bridge-1",
+      session_id = "session-1"
+    )
+
+    MessageConverter.fromRaw(raw) match
+      case AgentMessage.BridgeMetadata(slashCommands, _, _) =>
+        assertEquals(slashCommands, List("/help", "/commit", "/review-pr"))
+      case other =>
+        fail(s"Expected BridgeMetadata, got: $other")
+
   test("parses task_progress with summary"):
     val raw = js.Dynamic.literal(
       `type` = "system",

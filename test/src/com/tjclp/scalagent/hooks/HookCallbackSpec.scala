@@ -7,6 +7,7 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import zio.*
 import com.tjclp.scalagent.config.PermissionMode
+import com.tjclp.scalagent.messages.AssistantMessageError
 import com.tjclp.scalagent.types.SubagentId
 
 class HookCallbackSpec extends FunSuite:
@@ -164,6 +165,21 @@ class HookCallbackSpec extends FunSuite:
         assertEquals(input.displayName, Some("Run command"))
         assertEquals(input.description, Some("Claude will execute: ls"))
       case other => fail(s"Expected PermissionRequest, got: $other")
+    }
+
+  test("parseHookInput handles StopFailure"):
+    val raw = baseInput("StopFailure")
+    raw.error = "rate_limit"
+    raw.error_details = "Rate limit exceeded"
+    raw.last_assistant_message = "I was trying to help"
+
+    parseInput(raw).map {
+      case input: HookInput.StopFailure =>
+        assertEquals(input.error, AssistantMessageError.RateLimit)
+        assertEquals(input.errorDetails, Some("Rate limit exceeded"))
+        assertEquals(input.lastAssistantMessage, Some("I was trying to help"))
+        assertEquals(input.permissionMode, Some(PermissionMode.Custom("delegate")))
+      case other => fail(s"Expected StopFailure, got: $other")
     }
 
   test("parseHookInput handles InstructionsLoaded with agent metadata"):

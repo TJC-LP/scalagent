@@ -203,6 +203,12 @@ object MessageConverter:
         guardTopLevelUnknown(raw, "system", Some("api_retry"), context) {
           parseApiRetryMessage(obj, raw)
         }
+      case Some("bridge_metadata") =>
+        AgentMessage.BridgeMetadata(
+          slashCommands = stringArrayField(obj, "slash_commands"),
+          uuid = requiredUuid(obj, raw),
+          sessionId = requiredSessionId(obj, raw)
+        )
       case other =>
         AgentMessage.System(
           event = parseSystemEvent(obj, raw, other, context),

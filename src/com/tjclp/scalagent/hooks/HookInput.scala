@@ -2,6 +2,7 @@ package com.tjclp.scalagent.hooks
 
 import com.tjclp.scalagent.config.PermissionMode
 import com.tjclp.scalagent.json.StringEnumJsonCodec
+import com.tjclp.scalagent.messages.AssistantMessageError
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{SessionId, SubagentId, ToolUseId}
 import zio.json.*
@@ -155,6 +156,19 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       stopHookActive: Boolean = false,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
+      permissionMode: Option[PermissionMode] = None
+  ) extends HookInput
+
+  /** Input for StopFailure hook - triggered when agent fails to stop cleanly */
+  final case class StopFailure(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      error: AssistantMessageError,
+      errorDetails: Option[String] = None,
+      lastAssistantMessage: Option[String] = None,
       hookAgentId: Option[SubagentId] = None,
       hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None

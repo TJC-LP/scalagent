@@ -6,6 +6,7 @@ import scala.scalajs.js.JSConverters.*
 import zio.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.config.PermissionMode
+import com.tjclp.scalagent.messages.AssistantMessageError
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{SessionId, SubagentId, ToolUseId}
 
@@ -226,6 +227,19 @@ object HookCallback:
           cwd = cwd,
           transcriptPath = transcriptPath,
           stopHookActive = optionalBoolean(raw, "stop_hook_active").getOrElse(false),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
+          permissionMode = permissionMode
+        )
+
+      case "StopFailure" =>
+        HookInput.StopFailure(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          error = AssistantMessageError.fromString(firstString(raw, "error").getOrElse("unknown")),
+          errorDetails = firstString(raw, "error_details", "errorDetails"),
+          lastAssistantMessage = firstString(raw, "last_assistant_message", "lastAssistantMessage"),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode
