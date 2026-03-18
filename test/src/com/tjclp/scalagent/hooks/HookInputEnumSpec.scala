@@ -36,3 +36,5 @@ class HookInputEnumSpec extends FunSuite:
     assertStringEnumRoundTrip(ElicitationAction.Custom("future_elicitation_action"), "future_elicitation_action")
     assertStringEnumRoundTrip(ConfigChangeSource.Skills, "skills")
     assertStringEnumRoundTrip(ConfigChangeSource.Custom("future_config_source"), "future_config_source")
+    assertStringEnumRoundTrip(InstructionsLoadReason.Compact, "compact")
+    assertStringEnumRoundTrip(InstructionsLoadReason.Custom("future_load_reason"), "future_load_reason")

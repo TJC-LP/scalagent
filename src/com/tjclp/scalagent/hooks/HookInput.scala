@@ -93,7 +93,10 @@ object HookInput:
       permissionMode: Option[PermissionMode] = None,
       toolUseId: Option[ToolUseId] = None,
       agentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None
+      hookAgentType: Option[String] = None,
+      title: Option[String] = None,
+      displayName: Option[String] = None,
+      description: Option[String] = None
   ) extends HookInput:
     def hookAgentId: Option[SubagentId] = agentId
 
@@ -194,6 +197,18 @@ object HookInput:
 
     @deprecated("Use agentType", "0.2.63")
     def subagentType: String = agentType
+
+  /** Input for PostCompact hook - after context compaction completes */
+  final case class PostCompact(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      trigger: CompactTrigger,
+      compactSummary: String,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
+      permissionMode: Option[PermissionMode] = None
+  ) extends HookInput
 
   /** Input for PreCompact hook - before context compaction */
   final case class PreCompact(
@@ -506,7 +521,7 @@ object MemoryType:
 
 /** Load reason for instructions loaded hook */
 enum InstructionsLoadReason:
-  case SessionStart, NestedTraversal, PathGlobMatch, Include
+  case SessionStart, NestedTraversal, PathGlobMatch, Include, Compact
   case Custom(value: String)
 
   def toRaw: String = this match
@@ -514,6 +529,7 @@ enum InstructionsLoadReason:
     case NestedTraversal => "nested_traversal"
     case PathGlobMatch   => "path_glob_match"
     case Include         => "include"
+    case Compact         => "compact"
     case Custom(v)       => v
 
 object InstructionsLoadReason:
@@ -525,6 +541,7 @@ object InstructionsLoadReason:
     case "nested_traversal" => NestedTraversal
     case "path_glob_match"  => PathGlobMatch
     case "include"          => Include
+    case "compact"          => Compact
     case other              => Custom(other)
 
 /** Source of a configuration change */

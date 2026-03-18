@@ -138,6 +138,34 @@ class HookCallbackSpec extends FunSuite:
       case other => fail(s"Expected Setup, got: $other")
     }
 
+  test("parseHookInput handles PostCompact"):
+    val raw = baseInput("PostCompact")
+    raw.trigger = "auto"
+    raw.compact_summary = "Conversation compacted: 3 turns summarized"
+
+    parseInput(raw).map {
+      case input: HookInput.PostCompact =>
+        assertEquals(input.trigger, CompactTrigger.Auto)
+        assertEquals(input.compactSummary, "Conversation compacted: 3 turns summarized")
+      case other => fail(s"Expected PostCompact, got: $other")
+    }
+
+  test("parseHookInput handles PermissionRequest with title/displayName/description"):
+    val raw = baseInput("PermissionRequest")
+    raw.tool_name = "Bash"
+    raw.tool_input = js.Dynamic.literal(command = "ls")
+    raw.title = "Claude wants to run a shell command"
+    raw.display_name = "Run command"
+    raw.description = "Claude will execute: ls"
+
+    parseInput(raw).map {
+      case input: HookInput.PermissionRequest =>
+        assertEquals(input.title, Some("Claude wants to run a shell command"))
+        assertEquals(input.displayName, Some("Run command"))
+        assertEquals(input.description, Some("Claude will execute: ls"))
+      case other => fail(s"Expected PermissionRequest, got: $other")
+    }
+
   test("parseHookInput handles InstructionsLoaded with agent metadata"):
     val raw = baseInput("InstructionsLoaded")
     raw.file_path = "/tmp/project/CLAUDE.md"

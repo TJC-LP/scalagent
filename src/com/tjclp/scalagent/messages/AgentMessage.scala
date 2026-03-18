@@ -155,6 +155,17 @@ enum AgentMessage:
       summary: Option[String] = None
   )
 
+  /** API retry notification - emitted when a retryable error occurs and the request will be retried */
+  case ApiRetry(
+      attempt: Int,
+      maxRetries: Int,
+      retryDelayMs: Long,
+      errorStatus: Option[Int],
+      error: AssistantMessageError,
+      uuid: MessageUuid,
+      sessionId: SessionId
+  )
+
   /** Forward-compatible fallback for unknown top-level SDK messages */
   case Unknown(
       envelope: UnknownEnvelope

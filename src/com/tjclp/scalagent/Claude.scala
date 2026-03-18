@@ -7,7 +7,7 @@ import com.tjclp.scalagent.config.*
 import com.tjclp.scalagent.errors.*
 import com.tjclp.scalagent.messages.*
 import com.tjclp.scalagent.session.*
-import com.tjclp.scalagent.types.SessionId
+import com.tjclp.scalagent.types.{MessageUuid, SessionId}
 
 /** Simplified entry point for the Claude Agent SDK.
   *
@@ -267,6 +267,47 @@ object Claude:
     ZIO
       .fromPromiseJS(SdkModule.getSessionInfo(sessionId.value, opts))
       .map(_.toOption.map(dyn => SessionInfo.fromRaw(dyn.asInstanceOf[js.Dynamic])))
+      .mapError(AgentError.fromThrowable)
+
+  /** Fork a session into a new branch with fresh UUIDs.
+    *
+    * The forked session can be resumed with [[ClaudeSession.resume]] or via the `resume` session mode.
+    *
+    * @param sessionId
+    *   UUID of the source session to fork
+    * @param upToMessageId
+    *   Slice the transcript up to this message UUID (inclusive). If omitted, the full transcript is copied.
+    * @param title
+    *   Custom title for the fork. If omitted, derives from the original title + " (fork)".
+    * @param dir
+    *   Optional project directory path
+    * @return
+    *   The session ID of the newly forked session
+    */
+  def forkSession(
+      sessionId: SessionId,
+      upToMessageId: Option[MessageUuid] = None,
+      title: Option[String] = None,
+      dir: Option[String] = None
+  ): IO[AgentError, SessionId] =
+    val hasOptions = upToMessageId.isDefined || title.isDefined || dir.isDefined
+    val jsOpts: js.UndefOr[js.Dynamic] =
+      if hasOptions then
+        val opts = js.Dynamic.literal()
+        upToMessageId.foreach(id => opts.upToMessageId = id.value)
+        title.foreach(t => opts.title = t)
+        dir.foreach(d => opts.dir = d)
+        opts
+      else js.undefined
+    ZIO
+      .fromPromiseJS(SdkModule.forkSession(sessionId.value, jsOpts))
+      .flatMap { result =>
+        val sid = result.sessionId.asInstanceOf[js.UndefOr[String]].toOption
+        ZIO.fromOption(sid).mapError(_ =>
+          new RuntimeException("forkSession: missing sessionId in response")
+        )
+      }
+      .map(SessionId(_))
       .mapError(AgentError.fromThrowable)
 
   def getSessionMessages(sessionId: SessionId, dir: String): IO[AgentError, List[SessionMessage]] =
