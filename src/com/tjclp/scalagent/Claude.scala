@@ -7,7 +7,7 @@ import com.tjclp.scalagent.config.*
 import com.tjclp.scalagent.errors.*
 import com.tjclp.scalagent.messages.*
 import com.tjclp.scalagent.session.*
-import com.tjclp.scalagent.types.SessionId
+import com.tjclp.scalagent.types.{MessageUuid, SessionId}
 
 /** Simplified entry point for the Claude Agent SDK.
   *
@@ -286,15 +286,19 @@ object Claude:
     */
   def forkSession(
       sessionId: SessionId,
-      upToMessageId: Option[String] = None,
+      upToMessageId: Option[MessageUuid] = None,
       title: Option[String] = None,
       dir: Option[String] = None
   ): IO[AgentError, SessionId] =
-    val opts = js.Dynamic.literal()
-    upToMessageId.foreach(id => opts.upToMessageId = id)
-    title.foreach(t => opts.title = t)
-    dir.foreach(d => opts.dir = d)
-    val jsOpts: js.UndefOr[js.Dynamic] = opts
+    val hasOptions = upToMessageId.isDefined || title.isDefined || dir.isDefined
+    val jsOpts: js.UndefOr[js.Dynamic] =
+      if hasOptions then
+        val opts = js.Dynamic.literal()
+        upToMessageId.foreach(id => opts.upToMessageId = id.value)
+        title.foreach(t => opts.title = t)
+        dir.foreach(d => opts.dir = d)
+        opts
+      else js.undefined
     ZIO
       .fromPromiseJS(SdkModule.forkSession(sessionId.value, jsOpts))
       .map(result => SessionId(result.sessionId.asInstanceOf[String]))
