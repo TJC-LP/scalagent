@@ -168,7 +168,7 @@ enum AgentMessage:
 
   /** Bridge metadata message carrying slash commands */
   case BridgeMetadata(
-      slashCommands: List[String],
+      @jsonField("slash_commands") slashCommands: List[String],
       uuid: MessageUuid,
       sessionId: SessionId
   )

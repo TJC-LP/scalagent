@@ -204,11 +204,13 @@ object MessageConverter:
           parseApiRetryMessage(obj, raw)
         }
       case Some("bridge_metadata") =>
-        AgentMessage.BridgeMetadata(
-          slashCommands = stringArrayField(obj, "slash_commands"),
-          uuid = requiredUuid(obj, raw),
-          sessionId = requiredSessionId(obj, raw)
-        )
+        guardTopLevelUnknown(raw, "system", Some("bridge_metadata"), context) {
+          AgentMessage.BridgeMetadata(
+            slashCommands = stringArrayField(obj, "slash_commands"),
+            uuid = requiredUuid(obj, raw),
+            sessionId = requiredSessionId(obj, raw)
+          )
+        }
       case other =>
         AgentMessage.System(
           event = parseSystemEvent(obj, raw, other, context),

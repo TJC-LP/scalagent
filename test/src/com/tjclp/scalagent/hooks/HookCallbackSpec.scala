@@ -182,6 +182,17 @@ class HookCallbackSpec extends FunSuite:
       case other => fail(s"Expected StopFailure, got: $other")
     }
 
+  test("parseHookInput handles StopFailure with missing error defaults to Unknown"):
+    val raw = baseInput("StopFailure")
+
+    parseInput(raw).map {
+      case input: HookInput.StopFailure =>
+        assertEquals(input.error, AssistantMessageError.Unknown)
+        assertEquals(input.errorDetails, None)
+        assertEquals(input.lastAssistantMessage, None)
+      case other => fail(s"Expected StopFailure, got: $other")
+    }
+
   test("parseHookInput handles InstructionsLoaded with agent metadata"):
     val raw = baseInput("InstructionsLoaded")
     raw.file_path = "/tmp/project/CLAUDE.md"
