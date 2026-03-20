@@ -35,6 +35,9 @@ enum HookEvent:
   /** Stop hook triggered */
   case Stop
 
+  /** Stop failure hook - triggered when agent fails to stop cleanly */
+  case StopFailure
+
   /** Subagent initiated */
   case SubagentStart
 
@@ -85,6 +88,7 @@ enum HookEvent:
     case SessionStart       => "SessionStart"
     case SessionEnd         => "SessionEnd"
     case Stop               => "Stop"
+    case StopFailure        => "StopFailure"
     case SubagentStart      => "SubagentStart"
     case SubagentStop       => "SubagentStop"
     case PreCompact         => "PreCompact"
@@ -111,6 +115,7 @@ object HookEvent:
     case "SessionStart"      => Right(SessionStart)
     case "SessionEnd"        => Right(SessionEnd)
     case "Stop"              => Right(Stop)
+    case "StopFailure"       => Right(StopFailure)
     case "SubagentStart"     => Right(SubagentStart)
     case "SubagentStop"      => Right(SubagentStop)
     case "PreCompact"        => Right(PreCompact)
@@ -137,6 +142,7 @@ object HookEvent:
     case "SessionStart"      => SessionStart
     case "SessionEnd"        => SessionEnd
     case "Stop"              => Stop
+    case "StopFailure"       => StopFailure
     case "SubagentStart"     => SubagentStart
     case "SubagentStop"      => SubagentStop
     case "PreCompact"        => PreCompact
