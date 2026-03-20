@@ -5,15 +5,208 @@ import mill.scalajslib.api.*
 import publish.*
 import mainargs.arg
 
-// Main library module - sources in /src
-object agent extends ScalaJSModule with PublishModule {
+// ---------------------------------------------------------------------------
+// BunModule — Use Bun as the Scala.js runtime
+// ---------------------------------------------------------------------------
+// Will be extracted to a separate mill-scalajs-bun plugin repo once validated.
+// See: https://github.com/TJC-LP/scalagent/issues/26
+
+trait BunModule extends ScalaJSModule {
+
+  /** Path to the bun executable. */
+  def bunExecutable: T[String] = Task { "bun" }
+
+  /** Additional args passed to bun before the script path. */
+  def bunArgs: T[Seq[String]] = Task { Seq.empty[String] }
+
+  /** Additional environment variables for bun execution. */
+  def bunEnv: T[Map[String, String]] = Task { Map.empty[String, String] }
+
+  /**
+   * JSEnv config using NodeJs compat with Bun.
+   * Bun supports require('net') so the Scala.js test adapter's TCP com protocol works.
+   * sourceMap=false because Bun has native source map support.
+   */
+  override def jsEnvConfig: T[JsEnvConfig] = Task {
+    JsEnvConfig.NodeJs(
+      executable = bunExecutable(),
+      args = bunArgs().toList,
+      env = bunEnv(),
+      sourceMap = false
+    )
+  }
+
+  /** Run the linked JS output with Bun directly, bypassing the JSEnv framework. */
+  override def run(args: Task[Args] = Task.Anon(Args())): Command[Unit] = Task.Command {
+    finalMainClassOpt() match {
+      case Left(err) => Task.fail(err)
+      case Right(_) =>
+        val linked = fastLinkJS()
+        val jsFile = linked.dest.path / linked.publicModules.head.jsFileName
+        val cmd = Seq(bunExecutable()) ++ bunArgs() ++ Seq(jsFile.toString)
+        os.proc(cmd).call(
+          stdin = os.Inherit,
+          stdout = os.Inherit,
+          stderr = os.Inherit,
+          env = bunEnv()
+        )
+        ()
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// BunNpmModule — Declare npm dependencies in build.mill
+// ---------------------------------------------------------------------------
+
+trait BunNpmModule extends BunModule { outer =>
+
+  /** NPM dependencies: package name -> version spec. */
+  def npmDeps: T[Map[String, String]] = Task { Map.empty[String, String] }
+
+  /** NPM dev dependencies. */
+  def npmDevDeps: T[Map[String, String]] = Task { Map.empty[String, String] }
+
+  /** NPM peer dependencies. */
+  def npmPeerDeps: T[Map[String, String]] = Task { Map.empty[String, String] }
+
+  /** Whether to use ESM ("module" type) in package.json. */
+  def npmModuleType: T[Boolean] = Task { true }
+
+  /** Project root for bun.lock resolution and IDE tooling. */
+  def npmProjectDir: T[os.Path] = Task { moduleDir }
+
+  /** bun.lock file for reproducible installs. Declared as Source so Mill allows reading it. */
+  def bunLockFile: T[PathRef] = Task.Source(moduleDir / "bun.lock")
+
+  /** Generate package.json content from declared dependencies. */
+  def packageJsonContent: T[ujson.Value] = Task {
+    val obj = ujson.Obj(
+      "private" -> true,
+      "dependencies" -> ujson.Obj.from(
+        npmDeps().toSeq.sortBy(_._1).map { case (k, v) => k -> ujson.Str(v) }
+      ),
+      "devDependencies" -> ujson.Obj.from(
+        npmDevDeps().toSeq.sortBy(_._1).map { case (k, v) => k -> ujson.Str(v) }
+      )
+    )
+    if (npmModuleType()) obj("type") = "module"
+    val peers = npmPeerDeps()
+    if (peers.nonEmpty)
+      obj("peerDependencies") = ujson.Obj.from(
+        peers.toSeq.sortBy(_._1).map { case (k, v) => k -> ujson.Str(v) }
+      )
+    obj
+  }
+
+  /**
+   * Generate package.json in Task.dest, copy bun.lock if present, and run
+   * bun install. Returns PathRef to the install directory (contains node_modules).
+   * Follows Mill convention: Tasks only write to Task.dest.
+   */
+  def bunInstall: T[PathRef] = Task {
+    val dest = Task.dest
+
+    // Generate package.json in Task.dest
+    val content = ujson.write(packageJsonContent(), indent = 2) + "\n"
+    os.write.over(dest / "package.json", content)
+
+    // Copy bun.lock from project root if it exists (for reproducible installs)
+    val lockSrc = bunLockFile().path
+    if (os.exists(lockSrc)) os.copy.over(lockSrc, dest / "bun.lock")
+
+    os.proc(bunExecutable(), "install")
+      .call(cwd = dest, stdout = os.Inherit, stderr = os.Inherit)
+
+    PathRef(dest)
+  }
+
+  /** Path to node_modules from bunInstall. */
+  def nodeModulesPath: T[os.Path] = Task { bunInstall().path / "node_modules" }
+
+  /** Check for outdated npm packages. */
+  def bunOutdated() = Task.Command {
+    val dest = bunInstall().path
+    os.proc(bunExecutable(), "outdated")
+      .call(cwd = dest, stdout = os.Inherit, stderr = os.Inherit)
+  }
+
+  /** Generate package.json to project root for IDE/TypeScript LSP compatibility. */
+  def generatePackageJson() = Task.Command {
+    val dir = npmProjectDir()
+    val content = ujson.write(packageJsonContent(), indent = 2) + "\n"
+    os.write.over(dir / "package.json", content)
+    println(s"Generated package.json in $dir from build.mill declarations")
+  }
+
+  /** Override run to ensure bun install happens first and NODE_PATH is set. */
+  override def run(args: Task[Args] = Task.Anon(Args())): Command[Unit] = Task.Command {
+    finalMainClassOpt() match {
+      case Left(err) => Task.fail(err)
+      case Right(_) =>
+        val nmPath = nodeModulesPath()
+        val linked = fastLinkJS()
+        val jsFile = linked.dest.path / linked.publicModules.head.jsFileName
+        val cmd = Seq(bunExecutable()) ++ bunArgs() ++ Seq(jsFile.toString)
+        os.proc(cmd).call(
+          stdin = os.Inherit,
+          stdout = os.Inherit,
+          stderr = os.Inherit,
+          env = bunEnv() ++ Map("NODE_PATH" -> nmPath.toString)
+        )
+        ()
+    }
+  }
+
+  /** Test module that inherits npm deps from the parent.
+   *  Tests use Node.js for the JSEnv test adapter — the adapter pipes JS to
+   *  stdin and uses a TCP com protocol that requires Node.js's stdin behavior.
+   *  Bun doesn't read from stdin without explicit flags, so Node is used here.
+   *  The `run` task still uses Bun for all runtime execution.
+   */
+  trait BunNpmTests extends ScalaJSTests with BunNpmModule {
+    override def npmDeps = outer.npmDeps
+    override def npmDevDeps = outer.npmDevDeps
+    override def npmPeerDeps = outer.npmPeerDeps
+    override def npmProjectDir = outer.npmProjectDir
+
+    // Use Node.js for the test adapter's stdin/com protocol
+    override def jsEnvConfig: T[JsEnvConfig] = Task {
+      JsEnvConfig.NodeJs()
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main library module — sources in /src
+// ---------------------------------------------------------------------------
+
+object agent extends ScalaJSModule with PublishModule with BunNpmModule {
   def scalaVersion = "3.7.4"
   def scalaJSVersion = "1.20.1"
 
   // Scala.js linker configuration
   override def moduleKind = ModuleKind.ESModule
 
-  // Dependencies
+  // NPM dependencies — single source of truth (replaces package.json)
+  override def npmDeps = Task { Map(
+    "@anthropic-ai/claude-agent-sdk" -> "^0.2.78",
+    "@a2a-js/sdk" -> "^0.3.12",
+    "zod" -> "^4.0.0"
+  )}
+
+  override def npmDevDeps = Task { Map(
+    "@types/bun" -> "^1.3.5"
+  )}
+
+  override def npmPeerDeps = Task { Map(
+    "typescript" -> "^5.9.3"
+  )}
+
+  // Project root for bun.lock and IDE tooling
+  override def npmProjectDir = Task { build.moduleDir }
+
+  // Scala/Maven dependencies
   def mvnDeps = Seq(
     mvn"dev.zio::zio::2.1.24",
     mvn"dev.zio::zio-streams::2.1.24",
@@ -56,28 +249,27 @@ object agent extends ScalaJSModule with PublishModule {
   def artifactName = "scalagent"
 
   // Test module
-  object test extends ScalaJSTests with TestModule.Munit {
+  object test extends BunNpmTests with TestModule.Munit {
     def munitVersion = "1.1.0"
   }
 }
 
+// ---------------------------------------------------------------------------
 // Example application module
-// Run examples with: ./mill examples.run <ExampleName>
-// List examples with: ./mill examples.list
-object examples extends ScalaJSModule {
+// ---------------------------------------------------------------------------
+
+object examples extends BunNpmModule {
   def scalaVersion = agent.scalaVersion
   def scalaJSVersion = agent.scalaJSVersion
 
   override def moduleKind = ModuleKind.ESModule
   override def moduleDeps = Seq(agent)
 
-  // Use Bun instead of Node.js for running examples
-  override def jsEnvConfig = Task {
-    JsEnvConfig.NodeJs(
-      executable = "bun",
-      args = Nil
-    )
-  }
+  // Inherit npm deps from agent
+  override def npmDeps = agent.npmDeps
+  override def npmDevDeps = agent.npmDevDeps
+  override def npmPeerDeps = agent.npmPeerDeps
+  override def npmProjectDir = agent.npmProjectDir
 
   def mvnDeps = Seq(
     mvn"dev.zio::zio::2.1.24",
@@ -115,9 +307,9 @@ object examples extends ScalaJSModule {
     }
     println()
     println("Run with:")
-    println("  EXAMPLE=simple ./mill examples.bun    # run specific example")
-    println("  EXAMPLE=hook ./mill examples.bun      # run hook example")
-    println("  ./mill examples.bun                   # runs 'macro' by default")
+    println("  EXAMPLE=simple ./mill examples.run    # run specific example")
+    println("  EXAMPLE=hook ./mill examples.run      # run hook example")
+    println("  ./mill examples.run                   # runs 'macro' by default")
     println()
     println("Or run the compiled JS directly:")
     println("  bun out/examples/fastLinkJS.dest/main.js")
@@ -130,25 +322,5 @@ object examples extends ScalaJSModule {
     val cls = exampleClasses.get(example)
     if cls.isEmpty then println(s"Warning: Unknown example '$example', using 'macro'")
     cls.orElse(Some(exampleClasses("macro")))
-  }
-
-  // Run a specific example by short name
-  // Usage: EXAMPLE=simple ./mill examples.run
-  //        EXAMPLE=hook ./mill examples.run
-  //        ./mill examples.run  (runs macro by default)
-  //
-  // Or use runMain directly:
-  //        ./mill examples.runMain com.tjclp.scalagent.examples.SimpleQuery
-
-  // Custom bun runner that properly invokes the compiled JS
-  // Usage: EXAMPLE=hook ./mill examples.bun
-  def bun() = Task.Command {
-    val jsFile = fastLinkJS().dest.path / "main.js"
-    println(s"Running: bun $jsFile")
-    os.proc("bun", jsFile).call(
-      stdin = os.Inherit,
-      stdout = os.Inherit,
-      stderr = os.Inherit
-    )
   }
 }
