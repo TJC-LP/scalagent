@@ -16,7 +16,7 @@ import com.tjclp.scalagent.*
   *   - Support for structured output with ToolResult.json()
   *   - Support for multimodal output with ToolResult.multi
   *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.MacroToolExample
+  * Run with: ./mill examples.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */

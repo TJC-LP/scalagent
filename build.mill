@@ -258,7 +258,7 @@ object agent extends ScalaJSModule with PublishModule with BunNpmModule {
 // Example application module
 // ---------------------------------------------------------------------------
 
-object examples extends BunNpmModule {
+trait ExampleModule extends BunNpmModule {
   def scalaVersion = agent.scalaVersion
   def scalaJSVersion = agent.scalaJSVersion
 
@@ -280,22 +280,29 @@ object examples extends BunNpmModule {
   override def moduleDir = build.moduleDir
   override def sources = Task.Sources(moduleDir / "examples")
 
+  def exampleMainClass: String
+
+  override def mainClass = Task { Some(exampleMainClass) }
+}
+
+object examples extends ExampleModule {
+  def exampleMainClass = "com.tjclp.scalagent.examples.MacroToolExample"
+
   // Available examples - add new ones here
-  val exampleClasses = Map(
-    "simple"       -> "com.tjclp.scalagent.examples.SimpleQuery",
-    "macro"        -> "com.tjclp.scalagent.examples.MacroToolExample",
-    "custom"       -> "com.tjclp.scalagent.examples.CustomToolExample",
-    "hook"         -> "com.tjclp.scalagent.examples.HookExample",
-    "permission"   -> "com.tjclp.scalagent.examples.PermissionExample",
-    "session"      -> "com.tjclp.scalagent.examples.SessionExample",
-    // New examples for recent features
-    "structured"   -> "com.tjclp.scalagent.examples.StructuredOutputExample",
-    "subagent"     -> "com.tjclp.scalagent.examples.SubagentExample",
-    "plugin"       -> "com.tjclp.scalagent.examples.PluginExample",
-    "prompt"       -> "com.tjclp.scalagent.examples.SystemPromptExample",
-    "command"      -> "com.tjclp.scalagent.examples.SlashCommandExample",
-    "a2a"          -> "com.tjclp.scalagent.examples.A2AExample",
-    "agent-hooks"  -> "com.tjclp.scalagent.examples.AgentHooksExample"
+  val exampleCommands = Map(
+    "simple"       -> "examples.simple.run",
+    "macro"        -> "examples.run",
+    "custom"       -> "examples.custom.run",
+    "hook"         -> "examples.hook.run",
+    "permission"   -> "examples.permission.run",
+    "session"      -> "examples.session.run",
+    "structured"   -> "examples.structured.run",
+    "subagent"     -> "examples.subagent.run",
+    "plugin"       -> "examples.plugin.run",
+    "prompt"       -> "examples.prompt.run",
+    "command"      -> "examples.command.run",
+    "a2a"          -> "examples.a2a.run",
+    "agent-hooks"  -> "examples.agentHooks.run"
   )
 
   private val defaultExample = "macro"
@@ -304,25 +311,64 @@ object examples extends BunNpmModule {
   def list() = Task.Command {
     println("Available examples:")
     println("-------------------")
-    exampleClasses.toSeq.sortBy(_._1).foreach { case (name, cls) =>
-      println(s"  $name -> $cls")
+    exampleCommands.toSeq.sortBy(_._1).foreach { case (name, command) =>
+      println(s"  $name -> ./$command")
     }
     println()
     println("Run with:")
     println(s"  ./mill examples.run                   # runs '$defaultExample' by default")
-    println("  EXAMPLE=simple ./mill examples.run    # run specific example")
-    println("  EXAMPLE=hook ./mill examples.run      # run hook example")
+    println("  ./mill examples.simple.run           # run simple example")
+    println("  ./mill examples.hook.run             # run hook example")
     println()
     println("Or run the compiled JS directly:")
     println("  bun out/examples/fastLinkJS.dest/main.js")
   }
 
-  // Dynamic mainClass based on environment or default
-  // Task.Input ensures this is re-evaluated each run
-  override def mainClass = Task.Input {
-    val example = Task.env.get("EXAMPLE").getOrElse(defaultExample)
-    val cls = exampleClasses.get(example)
-    if cls.isEmpty then println(s"Warning: Unknown example '$example', using '$defaultExample'")
-    cls.orElse(Some(exampleClasses(defaultExample)))
+  object simple extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.SimpleQuery"
+  }
+
+  object custom extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.CustomToolExample"
+  }
+
+  object hook extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.HookExample"
+  }
+
+  object permission extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.PermissionExample"
+  }
+
+  object session extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.SessionExample"
+  }
+
+  object structured extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.StructuredOutputExample"
+  }
+
+  object subagent extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.SubagentExample"
+  }
+
+  object plugin extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.PluginExample"
+  }
+
+  object prompt extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.SystemPromptExample"
+  }
+
+  object command extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.SlashCommandExample"
+  }
+
+  object a2a extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.A2AExample"
+  }
+
+  object agentHooks extends ExampleModule {
+    def exampleMainClass = "com.tjclp.scalagent.examples.AgentHooksExample"
   }
 }

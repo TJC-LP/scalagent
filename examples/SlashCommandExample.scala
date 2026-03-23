@@ -12,7 +12,7 @@ import com.tjclp.scalagent.*
   * - Use extension methods (withSlash, isBuiltin)
   * - Handle commands from SystemEvent.Init
   *
-  * Run with: EXAMPLE=command mill examples.run
+  * Run with: ./mill examples.command.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */

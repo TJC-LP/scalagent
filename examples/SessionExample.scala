@@ -17,7 +17,7 @@ import com.tjclp.scalagent.*
   *   - Proper resource cleanup with `session.close`
   *   - Validated session UUIDs with `SessionUuid`
   *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.SessionExample
+  * Run with: ./mill examples.session.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   *

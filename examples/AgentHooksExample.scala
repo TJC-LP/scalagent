@@ -14,7 +14,7 @@ import com.tjclp.scalagent.hooks.HookConfig
   *   4. Use the permissionMode field in AgentDefinition
   *   5. Use the fluent extension methods (withShellHook, withCallbackHook)
   *
-  * Run with: EXAMPLE=agent-hooks mill examples.run
+  * Run with: ./mill examples.agentHooks.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */

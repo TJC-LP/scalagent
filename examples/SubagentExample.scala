@@ -11,7 +11,7 @@ import com.tjclp.scalagent.*
   * - Restrict agent tool access
   * - Set agent-specific models with AgentModel
   *
-  * Run with: EXAMPLE=subagent mill examples.run
+  * Run with: ./mill examples.subagent.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */

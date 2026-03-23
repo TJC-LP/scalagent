@@ -11,7 +11,7 @@ import com.tjclp.scalagent.*
   *   2. Block specific tools (e.g., Bash commands)
   *   3. Modify tool behavior based on custom logic
   *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.HookExample
+  * Run with: ./mill examples.hook.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */

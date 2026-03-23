@@ -18,7 +18,7 @@ import com.tjclp.scalagent.*
   * Claude Writer (local) --> A2ATool --> A2A Client --> A2A Server --> Claude Researcher
   * ```
   *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.A2AExample
+  * Run with: ./mill examples.a2a.run
   *
   * Requires:
   *   - ANTHROPIC_API_KEY environment variable when Claude Code auth is not already available

@@ -11,7 +11,7 @@ import com.tjclp.scalagent.*
   * - Handle PluginError types (PathNotFound, NotADirectory, MissingManifest)
   * - Use convenience methods like withLocalPlugins()
   *
-  * Run with: EXAMPLE=plugin mill examples.run
+  * Run with: ./mill examples.plugin.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */

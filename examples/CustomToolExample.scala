@@ -12,7 +12,7 @@ import com.tjclp.scalagent.*
   *   2. Create an in-process MCP server with those tools
   *   3. Use the custom tools in a Claude agent query
   *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.CustomToolExample
+  * Run with: ./mill examples.custom.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */

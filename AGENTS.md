@@ -11,7 +11,8 @@
 - `bun install`: install JS dependencies (Bun is the preferred runtime).
 - `./mill agent.compile` or `bun run build`: compile the Scala.js library.
 - `./mill agent.test`: run the MUnit test suite.
-- `./mill examples.run`: run the default example; use `EXAMPLE=simple ./mill examples.run` for a specific example.
+- `./mill examples.run`: run the default example.
+- `./mill examples.simple.run`: run a specific example by submodule, e.g. `./mill examples.hook.run`.
 - `bun run run`: compile and execute the JS output for examples.
 - `./mill examples.list`: list available example entry points.
 

@@ -12,7 +12,7 @@ import com.tjclp.scalagent.*
   * - Use StructuredOutput.derive[T] to generate JSON Schema
   * - Parse typed responses with parseAs[T]
   *
-  * Run with: EXAMPLE=structured mill examples.run
+  * Run with: ./mill examples.structured.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */

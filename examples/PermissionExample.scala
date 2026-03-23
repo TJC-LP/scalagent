@@ -14,7 +14,7 @@ import com.tjclp.scalagent.permissions.{PermissionUpdate, PermissionUpdateDestin
   *   3. Use permission utilities for common patterns
   *   4. Programmatic permission updates with PermissionUpdateDestination
   *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.PermissionExample
+  * Run with: ./mill examples.permission.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */

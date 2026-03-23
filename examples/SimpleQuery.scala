@@ -11,7 +11,7 @@ import com.tjclp.scalagent.*
   * - Claude.query() for streaming responses
   * - Claude.conversation() for multi-turn chats
   *
-  * Run with: mill examples.run
+  * Run with: ./mill examples.simple.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */

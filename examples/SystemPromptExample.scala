@@ -11,7 +11,7 @@ import com.tjclp.scalagent.*
   * - Use SystemPromptConfig.claudeCode convenience value
   * - Append instructions to presets with claudeCodeWith()
   *
-  * Run with: EXAMPLE=prompt mill examples.run
+  * Run with: ./mill examples.prompt.run
   *
   * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */
