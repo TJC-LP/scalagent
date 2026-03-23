@@ -21,7 +21,7 @@ import com.tjclp.scalagent.*
   * Run with: mill examples.runMain com.tjclp.scalagent.examples.A2AExample
   *
   * Requires:
-  *   - ANTHROPIC_API_KEY environment variable
+  *   - ANTHROPIC_API_KEY environment variable when Claude Code auth is not already available
   *   - @a2a-js/sdk npm package installed
   */
 object A2AExample extends ZIOAppDefault:

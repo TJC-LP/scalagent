@@ -14,7 +14,7 @@ import com.tjclp.scalagent.*
   *
   * Run with: EXAMPLE=structured mill examples.run
   *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
+  * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */
 object StructuredOutputExample extends ZIOAppDefault:
 

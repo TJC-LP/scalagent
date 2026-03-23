@@ -16,7 +16,7 @@ import com.tjclp.scalagent.permissions.{PermissionUpdate, PermissionUpdateDestin
   *
   * Run with: mill examples.runMain com.tjclp.scalagent.examples.PermissionExample
   *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
+  * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */
 object PermissionExample extends ZIOAppDefault:
 

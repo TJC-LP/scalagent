@@ -16,7 +16,7 @@ import com.tjclp.scalagent.hooks.HookConfig
   *
   * Run with: EXAMPLE=agent-hooks mill examples.run
   *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
+  * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */
 object AgentHooksExample extends ZIOAppDefault:
 

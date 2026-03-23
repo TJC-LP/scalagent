@@ -43,7 +43,7 @@ trait BunModule extends ScalaJSModule {
       case Right(_) =>
         val linked = fastLinkJS()
         val jsFile = linked.dest.path / linked.publicModules.head.jsFileName
-        val cmd = Seq(bunExecutable()) ++ bunArgs() ++ Seq(jsFile.toString)
+        val cmd = Seq(bunExecutable()) ++ bunArgs() ++ Seq(jsFile.toString) ++ args().value
         os.proc(cmd).call(
           stdin = os.Inherit,
           stdout = os.Inherit,
@@ -147,7 +147,7 @@ trait BunNpmModule extends BunModule { outer =>
         val nmPath = nodeModulesPath()
         val linked = fastLinkJS()
         val jsFile = linked.dest.path / linked.publicModules.head.jsFileName
-        val cmd = Seq(bunExecutable()) ++ bunArgs() ++ Seq(jsFile.toString)
+        val cmd = Seq(bunExecutable()) ++ bunArgs() ++ Seq(jsFile.toString) ++ args().value
         os.proc(cmd).call(
           stdin = os.Inherit,
           stdout = os.Inherit,
@@ -298,6 +298,8 @@ object examples extends BunNpmModule {
     "agent-hooks"  -> "com.tjclp.scalagent.examples.AgentHooksExample"
   )
 
+  private val defaultExample = "macro"
+
   // List available examples
   def list() = Task.Command {
     println("Available examples:")
@@ -307,9 +309,9 @@ object examples extends BunNpmModule {
     }
     println()
     println("Run with:")
+    println(s"  ./mill examples.run                   # runs '$defaultExample' by default")
     println("  EXAMPLE=simple ./mill examples.run    # run specific example")
     println("  EXAMPLE=hook ./mill examples.run      # run hook example")
-    println("  ./mill examples.run                   # runs 'macro' by default")
     println()
     println("Or run the compiled JS directly:")
     println("  bun out/examples/fastLinkJS.dest/main.js")
@@ -318,9 +320,9 @@ object examples extends BunNpmModule {
   // Dynamic mainClass based on environment or default
   // Task.Input ensures this is re-evaluated each run
   override def mainClass = Task.Input {
-    val example = Task.env.get("EXAMPLE").getOrElse("macro")
+    val example = Task.env.get("EXAMPLE").getOrElse(defaultExample)
     val cls = exampleClasses.get(example)
-    if cls.isEmpty then println(s"Warning: Unknown example '$example', using 'macro'")
-    cls.orElse(Some(exampleClasses("macro")))
+    if cls.isEmpty then println(s"Warning: Unknown example '$example', using '$defaultExample'")
+    cls.orElse(Some(exampleClasses(defaultExample)))
   }
 }

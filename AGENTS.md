@@ -34,5 +34,4 @@ motivation or linked issue, and the commands you ran (e.g. `./mill agent.test`).
 examples when public APIs or usage patterns change.
 
 ## Configuration & Runtime Notes
-Runtime examples require `ANTHROPIC_API_KEY`. Prefer Bun for JS tasks (`bun run ...`) rather than
-npm/node.
+Runtime examples require `ANTHROPIC_API_KEY`. When running inside Claude Code, auth is typically handled automatically; setting `ANTHROPIC_API_KEY` remains an optional override. Prefer Bun for JS tasks (`bun run ...`) rather than npm/node.

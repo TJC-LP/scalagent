@@ -18,7 +18,7 @@ import com.tjclp.scalagent.*
   *
   * Run with: mill examples.runMain com.tjclp.scalagent.examples.MacroToolExample
   *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
+  * Requires ANTHROPIC_API_KEY environment variable to be set when Claude Code auth is not already available.
   */
 object MacroToolExample extends ZIOAppDefault:
 
