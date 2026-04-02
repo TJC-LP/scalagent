@@ -20,8 +20,6 @@ jobs:
         uses: oven-sh/setup-bun@v2.0.2
         with:
           bun-version: "latest"
-      - name: Install JS dependencies
-        run: bun install --frozen-lockfile
       - name: Compile
         run: ./mill agent.compile
       - name: Test

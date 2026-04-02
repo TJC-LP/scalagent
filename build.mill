@@ -1,19 +1,28 @@
+//| mill-version: 1.1.5
+//| mill-jvm-version: system
+//| mvnDeps:
+//| - com.tjclp::mill-bun_mill1:0.1.0
+
 package build
 
-import mill.*, scalalib.*, scalajslib.*
+import mill.*, scalalib.*, publish.*
 import mill.scalajslib.api.*
-import publish.*
-import mainargs.arg
+import mill.scalajslib.bun.*
 
 // Main library module - sources in /src
-object agent extends ScalaJSModule with PublishModule {
+object agent extends BunScalaJSModule with PublishModule {
   def scalaVersion = "3.7.4"
-  def scalaJSVersion = "1.20.1"
+  override def moduleKind = Task { ModuleKind.ESModule }
 
-  // Scala.js linker configuration
-  override def moduleKind = ModuleKind.ESModule
+  // JS dependencies (replaces package.json)
+  def npmDeps = Task { Seq(
+    "@anthropic-ai/claude-agent-sdk@^0.2.78",
+    "@a2a-js/sdk@^0.3.12",
+    "zod@^4.0.0"
+  )}
+  def npmDevDeps = Task { Seq("@types/bun@^1.3.5") }
 
-  // Dependencies
+  // Scala dependencies
   def mvnDeps = Seq(
     mvn"dev.zio::zio::2.1.24",
     mvn"dev.zio::zio-streams::2.1.24",
@@ -56,28 +65,19 @@ object agent extends ScalaJSModule with PublishModule {
   def artifactName = "scalagent"
 
   // Test module
-  object test extends ScalaJSTests with TestModule.Munit {
+  object test extends BunScalaJSTests, TestModule.Munit {
     def munitVersion = "1.1.0"
   }
 }
 
 // Example application module
-// Run examples with: ./mill examples.run <ExampleName>
+// Run examples with: ./mill examples.go --example simple
 // List examples with: ./mill examples.list
-object examples extends ScalaJSModule {
+object examples extends BunScalaJSModule {
   def scalaVersion = agent.scalaVersion
-  def scalaJSVersion = agent.scalaJSVersion
-
-  override def moduleKind = ModuleKind.ESModule
+  override def moduleKind = Task { ModuleKind.ESModule }
   override def moduleDeps = Seq(agent)
-
-  // Use Bun instead of Node.js for running examples
-  override def jsEnvConfig = Task {
-    JsEnvConfig.NodeJs(
-      executable = "bun",
-      args = Nil
-    )
-  }
+  override def bunBundleTarget = Task { "bun" }
 
   def mvnDeps = Seq(
     mvn"dev.zio::zio::2.1.24",
@@ -96,7 +96,6 @@ object examples extends ScalaJSModule {
     "hook"         -> "com.tjclp.scalagent.examples.HookExample",
     "permission"   -> "com.tjclp.scalagent.examples.PermissionExample",
     "session"      -> "com.tjclp.scalagent.examples.SessionExample",
-    // New examples for recent features
     "structured"   -> "com.tjclp.scalagent.examples.StructuredOutputExample",
     "subagent"     -> "com.tjclp.scalagent.examples.SubagentExample",
     "plugin"       -> "com.tjclp.scalagent.examples.PluginExample",
@@ -115,40 +114,39 @@ object examples extends ScalaJSModule {
     }
     println()
     println("Run with:")
-    println("  EXAMPLE=simple ./mill examples.bun    # run specific example")
-    println("  EXAMPLE=hook ./mill examples.bun      # run hook example")
-    println("  ./mill examples.bun                   # runs 'macro' by default")
-    println()
-    println("Or run the compiled JS directly:")
-    println("  bun out/examples/fastLinkJS.dest/main.js")
+    println("  ./mill examples.go --example simple   # run specific example")
+    println("  ./mill examples.go --example hook     # run hook example")
+    println("  ./mill examples.go                    # runs 'macro' by default")
   }
 
-  // Dynamic mainClass based on environment or default
-  // Task.Input ensures this is re-evaluated each run
+  // Run an example by short name: ./mill examples.go --example simple
+  def go(example: String = "macro") = Task.Command {
+    exampleClasses.get(example) match {
+      case None =>
+        sys.error(s"Unknown example '$example'. Available: ${exampleClasses.keys.toSeq.sorted.mkString(", ")}")
+      case _ => ()
+    }
+
+    // Set system property so mainClass (Task.Input) picks it up during linking
+    System.setProperty("scalagent.example", example)
+
+    val linked = fastLinkJS()
+    val entry = primaryEntrypoint(linked)
+    runBun(
+      bunExecutable(),
+      Seq("run", entry.toString),
+      cwd = linked.dest.path,
+      env = bunJsEnv()
+    )
+  }
+
+  // Dynamic mainClass based on system property or EXAMPLE env var
   override def mainClass = Task.Input {
-    val example = Task.env.get("EXAMPLE").getOrElse("macro")
+    val example = Option(System.getProperty("scalagent.example"))
+      .orElse(Task.env.get("EXAMPLE"))
+      .getOrElse("macro")
     val cls = exampleClasses.get(example)
     if cls.isEmpty then println(s"Warning: Unknown example '$example', using 'macro'")
     cls.orElse(Some(exampleClasses("macro")))
-  }
-
-  // Run a specific example by short name
-  // Usage: EXAMPLE=simple ./mill examples.run
-  //        EXAMPLE=hook ./mill examples.run
-  //        ./mill examples.run  (runs macro by default)
-  //
-  // Or use runMain directly:
-  //        ./mill examples.runMain com.tjclp.scalagent.examples.SimpleQuery
-
-  // Custom bun runner that properly invokes the compiled JS
-  // Usage: EXAMPLE=hook ./mill examples.bun
-  def bun() = Task.Command {
-    val jsFile = fastLinkJS().dest.path / "main.js"
-    println(s"Running: bun $jsFile")
-    os.proc("bun", jsFile).call(
-      stdin = os.Inherit,
-      stdout = os.Inherit,
-      stderr = os.Inherit
-    )
   }
 }
