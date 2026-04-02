@@ -227,6 +227,7 @@ object HookCallback:
           cwd = cwd,
           transcriptPath = transcriptPath,
           stopHookActive = optionalBoolean(raw, "stop_hook_active").getOrElse(false),
+          lastAssistantMessage = firstString(raw, "last_assistant_message", "lastAssistantMessage"),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode
@@ -264,6 +265,7 @@ object HookCallback:
           agentId = SubagentId(firstString(raw, "agent_id", "agentId").getOrElse("")),
           agentTranscriptPath = firstString(raw, "agent_transcript_path", "agentTranscriptPath").getOrElse(""),
           agentType = firstString(raw, "agent_type", "agentType").getOrElse(""),
+          lastAssistantMessage = firstString(raw, "last_assistant_message", "lastAssistantMessage"),
           permissionMode = permissionMode
         )
 
@@ -417,6 +419,59 @@ object HookCallback:
             .map(_.asInstanceOf[js.Array[String]].toList),
           triggerFilePath = firstString(raw, "trigger_file_path", "triggerFilePath"),
           parentFilePath = firstString(raw, "parent_file_path", "parentFilePath"),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
+          permissionMode = permissionMode
+        )
+
+      case "PermissionDenied" =>
+        HookInput.PermissionDenied(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          toolName = ToolName(raw.tool_name.asInstanceOf[String]),
+          toolInput = parseJson(raw.tool_input),
+          toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
+          reason = firstString(raw, "reason"),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
+          permissionMode = permissionMode
+        )
+
+      case "TaskCreated" =>
+        HookInput.TaskCreated(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          taskId = firstString(raw, "task_id", "taskId").getOrElse(""),
+          taskSubject = firstString(raw, "task_subject", "taskSubject").getOrElse(""),
+          taskDescription = firstString(raw, "task_description", "taskDescription"),
+          teammateName = firstString(raw, "teammate_name", "teammateName"),
+          teamName = firstString(raw, "team_name", "teamName"),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
+          permissionMode = permissionMode
+        )
+
+      case "CwdChanged" =>
+        HookInput.CwdChanged(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          oldCwd = firstString(raw, "old_cwd", "oldCwd").getOrElse(""),
+          newCwd = firstString(raw, "new_cwd", "newCwd").getOrElse(""),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
+          permissionMode = permissionMode
+        )
+
+      case "FileChanged" =>
+        HookInput.FileChanged(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          filePath = firstString(raw, "file_path", "filePath").getOrElse(""),
+          event = FileChangeEvent.fromString(firstString(raw, "event").getOrElse("change")),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode

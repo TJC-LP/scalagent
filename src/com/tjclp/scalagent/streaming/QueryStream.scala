@@ -74,6 +74,15 @@ trait RawQuery extends AsyncGenerator[js.Any, Unit, Unit]:
   /** Apply settings mid-session (only available in streaming input mode) */
   def applyFlagSettings(settings: js.Dynamic): js.Promise[Unit] = js.native
 
+  /** Seed the file read state cache to prevent stale-read errors after compaction */
+  def seedReadState(path: String, mtime: Double): js.Promise[Unit] = js.native
+
+  /** Get detailed context window usage breakdown */
+  def getContextUsage(): js.Promise[js.Dynamic] = js.native
+
+  /** Reload plugins, refreshing commands, agents, and MCP server status */
+  def reloadPlugins(): js.Promise[js.Dynamic] = js.native
+
 /** Wrapper for SDK Query that provides ZIO/ZStream interface.
   *
   * This class wraps the raw JavaScript Query object and provides:
@@ -369,6 +378,24 @@ final class QueryStream private (rawQuery: RawQuery):
   def applyFlagSettings(settings: js.Dynamic): Task[Unit] =
     ZIO.fromPromiseJS(rawQuery.applyFlagSettings(settings))
 
+  /** Seed the file read state cache. Call after compaction to prevent
+    * "file not read yet" errors for files previously accessed.
+    */
+  def seedReadState(path: String, mtime: Double): Task[Unit] =
+    ZIO.fromPromiseJS(rawQuery.seedReadState(path, mtime))
+
+  /** Get detailed context window usage breakdown including token counts
+    * by category (user messages, assistant, tools, system, etc.).
+    */
+  def getContextUsage(): Task[js.Dynamic] =
+    ZIO.fromPromiseJS(rawQuery.getContextUsage())
+
+  /** Reload plugins, refreshing available commands, agents, plugins,
+    * and MCP server status.
+    */
+  def reloadPlugins(): Task[js.Dynamic] =
+    ZIO.fromPromiseJS(rawQuery.reloadPlugins())
+
 object QueryStream:
 
   /** Create a QueryStream from a raw SDK Query object.
@@ -402,7 +429,8 @@ object SlashCommand:
     SlashCommand(
       name = obj.name.asInstanceOf[String],
       description = obj.description.asInstanceOf[String],
-      args = obj.args.asInstanceOf[js.UndefOr[String]].toOption
+      args = obj.argumentHint.asInstanceOf[js.UndefOr[String]].toOption
+        .orElse(obj.args.asInstanceOf[js.UndefOr[String]].toOption)
     )
 
 /** Information about a supported model */
@@ -550,13 +578,15 @@ object McpSetServersResult:
       errors = errorsDict.toMap
     )
 
-/** Full initialization result from SDK control response (SDK 0.2.31) */
+/** Full initialization result from SDK control response */
 final case class InitializationResult(
     commands: List[SlashCommand],
     outputStyle: String,
     availableOutputStyles: List[String],
     models: List[ModelInfo],
-    account: AccountInfo
+    account: AccountInfo,
+    agents: List[AgentInfo] = Nil,
+    fastModeState: Option[String] = None
 )
 
 object InitializationResult:
@@ -566,5 +596,8 @@ object InitializationResult:
       outputStyle = obj.output_style.asInstanceOf[String],
       availableOutputStyles = obj.available_output_styles.asInstanceOf[js.Array[String]].toList,
       models = obj.models.asInstanceOf[js.Array[js.Dynamic]].toList.map(ModelInfo.fromRaw),
-      account = AccountInfo.fromRaw(obj.account)
+      account = AccountInfo.fromRaw(obj.account),
+      agents = obj.agents.asInstanceOf[js.UndefOr[js.Array[js.Dynamic]]].toOption
+        .map(_.toList.map(AgentInfo.fromRaw)).getOrElse(Nil),
+      fastModeState = obj.fast_mode_state.asInstanceOf[js.UndefOr[String]].toOption
     )

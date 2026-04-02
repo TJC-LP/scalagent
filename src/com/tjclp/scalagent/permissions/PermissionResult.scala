@@ -4,6 +4,29 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import zio.json.*
 import zio.json.ast.Json
+import com.tjclp.scalagent.json.StringEnumJsonCodec
+import com.tjclp.scalagent.types.ToolUseId
+
+/** Classification of a permission decision. */
+enum PermissionDecisionClassification:
+  case UserTemporary
+  case UserPermanent
+  case UserReject
+
+  def toRaw: String = this match
+    case UserTemporary => "user_temporary"
+    case UserPermanent => "user_permanent"
+    case UserReject    => "user_reject"
+
+object PermissionDecisionClassification:
+  given JsonEncoder[PermissionDecisionClassification] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[PermissionDecisionClassification] = StringEnumJsonCodec.decoder(fromString)
+
+  def fromString(s: String): PermissionDecisionClassification = s match
+    case "user_temporary" => UserTemporary
+    case "user_permanent" => UserPermanent
+    case "user_reject"    => UserReject
+    case _                => UserTemporary
 
 /** Result of a permission decision.
   *
@@ -21,10 +44,16 @@ object PermissionResult:
     *   Optional modified input to use instead of original
     * @param updatedPermissions
     *   Optional permission updates to apply
+    * @param toolUseId
+    *   Optional tool use ID this decision applies to
+    * @param decisionClassification
+    *   Optional classification of the permission decision
     */
   final case class Allow(
       updatedInput: Option[Json] = None,
-      updatedPermissions: List[PermissionUpdate] = Nil
+      updatedPermissions: List[PermissionUpdate] = Nil,
+      toolUseId: Option[ToolUseId] = None,
+      decisionClassification: Option[PermissionDecisionClassification] = None
   ) extends PermissionResult:
     def toRaw: js.Object =
       val obj = js.Dynamic.literal(behavior = "allow")
@@ -33,6 +62,8 @@ object PermissionResult:
       }
       if updatedPermissions.nonEmpty then
         obj.updatedPermissions = updatedPermissions.map(_.toRaw).toJSArray
+      toolUseId.foreach(id => obj.toolUseId = id.value)
+      decisionClassification.foreach(dc => obj.decisionClassification = dc.toRaw)
       obj.asInstanceOf[js.Object]
 
   /** Deny the tool execution.
@@ -41,10 +72,16 @@ object PermissionResult:
     *   Message explaining why permission was denied
     * @param interrupt
     *   If true, stop the entire agent execution
+    * @param toolUseId
+    *   Optional tool use ID this decision applies to
+    * @param decisionClassification
+    *   Optional classification of the permission decision
     */
   final case class Deny(
       message: String,
-      interrupt: Boolean = false
+      interrupt: Boolean = false,
+      toolUseId: Option[ToolUseId] = None,
+      decisionClassification: Option[PermissionDecisionClassification] = None
   ) extends PermissionResult:
     def toRaw: js.Object =
       val obj = js.Dynamic.literal(
@@ -52,6 +89,8 @@ object PermissionResult:
         message = message
       )
       if interrupt then obj.interrupt = true
+      toolUseId.foreach(id => obj.toolUseId = id.value)
+      decisionClassification.foreach(dc => obj.decisionClassification = dc.toRaw)
       obj.asInstanceOf[js.Object]
 
   // Convenience constructors

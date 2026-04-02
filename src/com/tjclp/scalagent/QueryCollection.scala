@@ -121,7 +121,7 @@ object QueryCollector:
         message.content.collect { case ContentBlock.Unknown(envelope) =>
           s"Unknown content block type '${envelope.rawType}'"
         }
-      case AgentMessage.User(message, _, _, _, _, _) =>
+      case AgentMessage.User(message, _, _, _, _, _, _) =>
         message.content.collect { case ContentBlock.Unknown(envelope) =>
           s"Unknown content block type '${envelope.rawType}'"
         }

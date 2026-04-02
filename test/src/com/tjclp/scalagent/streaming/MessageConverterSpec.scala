@@ -244,7 +244,7 @@ class MessageConverterSpec extends FunSuite:
     )
 
     MessageConverter.fromRaw(raw) match
-      case AgentMessage.RateLimitEvent(retryAfterMs, model, status, resetsAt, rateLimitType, utilization, _, _) =>
+      case AgentMessage.RateLimitEvent(retryAfterMs, model, status, resetsAt, rateLimitType, utilization, _, _, _, _, _, _, _) =>
         assertEquals(retryAfterMs, None)
         assertEquals(model, None)
         assertEquals(status, Some("allowed_warning"))

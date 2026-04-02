@@ -27,7 +27,8 @@ enum AgentMessage:
       isSynthetic: Boolean,
       toolUseResult: Option[zio.json.ast.Json],
       uuid: Option[MessageUuid],
-      sessionId: SessionId
+      sessionId: SessionId,
+      timestamp: Option[String] = None
   )
 
   /** User message replay (from session resume) */
@@ -117,7 +118,12 @@ enum AgentMessage:
       rateLimitType: Option[String],
       utilization: Option[Double],
       uuid: MessageUuid,
-      sessionId: SessionId
+      sessionId: SessionId,
+      overageStatus: Option[String] = None,
+      overageResetsAt: Option[String] = None,
+      overageDisabledReason: Option[String] = None,
+      isUsingOverage: Option[Boolean] = None,
+      surpassedThreshold: Option[Boolean] = None
   )
 
   /** Local command output */
@@ -143,7 +149,8 @@ enum AgentMessage:
       sessionId: SessionId,
       toolUseId: Option[String] = None,
       taskType: Option[String] = None,
-      prompt: Option[String] = None
+      prompt: Option[String] = None,
+      workflowName: Option[String] = None
   )
 
   /** Task progress update */
@@ -152,7 +159,9 @@ enum AgentMessage:
       progress: String,
       uuid: MessageUuid,
       sessionId: SessionId,
-      summary: Option[String] = None
+      summary: Option[String] = None,
+      toolUseId: Option[String] = None,
+      lastToolName: Option[String] = None
   )
 
   /** API retry notification - emitted when a retryable error occurs and the request will be retried */
@@ -189,7 +198,7 @@ object AgentMessage:
       case Assistant(message, _, _, _, _) =>
         val texts = message.content.collect { case ContentBlock.Text(t) => t }
         if texts.isEmpty then None else Some(texts.mkString)
-      case User(message, _, _, _, _, _) =>
+      case User(message, _, _, _, _, _, _) =>
         val texts = message.content.collect { case ContentBlock.Text(t) => t }
         if texts.isEmpty then None else Some(texts.mkString)
       case UserReplay(message, _, _, _) =>
@@ -209,7 +218,7 @@ object AgentMessage:
 
     /** Extract all tool results from this message */
     def toolResults: List[ContentBlock.ToolResult] = msg match
-      case User(message, _, _, _, _, _) =>
+      case User(message, _, _, _, _, _, _) =>
         message.content.collect { case tr: ContentBlock.ToolResult => tr }
       case _ => Nil
 

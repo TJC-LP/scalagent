@@ -174,7 +174,7 @@ object A2AExample extends ZIOAppDefault:
           _ <- if text.nonEmpty then Console.printLine(s"\nWriter: $text") else ZIO.unit
         yield ()
 
-      case AgentMessage.User(message, _, _, toolResult, _, _) =>
+      case AgentMessage.User(message, _, _, toolResult, _, _, _) =>
         toolResult match
           case Some(_) =>
             val results = message.content.collect { case ContentBlock.ToolResult(_, content, isError) =>

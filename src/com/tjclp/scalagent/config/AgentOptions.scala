@@ -11,6 +11,9 @@ import com.tjclp.scalagent.permissions.*
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{SessionId, SessionUuid}
 
+/** Token budget for background tasks. */
+final case class TaskBudget(total: Int)
+
 /** Configuration options for Claude Agent queries.
   *
   * This mirrors the TypeScript SDK's `Options` interface with type-safe improvements.
@@ -168,7 +171,18 @@ final case class AgentOptions(
       * The callback receives an `ElicitationRequest` and options with `signal: AbortSignal`,
       * and must return a `Promise<ElicitationResult>`.
       */
-    onElicitation: Option[js.Function2[js.Dynamic, js.Dynamic, js.Promise[js.Dynamic]]] = None
+    onElicitation: Option[js.Function2[js.Dynamic, js.Dynamic, js.Promise[js.Dynamic]]] = None,
+
+    /** Token budget for background tasks (beta feature: task-budgets-2026-03-13). */
+    taskBudget: Option[TaskBudget] = None,
+
+    /** When true, emits hook_started, hook_progress, and hook_response system messages. */
+    includeHookEvents: Boolean = false,
+
+    /** Custom process spawner for VMs, containers, or remote execution.
+      * Receives SpawnOptions and must return a SpawnedProcess-compatible object.
+      */
+    spawnClaudeCodeProcess: Option[js.Function1[js.Dynamic, js.Dynamic]] = None
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -265,6 +279,11 @@ final case class AgentOptions(
     if agentProgressSummaries then obj.agentProgressSummaries = true
     gcpAuthRefresh.foreach(cmd => obj.gcpAuthRefresh = cmd)
     onElicitation.foreach(cb => obj.onElicitation = cb)
+    taskBudget.foreach { budget =>
+      obj.taskBudget = js.Dynamic.literal(total = budget.total)
+    }
+    if includeHookEvents then obj.includeHookEvents = true
+    spawnClaudeCodeProcess.foreach(fn => obj.spawnClaudeCodeProcess = fn)
 
     // Note: Hooks are converted separately in ClaudeAgent when calling query()
     // because they require a ZIO Runtime to bridge Scala→JS callbacks

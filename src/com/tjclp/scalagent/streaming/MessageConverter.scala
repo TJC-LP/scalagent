@@ -146,7 +146,8 @@ object MessageConverter:
         isSynthetic = booleanField(obj, "isSynthetic").getOrElse(false),
         toolUseResult = anyField(obj, "tool_use_result").map(jsToJson),
         uuid = stringField(obj, "uuid").map(MessageUuid.apply),
-        sessionId = requiredSessionId(obj, raw)
+        sessionId = requiredSessionId(obj, raw),
+        timestamp = stringField(obj, "timestamp")
       )
 
   private def parseResultMessage(obj: js.Dynamic, raw: Json): AgentMessage.Result =
@@ -165,7 +166,14 @@ object MessageConverter:
           modelUsage = dynamicField(obj, "modelUsage").map(parseModelUsageMap).getOrElse(Map.empty),
           permissionDenials = dynamicArrayField(obj, "permission_denials").map(parsePermissionDenial),
           structuredOutput = anyField(obj, "structured_output").map(jsToJson),
-          stopReason = stopReason
+          stopReason = stopReason,
+          deferredToolUse = dynamicField(obj, "deferred_tool_use").map { dtu =>
+            DeferredToolUse(
+              id = stringField(dtu, "id").getOrElse(""),
+              name = stringField(dtu, "name").getOrElse(""),
+              input = anyField(dtu, "input").map(jsToJson).getOrElse(Json.Null)
+            )
+          }
         )
       else
         ResultOutcome.Error(
@@ -245,6 +253,9 @@ object MessageConverter:
         }
       case Some("files_persisted") => guardedSystemEvent(raw, context, subtype) {
           parseFilesPersistedEvent(obj)
+        }
+      case Some("session_state_changed") => guardedSystemEvent(raw, context, subtype) {
+          parseSessionStateChangedEvent(obj)
         }
       case other =>
         SystemEvent.Unknown(unknownEnvelope(raw, "system", other, context))
@@ -384,6 +395,7 @@ object MessageConverter:
 
   private def parseRateLimitEvent(obj: js.Dynamic, raw: Json): AgentMessage.RateLimitEvent =
     val rateLimitInfo = dynamicField(obj, "rate_limit_info")
+    val overageInfo = dynamicField(obj, "overage_info").orElse(rateLimitInfo.flatMap(dynamicField(_, "overage")))
     AgentMessage.RateLimitEvent(
       retryAfterMs = longField(obj, "retry_after_ms"),
       model = stringField(obj, "model"),
@@ -392,7 +404,12 @@ object MessageConverter:
       rateLimitType = rateLimitInfo.flatMap(stringField(_, "rateLimitType")),
       utilization = rateLimitInfo.flatMap(doubleField(_, "utilization")),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
+      overageStatus = overageInfo.flatMap(stringField(_, "status")).orElse(stringField(obj, "overage_status")),
+      overageResetsAt = overageInfo.flatMap(stringField(_, "resets_at")).orElse(stringField(obj, "overage_resets_at")),
+      overageDisabledReason = overageInfo.flatMap(stringField(_, "disabled_reason")).orElse(stringField(obj, "overage_disabled_reason")),
+      isUsingOverage = overageInfo.flatMap(booleanField(_, "is_using_overage")).orElse(booleanField(obj, "is_using_overage")),
+      surpassedThreshold = overageInfo.flatMap(booleanField(_, "surpassed_threshold")).orElse(booleanField(obj, "surpassed_threshold"))
     )
 
   private def parseLocalCommandOutput(obj: js.Dynamic, raw: Json): AgentMessage.LocalCommandOutput =
@@ -418,7 +435,8 @@ object MessageConverter:
       sessionId = requiredSessionId(obj, raw),
       toolUseId = stringField(obj, "tool_use_id"),
       taskType = stringField(obj, "task_type"),
-      prompt = stringField(obj, "prompt")
+      prompt = stringField(obj, "prompt"),
+      workflowName = firstString(obj, "workflow_name", "workflowName")
     )
 
   private def parseApiRetryMessage(obj: js.Dynamic, raw: Json): AgentMessage.ApiRetry =
@@ -438,7 +456,9 @@ object MessageConverter:
       progress = firstString(obj, "description", "progress").getOrElse(""),
       uuid = requiredUuid(obj, raw),
       sessionId = requiredSessionId(obj, raw),
-      summary = stringField(obj, "summary")
+      summary = stringField(obj, "summary"),
+      toolUseId = firstString(obj, "tool_use_id", "toolUseId"),
+      lastToolName = firstString(obj, "last_tool_name", "lastToolName")
     )
 
   private def parseApiAssistantMessage(
@@ -599,6 +619,12 @@ object MessageConverter:
         yield FailedFile(filename, error)
       },
       processedAt = stringField(obj, "processed_at").getOrElse("")
+    )
+
+  private def parseSessionStateChangedEvent(obj: js.Dynamic): SystemEvent.SessionStateChanged =
+    val stateStr = stringField(obj, "state").getOrElse("idle")
+    SystemEvent.SessionStateChanged(
+      state = SdkSessionState.fromString(stateStr)
     )
 
   private def parseMcpServer(server: js.Dynamic): Option[McpServerStatus] =

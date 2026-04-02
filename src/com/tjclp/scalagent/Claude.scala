@@ -310,14 +310,49 @@ object Claude:
       .map(SessionId(_))
       .mapError(AgentError.fromThrowable)
 
-  def getSessionMessages(sessionId: SessionId, dir: String): IO[AgentError, List[SessionMessage]] =
+  def getSessionMessages(sessionId: SessionId, dir: String, includeSystemMessages: Boolean = false): IO[AgentError, List[SessionMessage]] =
+    val opts = js.Dynamic.literal(dir = dir)
+    if includeSystemMessages then opts.includeSystemMessages = true
     ZIO
       .fromPromiseJS(
         SdkModule.getSessionMessages(
           sessionId.value,
-          js.Dynamic.literal(dir = dir)
+          opts
         )
       )
+      .map(_.toList.map(SessionMessage.fromRaw))
+      .mapError(AgentError.fromThrowable)
+
+  /** List subagents for a session.
+    *
+    * @param sessionId The session UUID
+    * @param dir Optional project directory path
+    * @return A list of subagent IDs
+    */
+  def listSubagents(sessionId: SessionId, dir: Option[String] = None): IO[AgentError, List[String]] =
+    val opts: js.UndefOr[js.Dynamic] = dir match
+      case Some(d) => js.Dynamic.literal(dir = d)
+      case None    => js.undefined
+    ZIO
+      .fromPromiseJS(SdkModule.listSubagents(sessionId.value, opts))
+      .map(_.toList.map(_.asInstanceOf[js.Any]).collect {
+        case v if js.typeOf(v) == "string" => v.asInstanceOf[String]
+      })
+      .mapError(AgentError.fromThrowable)
+
+  /** Get messages from a subagent within a session.
+    *
+    * @param sessionId The parent session UUID
+    * @param agentId The subagent ID
+    * @param dir Optional project directory path
+    * @return A list of session messages from the subagent
+    */
+  def getSubagentMessages(sessionId: SessionId, agentId: String, dir: Option[String] = None): IO[AgentError, List[SessionMessage]] =
+    val opts: js.UndefOr[js.Dynamic] = dir match
+      case Some(d) => js.Dynamic.literal(dir = d)
+      case None    => js.undefined
+    ZIO
+      .fromPromiseJS(SdkModule.getSubagentMessages(sessionId.value, agentId, opts))
       .map(_.toList.map(SessionMessage.fromRaw))
       .mapError(AgentError.fromThrowable)
 
@@ -331,6 +366,8 @@ final case class SessionInfo(
     firstPrompt: Option[String],
     gitBranch: Option[String],
     cwd: Option[String],
+    tag: Option[String] = None,
+    createdAt: Option[Long] = None,
 )
 
 object SessionInfo:
@@ -346,7 +383,9 @@ object SessionInfo:
       customTitle = getString(obj, "customTitle"),
       firstPrompt = getString(obj, "firstPrompt"),
       gitBranch = getString(obj, "gitBranch"),
-      cwd = getString(obj, "cwd")
+      cwd = getString(obj, "cwd"),
+      tag = getString(obj, "tag"),
+      createdAt = getLong(obj, "createdAt")
     )
 
   private def getField(obj: js.Dynamic, field: String): Option[js.Any] =
