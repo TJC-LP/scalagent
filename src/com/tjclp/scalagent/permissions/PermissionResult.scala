@@ -12,11 +12,13 @@ enum PermissionDecisionClassification:
   case UserTemporary
   case UserPermanent
   case UserReject
+  case Custom(value: String)
 
   def toRaw: String = this match
     case UserTemporary => "user_temporary"
     case UserPermanent => "user_permanent"
     case UserReject    => "user_reject"
+    case Custom(v)     => v
 
 object PermissionDecisionClassification:
   given JsonEncoder[PermissionDecisionClassification] = StringEnumJsonCodec.encoder(_.toRaw)
@@ -26,7 +28,7 @@ object PermissionDecisionClassification:
     case "user_temporary" => UserTemporary
     case "user_permanent" => UserPermanent
     case "user_reject"    => UserReject
-    case _                => UserTemporary
+    case other            => Custom(other)
 
 /** Result of a permission decision.
   *
