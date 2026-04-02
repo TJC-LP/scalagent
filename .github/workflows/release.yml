@@ -34,9 +34,6 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install npm dependencies
-        run: bun install
-
       - name: Cache Coursier
         uses: actions/cache@v4
         with:
