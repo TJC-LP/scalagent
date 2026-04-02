@@ -207,9 +207,9 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
       Option.when(text.trim.nonEmpty)(text.trim)
 
     message match
-      case AgentMessage.TaskStarted(_, description, _, _, _, _, _) =>
+      case AgentMessage.TaskStarted(_, description, _, _, _, _, _, _) =>
         nonEmpty(description)
-      case AgentMessage.TaskProgress(_, progress, _, _, summary) =>
+      case AgentMessage.TaskProgress(_, progress, _, _, summary, _, _) =>
         summary.flatMap(nonEmpty).orElse(nonEmpty(progress))
       case AgentMessage.ToolProgress(_, toolName, _, elapsedTimeSeconds, _, _, _) =>
         val elapsed = math.max(1L, math.round(elapsedTimeSeconds))

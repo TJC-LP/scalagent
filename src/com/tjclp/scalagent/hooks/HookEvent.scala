@@ -77,6 +77,18 @@ enum HookEvent:
   /** Instructions loaded hook - triggered when CLAUDE.md or memory files are loaded */
   case InstructionsLoaded
 
+  /** Permission denied hook - fired when a tool permission is denied */
+  case PermissionDenied
+
+  /** Task created hook - fired when a background task is created */
+  case TaskCreated
+
+  /** Working directory changed hook */
+  case CwdChanged
+
+  /** Watched file changed hook */
+  case FileChanged
+
   /** Convert to SDK string representation */
   def toRaw: String = this match
     case PreToolUse         => "PreToolUse"
@@ -102,6 +114,10 @@ enum HookEvent:
     case WorktreeCreate     => "WorktreeCreate"
     case WorktreeRemove       => "WorktreeRemove"
     case InstructionsLoaded   => "InstructionsLoaded"
+    case PermissionDenied     => "PermissionDenied"
+    case TaskCreated          => "TaskCreated"
+    case CwdChanged           => "CwdChanged"
+    case FileChanged          => "FileChanged"
 
 object HookEvent:
   given JsonEncoder[HookEvent] = StringEnumJsonCodec.encoder(_.toRaw)
@@ -129,6 +145,10 @@ object HookEvent:
     case "WorktreeCreate"    => Right(WorktreeCreate)
     case "WorktreeRemove"      => Right(WorktreeRemove)
     case "InstructionsLoaded"  => Right(InstructionsLoaded)
+    case "PermissionDenied"    => Right(PermissionDenied)
+    case "TaskCreated"         => Right(TaskCreated)
+    case "CwdChanged"          => Right(CwdChanged)
+    case "FileChanged"         => Right(FileChanged)
     case other                 => Left(s"Unknown hook event: $other")
   }
 
@@ -156,4 +176,8 @@ object HookEvent:
     case "WorktreeCreate"    => WorktreeCreate
     case "WorktreeRemove"      => WorktreeRemove
     case "InstructionsLoaded"  => InstructionsLoaded
+    case "PermissionDenied"    => PermissionDenied
+    case "TaskCreated"         => TaskCreated
+    case "CwdChanged"          => CwdChanged
+    case "FileChanged"         => FileChanged
     case other => throw new IllegalArgumentException(s"Unknown hook event: $other")

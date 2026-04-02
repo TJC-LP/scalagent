@@ -156,6 +156,7 @@ object HookInput:
       cwd: String,
       transcriptPath: String,
       stopHookActive: Boolean = false,
+      lastAssistantMessage: Option[String] = None,
       hookAgentId: Option[SubagentId] = None,
       hookAgentType: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
@@ -201,6 +202,7 @@ object HookInput:
       agentId: SubagentId,
       agentTranscriptPath: String,
       agentType: String,
+      lastAssistantMessage: Option[String] = None,
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput:
     def hookAgentId: Option[SubagentId] = Some(agentId)
@@ -355,6 +357,59 @@ object HookInput:
       permissionMode: Option[PermissionMode] = None
   ) extends HookInput
 
+  /** Input for PermissionDenied hook - when a tool permission is denied */
+  final case class PermissionDenied(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      toolName: ToolName,
+      toolInput: Json,
+      toolUseId: ToolUseId,
+      reason: Option[String] = None,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
+      permissionMode: Option[PermissionMode] = None
+  ) extends HookInput
+
+  /** Input for TaskCreated hook - when a background task is created */
+  final case class TaskCreated(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      taskId: String,
+      taskSubject: String,
+      taskDescription: Option[String] = None,
+      teammateName: Option[String] = None,
+      teamName: Option[String] = None,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
+      permissionMode: Option[PermissionMode] = None
+  ) extends HookInput
+
+  /** Input for CwdChanged hook - when the working directory changes */
+  final case class CwdChanged(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      oldCwd: String,
+      newCwd: String,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
+      permissionMode: Option[PermissionMode] = None
+  ) extends HookInput
+
+  /** Input for FileChanged hook - when a watched file changes */
+  final case class FileChanged(
+      sessionId: SessionId,
+      cwd: String,
+      transcriptPath: String,
+      filePath: String,
+      event: FileChangeEvent,
+      hookAgentId: Option[SubagentId] = None,
+      hookAgentType: Option[String] = None,
+      permissionMode: Option[PermissionMode] = None
+  ) extends HookInput
+
 /** Permission suggestion from the SDK */
 final case class PermissionSuggestion(
     toolName: ToolName,
@@ -386,11 +441,12 @@ object PermissionBehavior:
 
 /** Reason for session exit */
 enum ExitReason:
-  case Clear, Logout, PromptInputExit, Other, BypassPermissionsDisabled
+  case Clear, Resume, Logout, PromptInputExit, Other, BypassPermissionsDisabled
   case Custom(value: String)
 
   def toRaw: String = this match
     case Clear                      => "clear"
+    case Resume                     => "resume"
     case Logout                     => "logout"
     case PromptInputExit            => "prompt_input_exit"
     case Other                      => "other"
@@ -403,6 +459,7 @@ object ExitReason:
 
   def fromString(s: String): ExitReason = s match
     case "clear"                       => Clear
+    case "resume"                      => Resume
     case "logout"                      => Logout
     case "prompt_input_exit"           => PromptInputExit
     case "other"                       => Other
@@ -582,3 +639,24 @@ object ConfigChangeSource:
     case "policy_settings"  => PolicySettings
     case "skills"           => Skills
     case other              => Custom(other)
+
+/** File change event type */
+enum FileChangeEvent:
+  case Change, Add, Unlink
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Change    => "change"
+    case Add       => "add"
+    case Unlink    => "unlink"
+    case Custom(v) => v
+
+object FileChangeEvent:
+  given JsonEncoder[FileChangeEvent] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[FileChangeEvent] = StringEnumJsonCodec.decoder(fromString)
+
+  def fromString(s: String): FileChangeEvent = s match
+    case "change" => Change
+    case "add"    => Add
+    case "unlink" => Unlink
+    case other    => Custom(other)

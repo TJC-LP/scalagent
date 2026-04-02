@@ -11,13 +11,13 @@ import mill.scalajslib.bun.*
 
 // Main library module - sources in /src
 object agent extends BunScalaJSModule with PublishModule {
-  def scalaVersion = "3.7.4"
+  def scalaVersion = "3.8.3"
   override def moduleKind = Task { ModuleKind.ESModule }
 
   // JS dependencies (replaces package.json)
   def npmDeps = Task { Seq(
-    "@anthropic-ai/claude-agent-sdk@^0.2.78",
-    "@a2a-js/sdk@^0.3.12",
+    "@anthropic-ai/claude-agent-sdk@^0.2.90",
+    "@a2a-js/sdk@^0.3.13",
     "zod@^4.0.0"
   )}
   def npmDevDeps = Task { Seq("@types/bun@^1.3.5") }
@@ -26,11 +26,11 @@ object agent extends BunScalaJSModule with PublishModule {
   def mvnDeps = Seq(
     mvn"dev.zio::zio::2.1.24",
     mvn"dev.zio::zio-streams::2.1.24",
-    mvn"dev.zio::zio-json::0.8.0",
+    mvn"dev.zio::zio-json::0.9.0",
     // zio-schema for JSON Schema derivation from case classes
-    mvn"dev.zio::zio-schema::1.7.6",
-    mvn"dev.zio::zio-schema-json::1.7.6",
-    mvn"dev.zio::zio-schema-derivation::1.7.6"
+    mvn"dev.zio::zio-schema::1.8.3",
+    mvn"dev.zio::zio-schema-json::1.8.3",
+    mvn"dev.zio::zio-schema-derivation::1.8.3"
   )
 
   // Source at project root /src
@@ -66,7 +66,7 @@ object agent extends BunScalaJSModule with PublishModule {
 
   // Test module
   object test extends BunScalaJSTests, TestModule.Munit {
-    def munitVersion = "1.1.0"
+    def munitVersion = "1.2.4"
   }
 }
 

@@ -48,7 +48,8 @@ final case class SandboxSettings(
     enableWeakerNetworkIsolation: Boolean = false,
     excludedCommands: List[String] = Nil,
     ripgrep: Option[RipgrepConfig] = None,
-    filesystem: Option[SandboxFilesystemConfig] = None
+    filesystem: Option[SandboxFilesystemConfig] = None,
+    failIfUnavailable: Boolean = false
 ):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
@@ -72,6 +73,8 @@ final case class SandboxSettings(
 
     ripgrep.foreach(rg => obj.ripgrep = rg.toRaw)
     filesystem.foreach(fs => obj.filesystem = fs.toRaw)
+
+    if failIfUnavailable then obj.failIfUnavailable = true
 
     obj.asInstanceOf[js.Object]
 
@@ -119,6 +122,10 @@ object SandboxSettings:
 
     def withFilesystem(config: SandboxFilesystemConfig): SandboxSettings =
       ss.copy(filesystem = Some(config))
+
+    /** Fail if sandbox is unavailable on this platform. */
+    def withFailIfUnavailable: SandboxSettings =
+      ss.copy(failIfUnavailable = true)
 
 /** Network configuration for sandbox.
   *

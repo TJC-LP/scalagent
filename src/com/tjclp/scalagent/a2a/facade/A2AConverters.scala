@@ -256,7 +256,8 @@ object A2AConverters:
           ))
         case Some("oauth2") =>
           val flows = schemeDyn.flows.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.getOrElse(js.Dynamic.literal())
-          Some(SecurityScheme.OAuth2(toScalaOAuth2Flows(flows)))
+          val metadataUrl = optionalString(schemeDyn, "oauth2MetadataUrl")
+          Some(SecurityScheme.OAuth2(toScalaOAuth2Flows(flows), metadataUrl))
         case _ => None
       scheme.map(name -> _)
     }
@@ -271,8 +272,10 @@ object A2AConverters:
           val o = js.Dynamic.literal(`type` = "http", scheme = httpScheme)
           bearerFormat.foreach(b => o.bearerFormat = b)
           o
-        case SecurityScheme.OAuth2(flows) =>
-          js.Dynamic.literal(`type` = "oauth2", flows = toJsOAuth2Flows(flows))
+        case SecurityScheme.OAuth2(flows, metadataUrl) =>
+          val o = js.Dynamic.literal(`type` = "oauth2", flows = toJsOAuth2Flows(flows))
+          metadataUrl.foreach(u => o.oauth2MetadataUrl = u)
+          o
         case SecurityScheme.OpenIdConnect(url) =>
           js.Dynamic.literal(`type` = "openIdConnect", openIdConnectUrl = url)
         case SecurityScheme.MutualTLS =>

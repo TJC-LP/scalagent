@@ -87,7 +87,15 @@ final case class AgentDefinition(
     /** Maximum number of turns this agent is allowed to take. */
     maxTurns: Option[Int] = None,
     /** Experimental: Critical reminder added to system prompt. */
-    criticalSystemReminder: Option[String] = None
+    criticalSystemReminder: Option[String] = None,
+    /** Initial prompt to send when the agent starts */
+    initialPrompt: Option[String] = None,
+    /** Whether this agent runs in the background */
+    background: Boolean = false,
+    /** Memory scope for the agent */
+    memory: Option[String] = None,
+    /** Effort level for the agent's responses */
+    effort: Option[Effort] = None
 ):
   /** Convert to raw JavaScript object for SDK.
     *
@@ -111,6 +119,10 @@ final case class AgentDefinition(
     if skills.nonEmpty then obj.skills = skills.toJSArray
     maxTurns.foreach(mt => obj.maxTurns = mt)
     criticalSystemReminder.foreach(r => obj.updateDynamic("criticalSystemReminder_EXPERIMENTAL")(r))
+    initialPrompt.foreach(p => obj.initialPrompt = p)
+    if background then obj.background = true
+    memory.foreach(m => obj.memory = m)
+    effort.foreach(e => obj.effort = e.toRaw)
     obj.asInstanceOf[js.Object]
 
   /** Convert to raw JavaScript object with hooks.

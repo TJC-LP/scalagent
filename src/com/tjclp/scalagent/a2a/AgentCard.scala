@@ -165,7 +165,7 @@ object SecurityRequirement:
 enum SecurityScheme:
   case ApiKey(name: String, in: String) // in: header, query, cookie
   case Http(scheme: String, bearerFormat: Option[String] = None)
-  case OAuth2(flows: OAuth2Flows)
+  case OAuth2(flows: OAuth2Flows, oauth2MetadataUrl: Option[String] = None)
   case OpenIdConnect(openIdConnectUrl: String)
   case MutualTLS
 

@@ -72,6 +72,11 @@ enum SystemEvent:
       processedAt: String
   )
 
+  /** Session state changed notification */
+  case SessionStateChanged(
+      state: SdkSessionState
+  )
+
   /** Forward-compatible fallback for unknown system events */
   case Unknown(
       envelope: UnknownEnvelope
@@ -80,6 +85,29 @@ enum SystemEvent:
 object SystemEvent:
   given JsonDecoder[SystemEvent] = DeriveJsonDecoder.gen[SystemEvent]
   given JsonEncoder[SystemEvent] = DeriveJsonEncoder.gen[SystemEvent]
+
+/** SDK session state values (distinct from the session.SessionState phantom type) */
+enum SdkSessionState:
+  case Idle
+  case Running
+  case RequiresAction
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Idle           => "idle"
+    case Running        => "running"
+    case RequiresAction => "requires_action"
+    case Custom(v)      => v
+
+object SdkSessionState:
+  given JsonEncoder[SdkSessionState] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[SdkSessionState] = StringEnumJsonCodec.decoder(fromString)
+
+  def fromString(s: String): SdkSessionState = s match
+    case "idle"            => Idle
+    case "running"         => Running
+    case "requires_action" => RequiresAction
+    case other             => Custom(other)
 
 /** Trigger for context compaction */
 enum CompactTrigger:

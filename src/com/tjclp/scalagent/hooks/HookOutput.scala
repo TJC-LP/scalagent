@@ -114,6 +114,85 @@ object HookOutput:
         )
         .asInstanceOf[js.Object]
 
+  /** Return watch paths (for CwdChanged/FileChanged hooks).
+    *
+    * @param watchPaths
+    *   Additional file paths to watch for changes
+    * @param systemMessage
+    *   Optional message to inject
+    */
+  final case class WatchPaths(
+      watchPaths: List[String],
+      systemMessage: Option[String] = None
+  ) extends HookOutput:
+    def toRaw: js.Object =
+      val obj = js.Dynamic.literal(
+        continue = true,
+        hookSpecificOutput = js.Dynamic.literal(
+          watchPaths = watchPaths.toJSArray
+        )
+      )
+      systemMessage.foreach(msg => obj.systemMessage = msg)
+      obj.asInstanceOf[js.Object]
+
+  /** Return worktree path (for WorktreeCreate hooks).
+    *
+    * @param worktreePath
+    *   Absolute path to the created worktree
+    */
+  final case class WorktreePath(
+      worktreePath: String
+  ) extends HookOutput:
+    def toRaw: js.Object =
+      js.Dynamic
+        .literal(
+          continue = true,
+          hookSpecificOutput = js.Dynamic.literal(
+            worktreePath = worktreePath
+          )
+        )
+        .asInstanceOf[js.Object]
+
+  /** Retry a denied permission (for PermissionDenied hooks).
+    *
+    * @param retry
+    *   Whether to retry the tool call
+    */
+  final case class Retry(
+      retry: Boolean = true
+  ) extends HookOutput:
+    def toRaw: js.Object =
+      js.Dynamic
+        .literal(
+          continue = true,
+          hookSpecificOutput = js.Dynamic.literal(
+            retry = retry
+          )
+        )
+        .asInstanceOf[js.Object]
+
+  /** Session start output with optional initial message and watch paths.
+    *
+    * @param initialUserMessage
+    *   Optional initial user message to inject
+    * @param watchPaths
+    *   Optional file paths to watch for changes
+    */
+  final case class SessionStartOutput(
+      initialUserMessage: Option[String] = None,
+      watchPaths: List[String] = Nil
+  ) extends HookOutput:
+    def toRaw: js.Object =
+      val specific = js.Dynamic.literal()
+      initialUserMessage.foreach(msg => specific.initialUserMessage = msg)
+      if watchPaths.nonEmpty then specific.watchPaths = watchPaths.toJSArray
+      js.Dynamic
+        .literal(
+          continue = true,
+          hookSpecificOutput = specific
+        )
+        .asInstanceOf[js.Object]
+
   // Convenience constructors
 
   /** Continue execution without any modifications */
@@ -133,3 +212,12 @@ object HookOutput:
 
   /** Deny a permission request */
   def deny(reason: String): HookOutput = Decision(approve = false, reason = Some(reason))
+
+  /** Continue with watch paths for CwdChanged/FileChanged hooks */
+  def withWatchPaths(paths: List[String]): HookOutput = WatchPaths(paths)
+
+  /** Return worktree path for WorktreeCreate hooks */
+  def worktreePath(path: String): HookOutput = WorktreePath(path)
+
+  /** Retry a denied permission */
+  val retry: HookOutput = Retry()

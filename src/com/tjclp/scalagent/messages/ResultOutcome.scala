@@ -7,6 +7,17 @@ import com.tjclp.scalagent.json.StringEnumJsonCodec
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.ToolUseId
 
+/** Deferred tool use returned in a successful result. */
+final case class DeferredToolUse(
+    id: String,
+    name: String,
+    input: zio.json.ast.Json
+)
+
+object DeferredToolUse:
+  given JsonDecoder[DeferredToolUse] = DeriveJsonDecoder.gen[DeferredToolUse]
+  given JsonEncoder[DeferredToolUse] = DeriveJsonEncoder.gen[DeferredToolUse]
+
 /** Result outcome from a completed query */
 enum ResultOutcome:
   /** Successful query completion */
@@ -20,7 +31,8 @@ enum ResultOutcome:
       modelUsage: Map[String, PerModelUsage],
       permissionDenials: List[PermissionDenial],
       structuredOutput: Option[zio.json.ast.Json],
-      stopReason: Option[StopReason] = None
+      stopReason: Option[StopReason] = None,
+      deferredToolUse: Option[DeferredToolUse] = None
   )
 
   /** Query terminated with error */

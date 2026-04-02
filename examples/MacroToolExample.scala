@@ -168,7 +168,7 @@ object MacroToolExample extends ZIOAppDefault:
           _ <- if text.nonEmpty then Console.printLine(s"Claude: $text") else ZIO.unit
         yield ()
 
-      case AgentMessage.User(message, _, _, toolResult, _, _) =>
+      case AgentMessage.User(message, _, _, toolResult, _, _, _) =>
         toolResult match
           case Some(_) =>
             val results = message.content.collect { case ContentBlock.ToolResult(_, content, isError) =>
