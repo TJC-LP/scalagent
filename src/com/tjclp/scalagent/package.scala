@@ -444,8 +444,32 @@ package object scalagent {
   type DepthValue[D <: core.Depth] = core.DepthValue[D]
   val DepthValue = core.DepthValue
 
+  // --- core DSL: A2A types ---
+  type A2ARemoteAgent[-P, -I, +O] = core.a2a.A2ARemoteAgent[P, I, O]
+  type A2AEndpoint = core.a2a.A2AEndpoint
+  type CanDelegateA2A = core.a2a.CanDelegateA2A
+
+  // --- core DSL: MCP types ---
+  type McpToolSurface = core.mcp.McpToolSurface
+  val McpToolSurface = core.mcp.McpToolSurface
+  type McpResource = core.mcp.McpResource
+  val McpResource = core.mcp.McpResource
+  type McpResourceContent = core.mcp.McpResourceContent
+  val McpResourceContent = core.mcp.McpResourceContent
+  type McpPrompt = core.mcp.McpPrompt
+  val McpPrompt = core.mcp.McpPrompt
+  type McpPromptArgument = core.mcp.McpPromptArgument
+  val McpPromptArgument = core.mcp.McpPromptArgument
+  type HasMcpTools = core.mcp.HasMcpTools
+  type HasMcpResources = core.mcp.HasMcpResources
+  type HasMcpPrompts = core.mcp.HasMcpPrompts
+  type FullMcpCaps = core.mcp.FullMcpCaps
+
   // --- interop package ---
   val ClaudeInterpreter = interop.claude.ClaudeInterpreter
+  val A2AInterpreter = interop.a2a.A2AInterpreter
+  val A2AServerAdapter = interop.a2a.A2AServerAdapter
+  val McpToolLoader = interop.mcp.McpToolLoader
 
   // ============================================================================
   // Helper Functions

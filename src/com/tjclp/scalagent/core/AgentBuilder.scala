@@ -56,6 +56,24 @@ final class AgentBuilder[P, I, O, C] private[core] (
   def withEscalation: AgentBuilder[P, I, O, C & CanEscalateHuman] =
     new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
 
+  /** Add MCP tools. Composes with existing tools and adds both
+    * `CanUseTools[AllTools]` and `HasMcpTools` capability markers.
+    */
+  def withMcpTools(surface: mcp.McpToolSurface): AgentBuilder[P, I, O, C & CanUseTools[AllTools] & mcp.HasMcpTools] =
+    new AgentBuilder(agent, tools ++ surface.toToolSurface, runtimeDepth, agentTransform)
+
+  /** Add MCP resource access capability. */
+  def withMcpResources(surface: mcp.McpResourceSurface): AgentBuilder[P, I, O, C & mcp.HasMcpResources] =
+    new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
+
+  /** Add MCP prompt access capability. */
+  def withMcpPrompts(surface: mcp.McpPromptSurface): AgentBuilder[P, I, O, C & mcp.HasMcpPrompts] =
+    new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
+
+  /** Add A2A delegation capability. */
+  def withA2ADelegation: AgentBuilder[P, I, O, C & a2a.CanDelegateA2A] =
+    new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
+
   /** Build the `TypedAgent` with all accumulated capabilities.
     *
     * Applies the `agentTransform` to wire capability declarations into

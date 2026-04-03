@@ -8,13 +8,16 @@ import scala.annotation.implicitNotFound
 
 /** Base trait for agent capabilities. Used as phantom types in intersections.
   *
+  * Open for extension by protocol packages (MCP, A2A) that add
+  * protocol-specific capability markers.
+  *
   * Example:
   * {{{
   * type Analyst = CanUseTools[ReadOnlyTools] & HasBudget
   * type Supervisor = FullCaps & CanSpawn[Depth2]
   * }}}
   */
-sealed trait Capability
+trait Capability
 
 /** Agent can use tools from a tool surface classified as T. */
 trait CanUseTools[T <: ToolSet] extends Capability
