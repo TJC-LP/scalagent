@@ -1,6 +1,6 @@
 # Next Steps
 
-Status: post-exploration. Core DSL, two provider interpreters (Claude + Codex), experimental control-plane safety, and live cross-provider examples exist on `dsl/core-exploration`.
+Status: post-exploration. Core DSL, two provider interpreters (Claude + Codex), experimental control-plane safety, live cross-provider examples, and gated semantic review exist on `dsl/core-exploration`.
 
 ## Branch Summary
 
@@ -20,6 +20,7 @@ Status: post-exploration. Core DSL, two provider interpreters (Claude + Codex), 
 | `42c9a6d` | 8 | Codex interpreter — proves DSL is provider-independent |
 | `657de26` | 8 | Codex + cross-provider examples, ExampleRunner dispatcher |
 | `edb236c` | fix | examples.run forwards CLI args via EXAMPLE env |
+| `HEAD` | 6+ | Score breakdowns, effectful reviewers, agentic review permits |
 
 43 test suites, 0 failures. All existing tests unchanged.
 
@@ -29,6 +30,7 @@ Status: post-exploration. Core DSL, two provider interpreters (Claude + Codex), 
 ./mill examples.run dsl-basic        # DSL one-shot + streaming + eval
 ./mill examples.run dsl-builder      # Builder + read-only tools + JSONL logging
 ./mill examples.run dsl-delegation   # Typed parent/child with Peano depth
+./mill examples.run dsl-review       # Operational score + gated semantic review
 ./mill examples.run dsl-codex        # Same DSL, Codex provider
 ./mill examples.run dsl-cross        # Claude ↔ Codex cross-provider chain
 ./mill examples.run -- --help        # List all 19 examples
@@ -55,6 +57,36 @@ The big one. All current tests are unit/compile-time. Need live integration:
 - **A2A round-trip**: stand up `A2AServerAdapter` exposing a DSL agent, call it via `A2AInterpreter`
 - **Tool restriction verification**: `ClaudeInterpreter.builder().withReadOnlyTools().build` actually restricts tools at the provider level
 - **Budget enforcement**: verify `Budget.Usd` propagates to `maxBudgetUsd` in `AgentOptions`
+- **Reviewer budgeting**: verify `ReviewPermit` / semantic reviewers behave as intended in live runs
+
+## Priority 3.5: Review Semantics
+
+Current state:
+
+- `Utility` gives pure heuristic scoring
+- `ScoreBreakdown` makes that heuristic explainable
+- `Reviewer` gives effectful semantic review
+- `ReviewPermit` gates nondeterministic judge-model use explicitly
+
+Near-term follow-ups:
+
+- add a first-class combined view (`operationalScore` vs `semanticReview`)
+- add success-gated defaults for production dashboards
+- add live reviewer examples beyond Claude
+
+## Priority 3.5: Score Semantics
+
+Current `Evaluation.score` is useful, but mostly as an **operational heuristic**:
+
+- built-in utilities score run success, cost, latency, and trace size
+- they do not yet provide domain-specific correctness by default
+- semantic scoring is possible now via typed custom `Utility.from(...)`
+
+Near-term follow-up work:
+
+- add named score breakdowns alongside the scalar
+- add "success-gated" compositions for workflows where failed runs should score near zero
+- add example semantic scorers that actually inspect typed output
 
 ## Priority 4: ContextKernel
 

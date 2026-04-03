@@ -42,7 +42,15 @@ object TraceLogger:
 
     def logEvaluation[P, O](eval: Evaluation[P, O]): UIO[Unit] =
       ZIO.succeed {
-        println(s"  [eval] score=${eval.score} complexity=${eval.complexity.totalNodes} nodes")
+        val breakdown =
+          if eval.breakdown.components.nonEmpty then
+            eval.breakdown.components
+              .map(c => s"${c.name}=${"%.3f".format(c.raw)}")
+              .mkString(" [", ", ", "]")
+          else ""
+        val review =
+          eval.review.fold("")(r => s" review=${"%.3f".format(r.score)}")
+        println(s"  [eval] score=${eval.score}$review complexity=${eval.complexity.totalNodes} nodes$breakdown")
       }
 
   /** Log to an effectful callback function (JSONL-style). */
@@ -96,5 +104,15 @@ object TraceLogger:
       "numToolCalls" -> Json.Num(eval.trace.numToolCalls),
       "numDelegations" -> Json.Num(eval.trace.numDelegations),
       "totalEvents" -> Json.Num(eval.trace.totalEvents),
-      "complexityNodes" -> Json.Num(eval.complexity.totalNodes)
+      "complexityNodes" -> Json.Num(eval.complexity.totalNodes),
+      "breakdown" -> Json.Arr(eval.breakdown.components.map { c =>
+        Json.Obj(
+          "name" -> Json.Str(c.name),
+          "raw" -> Json.Num(c.raw),
+          "weight" -> Json.Num(c.weight),
+          "contribution" -> Json.Num(c.contribution)
+        )
+      }*),
+      "reviewScore" -> eval.review.map(r => Json.Num(r.score)).getOrElse(Json.Null),
+      "reviewRationale" -> eval.review.map(r => Json.Str(r.rationale)).getOrElse(Json.Null)
     )

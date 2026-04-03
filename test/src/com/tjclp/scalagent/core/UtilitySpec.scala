@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.core
 
+import zio.*
 import zio.json.ast.Json
 
 class UtilitySpec extends munit.FunSuite:
@@ -73,6 +74,26 @@ class UtilitySpec extends munit.FunSuite:
     // reliability gives 0.0, so score is much lower
     assert(score < 0.5)
 
+  test("weightedNamed exposes named score breakdown"):
+    val u = Utility.weightedNamed[String, String](
+      Utility.named("reliability", Utility.reliability, 0.5),
+      Utility.named("cost", Utility.costMinimizing, 0.5)
+    )
+    val breakdown = u.breakdown("user", "result", successTrace)
+    assertEquals(breakdown.components.map(_.name), List("reliability", "cost"))
+    assert(breakdown.total > 0.9)
+
+  test("successGated strongly penalizes failed runs"):
+    val base = Utility.weighted[String, String](
+      Utility.costMinimizing -> 0.5,
+      Utility.simplicityBiased -> 0.5
+    )
+    val gated = Utility.successGated(base, failureScale = 0.05)
+    val success = gated.score("user", "result", successTrace)
+    val failure = gated.score("user", "result", failTrace)
+    assert(success > failure)
+    assert(failure < 0.1)
+
   // --- Custom utility ---
 
   test("from: custom function"):
@@ -104,3 +125,14 @@ class UtilitySpec extends munit.FunSuite:
     val eval = Evaluation.fromTrace("admin", "result", successTrace, Utility.costMinimizing)
     assert(eval.score > 0.9)
     assertEquals(eval.trace.numTurns, 3)
+    assert(eval.breakdown.components.nonEmpty)
+
+  test("Evaluation.withReview attaches semantic review"):
+    val eval = Evaluation.fromTrace("admin", "result", successTrace, Utility.costMinimizing)
+    val reviewer = Reviewer.from[String, String] { (_, _, _) =>
+      ZIO.succeed(ReviewScore(0.8, "Looks good", strengths = List("concise")))
+    }
+    val reviewed = Unsafe.unsafe { implicit u =>
+      zio.Runtime.default.unsafe.run(Evaluation.withReview(eval, reviewer)).getOrThrowFiberFailure()
+    }
+    assertEquals(reviewed.review.map(_.score), Some(0.8))

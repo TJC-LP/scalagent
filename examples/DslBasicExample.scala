@@ -77,6 +77,7 @@ object DslBasicExample extends ZIOAppDefault:
       )
       eval = Evaluation.fromTrace("user", streamOutput, trace, utility)
       _ <- Console.printLine(s"  Score: ${eval.score}").orDie
+      _ <- Console.printLine(s"  Breakdown: ${eval.breakdown.components.map(c => s"${c.name}=${"%.3f".format(c.raw)}").mkString(", ")}").orDie
       _ <- Console.printLine(s"  Complexity: ${eval.complexity.totalNodes} nodes").orDie
       _ <- Console.printLine(s"  Graph density: ${eval.complexity.graphDensity}").orDie
       _ <- logger.logEvaluation(eval)

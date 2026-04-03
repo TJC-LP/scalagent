@@ -97,6 +97,7 @@ object DslBuilderExample extends ZIOAppDefault:
       _ <- logger.logEvaluation(eval)
 
       _ <- Console.printLine(s"\n  Score: ${eval.score}").orDie
+      _ <- Console.printLine(s"  Breakdown: ${eval.breakdown.components.map(c => s"${c.name}=${"%.3f".format(c.raw)}").mkString(", ")}").orDie
       _ <- Console.printLine(s"  Tool calls: ${trace.numToolCalls}").orDie
       _ <- Console.printLine(s"  Tools used: ${trace.toolNames}").orDie
       _ <- Console.printLine(s"  Complexity: ${eval.complexity.totalNodes} nodes, density=${eval.complexity.graphDensity}").orDie

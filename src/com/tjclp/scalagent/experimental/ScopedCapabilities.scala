@@ -46,3 +46,10 @@ object ScopedCapabilities:
   /** Scope-managed SpawnPermit. Delegation authority with depth limit. */
   def permitResource(maxDepth: Int): Resource[SpawnPermit] =
     Resource(SpawnPermit(maxDepth))
+
+  /** Scope-managed ReviewPermit. Semantic-review authority with bounded uses. */
+  def reviewPermitResource(
+      label: String = "semantic-review",
+      maxReviews: Int = 1
+  ): Resource[ReviewPermit] =
+    Resource(ReviewPermit(label, maxReviews))

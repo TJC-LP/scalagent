@@ -7,9 +7,10 @@ Each example shows a current SDK pattern ("before") and the DSL equivalent ("aft
 ## Running Live Examples
 
 ```bash
-./mill examples.run dsl-basic        # One-shot + streaming + TraceSummary + Evaluation
+./mill examples.run dsl-basic        # One-shot + streaming + operational score
 ./mill examples.run dsl-builder      # Builder + read-only tools + JSONL logging
 ./mill examples.run dsl-delegation   # Typed parent/child with Peano depth enforcement
+./mill examples.run dsl-review       # Operational score + gated semantic review
 ./mill examples.run dsl-codex        # Same DSL, Codex provider (requires codex CLI)
 ./mill examples.run dsl-cross        # Claude ↔ Codex cross-provider chain
 ./mill examples.run -- --help        # List all 19 available examples
@@ -298,11 +299,18 @@ DSL equivalent:
 
 ```scala
 // Define observer-dependent utility scoring
-val utility = Utility.weighted[String, String](
-  Utility.reliability     -> 0.5,
-  Utility.costMinimizing  -> 0.3,
-  Utility.latencyMinimizing -> 0.2
+val operationalUtility = Utility.weightedNamed[String, String](
+  Utility.named("reliability", Utility.reliability, 0.5),
+  Utility.named("cost", Utility.costMinimizing, 0.3),
+  Utility.named("latency", Utility.latencyMinimizing, 0.2)
 )
+
+// Or: provide a typed custom scorer that inspects the actual output
+val semanticUtility = Utility.from[Reviewer, Analysis] { (principal, output, trace) =>
+  val hasRequiredSections = output.summary.nonEmpty && output.keywords.nonEmpty
+  val withinBudget = trace.costUsd <= principal.maxBudgetUsd
+  if hasRequiredSections && withinBudget then 1.0 else 0.0
+}
 
 // Collect events from a run
 val run = agent.run("analyst", prompt, policy)
@@ -310,9 +318,10 @@ val events: List[AgentEvent] = ... // collected from run.events
 
 // Evaluate the run
 val eval: Evaluation[String, String] =
-  Evaluation.evaluate("analyst", output, events, utility)
+  Evaluation.evaluate("analyst", output, events, operationalUtility)
 
 eval.score          // 0.0 - 1.0, weighted composite
+eval.breakdown      // named component contributions
 eval.trace          // TraceSummary: numTurns, costUsd, toolNames, delegationIds, ...
 eval.complexity     // Complexity: totalNodes, toolCallNodes, delegationNodes, graphDensity
 ```
@@ -322,8 +331,14 @@ What changed:
 - `TraceSummary.fromEvents` folds the event stream into rich metrics (not just turns + cost)
 - `Complexity` measures execution graph size (from the formalization: `C(alpha) = E[|G(x)| | x]`)
 - Built-in utilities: `costMinimizing`, `reliability`, `latencyMinimizing`, `simplicityBiased`
-- `Utility.weighted` composes multiple scoring functions with weights
+- `Utility.weightedNamed` composes multiple scoring functions with explicit names
 - `Utility.from { (principal, output, trace) => ... }` for custom scoring logic
+- `Reviewer` plus `ReviewPermit` support effectful semantic review on top
+
+Important caveat:
+- The built-in utilities are currently **operational heuristics**, not semantic correctness checks
+- They primarily score cost, latency, run success, and trace size
+- If you want the score to mean "this answer is actually good", provide a typed custom scorer over `(principal, output, trace)`
 
 ---
 
@@ -397,7 +412,41 @@ What changed:
 
 ---
 
-## Example 10: Full Pipeline
+## Example 10: Agentic Semantic Review
+
+```scala
+// 1. Pure operational evaluation
+val operationalUtility = Utility.weightedNamed[String, String](
+  Utility.named("reliability", Utility.reliability, 0.5),
+  Utility.named("cost", Utility.costMinimizing, 0.3),
+  Utility.named("simplicity", Utility.simplicityBiased, 0.2)
+)
+
+val baseEval = Evaluation.evaluate("user", output, events, operationalUtility)
+baseEval.score
+baseEval.breakdown
+
+// 2. Gated semantic review using an agent-backed reviewer
+val reviewer: Reviewer[String, String] =
+  Reviewer.fromAgent(reviewAgent, renderPrompt)
+
+val reviewed: IO[AgentError, Evaluation[String, String]] =
+  SandboxedRun.withReviewPermit("semantic-review", maxReviews = 1) { permit =>
+    AgenticReview.enrich(permit, baseEval, reviewer)
+  }
+
+reviewed.map(_.review) // Option[ReviewScore]
+```
+
+What changed:
+- Pure heuristics and semantic judgment are separate phases
+- `ReviewPermit` makes the impurity boundary explicit
+- `ReviewPermit` forces an explicit decision to spend nondeterministic judge-model budget
+- `ReviewScore` carries rationale, strengths, issues, and optional pass/fail
+
+---
+
+## Example 11: Full Pipeline
 
 End-to-end: build, run, stream, evaluate, log.
 
@@ -421,10 +470,10 @@ val policy = ExecutionPolicy(
 )
 
 // 3. Define utility scoring
-val utility = Utility.weighted[String, String](
-  Utility.reliability     -> 0.5,
-  Utility.costMinimizing  -> 0.3,
-  Utility.simplicityBiased -> 0.2
+val utility = Utility.weightedNamed[String, String](
+  Utility.named("reliability", Utility.reliability, 0.5),
+  Utility.named("cost", Utility.costMinimizing, 0.3),
+  Utility.named("simplicity", Utility.simplicityBiased, 0.2)
 )
 
 // 4. Set up logging
@@ -445,15 +494,24 @@ for
   _ <- logger.logEvaluation(eval)
 
   // Inspect results
-  _ <- Console.printLine(s"Score: ${eval.score}").orDie
+  _ <- Console.printLine(s"Operational score: ${eval.score}").orDie
+  _ <- Console.printLine(s"Breakdown: ${eval.breakdown.components.map(c => s"${c.name}=${c.raw}").mkString(", ")}").orDie
   _ <- Console.printLine(s"Tools used: ${eval.trace.toolNames}").orDie
   _ <- Console.printLine(s"Graph density: ${eval.complexity.graphDensity}").orDie
 yield output
 ```
 
+The scalar score above is useful for:
+
+- comparing multiple runs of the same workflow
+- spotting expensive or overly complex runs
+- building lightweight operational dashboards
+
+It is not, by itself, a semantic correctness guarantee.
+
 ---
 
-## Example 11: Capture-Checked Sandbox (Experimental)
+## Example 12: Capture-Checked Sandbox (Experimental)
 
 ```scala
 import com.tjclp.scalagent.experimental.*
@@ -490,7 +548,7 @@ Two approaches exist:
 
 ---
 
-## Example 12: Codex Interpreter — Same DSL, Different Provider
+## Example 13: Codex Interpreter — Same DSL, Different Provider
 
 The DSL is provider-independent. The same `Agent`, `AgentRun`, `AgentEvent`, `ExecutionPolicy`, and `AgentBuilder` types work identically with the OpenAI Codex SDK.
 

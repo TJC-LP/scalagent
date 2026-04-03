@@ -37,6 +37,18 @@ object SandboxedRun:
     val permit = SpawnPermit(maxDepth)
     op(permit)
 
+  /** Run an operation with semantic-review authority.
+    *
+    * The permit is scoped — agentic review cannot be performed unless the
+    * caller explicitly opts into this impurity boundary.
+    */
+  def withReviewPermit[T](
+      label: String = "semantic-review",
+      maxReviews: Int = 1
+  )(op: ReviewPermit^ => T): T =
+    val permit = ReviewPermit(label, maxReviews)
+    op(permit)
+
   /** Run an operation with all three capabilities.
     *
     * None of the capabilities can escape the callback scope.

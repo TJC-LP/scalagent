@@ -408,6 +408,18 @@ package object scalagent {
   // Utility takes type parameters — export companion only
   val Utility = core.Utility
 
+  type ScoreComponent = core.ScoreComponent
+  val ScoreComponent = core.ScoreComponent
+
+  type ScoreBreakdown = core.ScoreBreakdown
+  val ScoreBreakdown = core.ScoreBreakdown
+
+  type ReviewScore = core.ReviewScore
+  val ReviewScore = core.ReviewScore
+
+  // Reviewer takes type parameters — export companion only
+  val Reviewer = core.Reviewer
+
   type Evaluation[P, O] = core.Evaluation[P, O]
   val Evaluation = core.Evaluation
 

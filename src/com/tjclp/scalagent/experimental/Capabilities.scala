@@ -95,3 +95,26 @@ final class SpawnPermit private[experimental] (val maxDepth: Int) extends Shared
   def childPermit: Option[SpawnPermit] =
     if maxDepth > 0 then Some(SpawnPermit(maxDepth - 1))
     else None
+
+/** Capture-checked authority to invoke a nondeterministic reviewer.
+  *
+  * This is intentionally separate from ordinary execution capabilities:
+  * using an agent as a judge is an explicit control-plane decision.
+  *
+  * Construction is restricted to the `experimental` package so callers
+  * must go through `SandboxedRun` or `ScopedCapabilities`.
+  */
+final class ReviewPermit private[experimental] (
+    val label: String,
+    private var _remainingReviews: Int
+) extends SharedCapability:
+  require(_remainingReviews > 0, s"ReviewPermit must allow at least one review, got ${_remainingReviews}")
+
+  def remainingReviews: Int = _remainingReviews
+
+  def canReview: Boolean = _remainingReviews > 0
+
+  /** Consume one review slot. Throws if exhausted. */
+  def consume(): Unit =
+    require(_remainingReviews > 0, s"ReviewPermit exhausted for '$label'")
+    _remainingReviews -= 1

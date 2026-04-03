@@ -205,6 +205,45 @@ This leaves room for multiple utility models:
 
 Subagents can then maximize the utility of their parent principal rather than some global built-in objective.
 
+### Operational vs Semantic Scoring
+
+There is an important distinction between:
+
+- **operational scoring**: cheap, generic heuristics based on observable run properties
+- **semantic scoring**: task-aware judgments about whether the output is actually good
+
+Today the built-in utilities are primarily **operational**:
+
+- `reliability` checks whether the run completed successfully
+- `costMinimizing` favors cheaper runs
+- `latencyMinimizing` favors faster runs
+- `simplicityBiased` favors smaller traces
+
+These are useful for regression tracking and runtime optimization, but they are not the same thing as correctness.
+
+In particular, the built-in utilities do **not** currently inspect the output value in a domain-aware way, and most do not use the principal either. The trait supports semantic scoring, but the default utilities are intentionally simple and cheap.
+
+That means a current DSL `score` should be read as:
+
+> "How operationally good was this run under the chosen heuristic?"
+
+not:
+
+> "How semantically correct or useful was the answer?"
+
+To get semantic value, users should provide typed custom scorers:
+
+```scala
+val semanticScorer: Utility[Reviewer, CodeReview] =
+  Utility.from { (principal, output, trace) =>
+    val hasFindings = output.findings.nonEmpty
+    val respectsBudget = trace.costUsd <= principal.maxReviewBudgetUsd
+    if hasFindings && respectsBudget then 1.0 else 0.0
+  }
+```
+
+This is why the DSL keeps `Utility[-P, -O]` typed over both principal and output.
+
 ## Capture Checking
 
 Capture checking is promising, but only for places where non-escape really matters.
