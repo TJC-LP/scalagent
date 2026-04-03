@@ -398,6 +398,52 @@ package object scalagent {
   type OutputCodec[O] = core.OutputCodec[O]
   val OutputCodec = core.OutputCodec
 
+  // --- core DSL: capability types ---
+  type Depth = core.Depth
+  type Z = core.Z
+  type S[N <: core.Depth] = core.S[N]
+  type Depth0 = core.Depth0
+  type Depth1 = core.Depth1
+  type Depth2 = core.Depth2
+  type Depth3 = core.Depth3
+
+  type Capability = core.Capability
+  type CanUseTools[T <: core.ToolSet] = core.CanUseTools[T]
+  type CanSpawn[D <: core.Depth] = core.CanSpawn[D]
+  type CanReadMemory = core.CanReadMemory
+  type CanWriteMemory = core.CanWriteMemory
+  type CanEscalateHuman = core.CanEscalateHuman
+  type HasBudget = core.HasBudget
+
+  type ToolSet = core.ToolSet
+  type AllTools = core.AllTools
+  type ReadOnlyTools = core.ReadOnlyTools
+  type CustomTools = core.CustomTools
+
+  type ReadOnlyCaps = core.ReadOnlyCaps
+  type FullCaps = core.FullCaps
+  type SupervisorCaps[D <: core.Depth] = core.SupervisorCaps[D]
+
+  type ToolSurface = core.ToolSurface
+  val ToolSurface = core.ToolSurface
+
+  type DelegationPolicy = core.DelegationPolicy
+  val DelegationPolicy = core.DelegationPolicy
+
+  // TypedAgent and AgentBuilder take type parameters — export companions
+  val TypedAgent = core.TypedAgent
+  val AgentBuilder = core.AgentBuilder
+
+  // Type class evidence
+  type HasSpawn[C] = core.HasSpawn[C]
+  val HasSpawn = core.HasSpawn
+  type HasToolsCap[C] = core.HasToolsCap[C]
+  val HasToolsCap = core.HasToolsCap
+  type DepthLTE[A <: core.Depth, B <: core.Depth] = core.DepthLTE[A, B]
+  val DepthLTE = core.DepthLTE
+  type DepthValue[D <: core.Depth] = core.DepthValue[D]
+  val DepthValue = core.DepthValue
+
   // --- interop package ---
   val ClaudeInterpreter = interop.claude.ClaudeInterpreter
 

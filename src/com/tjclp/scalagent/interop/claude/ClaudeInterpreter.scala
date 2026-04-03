@@ -40,6 +40,46 @@ object ClaudeInterpreter:
   )(using StructuredOutput[A]): Agent[Any, String, A] =
     make[A](claudeAgent, baseOptions)
 
+  /** Start building a capability-typed string agent.
+    *
+    * The builder's `agentTransform` wires tool surface declarations into
+    * `AgentOptions`, so `.withTools(surface).build` produces an agent that
+    * actually restricts tool access at the provider level.
+    */
+  def builder(
+      claudeAgent: ClaudeAgent,
+      baseOptions: AgentOptions = AgentOptions.default
+  ): AgentBuilder[Any, String, String, Any] =
+    AgentBuilder.withTransform(
+      string(claudeAgent, baseOptions),
+      claudeTransform(claudeAgent, baseOptions)
+    )
+
+  /** Start building a capability-typed structured-output agent. */
+  def typedBuilder[A](
+      claudeAgent: ClaudeAgent,
+      baseOptions: AgentOptions = AgentOptions.default
+  )(using so: StructuredOutput[A]): AgentBuilder[Any, String, A, Any] =
+    AgentBuilder.withTransform(
+      typed[A](claudeAgent, baseOptions),
+      claudeTransform[A](claudeAgent, baseOptions)
+    )
+
+  /** Creates a transform that rebuilds the Claude-backed agent with capability
+    * restrictions applied to AgentOptions.
+    */
+  private def claudeTransform[O](
+      claudeAgent: ClaudeAgent,
+      baseOptions: AgentOptions
+  )(using codec: OutputCodec[O]): (Agent[Any, String, O], ToolSurface, Int) => Agent[Any, String, O] =
+    (_, toolSurface, _) =>
+      if toolSurface.isEmpty then make[O](claudeAgent, baseOptions)
+      else
+        val restrictedOptions = baseOptions.copy(
+          allowedTools = Some(toolSurface.names.map(com.tjclp.scalagent.tools.ToolName(_)))
+        )
+        make[O](claudeAgent, restrictedOptions)
+
   /** Create an agent with any output type that has an OutputCodec. */
   def make[O](
       claudeAgent: ClaudeAgent,
