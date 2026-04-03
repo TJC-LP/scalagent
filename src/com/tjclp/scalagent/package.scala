@@ -486,6 +486,27 @@ package object scalagent {
   val A2AInterpreter = interop.a2a.A2AInterpreter
   val A2AServerAdapter = interop.a2a.A2AServerAdapter
   val McpToolLoader = interop.mcp.McpToolLoader
+  val CodexInterpreter = interop.codex.CodexInterpreter
+  val CodexEventMapper = interop.codex.CodexEventMapper
+
+  // --- Codex types ---
+  type CodexClient = codex.CodexClient
+  val CodexClient = codex.CodexClient
+  type CodexThread = codex.CodexThread
+  type CodexClientOptions = codex.CodexClientOptions
+  val CodexClientOptions = codex.CodexClientOptions
+  type CodexThreadOptions = codex.CodexThreadOptions
+  val CodexThreadOptions = codex.CodexThreadOptions
+  type CodexEvent = codex.CodexEvent
+  val CodexEvent = codex.CodexEvent
+  type CodexItem = codex.CodexItem
+  val CodexItem = codex.CodexItem
+  type CodexTurn = codex.CodexTurn
+  type CodexUsage = codex.CodexUsage
+  type SandboxMode = codex.SandboxMode
+  val SandboxMode = codex.SandboxMode
+  type ApprovalMode = codex.ApprovalMode
+  val ApprovalMode = codex.ApprovalMode
 
   // ============================================================================
   // Helper Functions
