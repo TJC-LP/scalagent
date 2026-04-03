@@ -5,46 +5,90 @@ import scala.scalajs.js
 /** Runtime dispatcher for examples.
   *
   * All examples are linked into a single JS module. This dispatcher
-  * reads the EXAMPLE env var at runtime and calls the corresponding
-  * main class. This avoids the Mill task graph issue where `mainClass`
-  * is evaluated before `Task.Command` bodies run.
+  * selects the example to run from CLI args or EXAMPLE env var.
   *
-  * Usage: EXAMPLE=dsl-basic bun run main.js
-  *   or: ./mill examples.go --example dsl-basic
+  * Usage:
+  *   ./mill examples.run dsl-basic
+  *   ./mill examples.run --help
+  *   EXAMPLE=dsl-basic ./mill examples.run
   */
 object ExampleRunner:
-  def main(args: Array[String]): Unit =
-    val example = envOrDefault("EXAMPLE", "macro")
-    val runner: Runnable = example match
-      case "simple"         => () => SimpleQuery.main(args)
-      case "macro"          => () => MacroToolExample.main(args)
-      case "custom"         => () => CustomToolExample.main(args)
-      case "hook"           => () => HookExample.main(args)
-      case "permission"     => () => PermissionExample.main(args)
-      case "session"        => () => SessionExample.main(args)
-      case "structured"     => () => StructuredOutputExample.main(args)
-      case "subagent"       => () => SubagentExample.main(args)
-      case "plugin"         => () => PluginExample.main(args)
-      case "prompt"         => () => SystemPromptExample.main(args)
-      case "command"        => () => SlashCommandExample.main(args)
-      case "a2a"            => () => A2AExample.main(args)
-      case "agent-hooks"    => () => AgentHooksExample.main(args)
-      case "dsl-basic"      => () => DslBasicExample.main(args)
-      case "dsl-builder"    => () => DslBuilderExample.main(args)
-      case "dsl-delegation" => () => DslDelegationExample.main(args)
-      case "dsl-codex"      => () => DslCodexExample.main(args)
-      case "dsl-cross"      => () => DslCrossProviderExample.main(args)
-      case "capture"        => () => CaptureCheckingExample.main(args)
-      case other =>
-        System.err.println(s"Unknown example: '$other'")
-        System.err.println("Available: simple, macro, custom, hook, permission, session, structured,")
-        System.err.println("  subagent, plugin, prompt, command, a2a, agent-hooks, dsl-basic,")
-        System.err.println("  dsl-builder, dsl-delegation, dsl-codex, dsl-cross, capture")
-        () => throw new IllegalArgumentException(s"Unknown example: '$other'")
-    runner.run()
+  private val examples = Map(
+    "simple"         -> "SimpleQuery",
+    "macro"          -> "MacroToolExample",
+    "custom"         -> "CustomToolExample",
+    "hook"           -> "HookExample",
+    "permission"     -> "PermissionExample",
+    "session"        -> "SessionExample",
+    "structured"     -> "StructuredOutputExample",
+    "subagent"       -> "SubagentExample",
+    "plugin"         -> "PluginExample",
+    "prompt"         -> "SystemPromptExample",
+    "command"        -> "SlashCommandExample",
+    "a2a"            -> "A2AExample",
+    "agent-hooks"    -> "AgentHooksExample",
+    "dsl-basic"      -> "DslBasicExample",
+    "dsl-builder"    -> "DslBuilderExample",
+    "dsl-delegation" -> "DslDelegationExample",
+    "dsl-codex"      -> "DslCodexExample",
+    "dsl-cross"      -> "DslCrossProviderExample",
+    "capture"        -> "CaptureCheckingExample"
+  )
 
-  private def envOrDefault(key: String, default: String): String =
+  private val dispatchers: Map[String, Array[String] => Unit] = Map(
+    "simple"         -> (SimpleQuery.main(_)),
+    "macro"          -> (MacroToolExample.main(_)),
+    "custom"         -> (CustomToolExample.main(_)),
+    "hook"           -> (HookExample.main(_)),
+    "permission"     -> (PermissionExample.main(_)),
+    "session"        -> (SessionExample.main(_)),
+    "structured"     -> (StructuredOutputExample.main(_)),
+    "subagent"       -> (SubagentExample.main(_)),
+    "plugin"         -> (PluginExample.main(_)),
+    "prompt"         -> (SystemPromptExample.main(_)),
+    "command"        -> (SlashCommandExample.main(_)),
+    "a2a"            -> (A2AExample.main(_)),
+    "agent-hooks"    -> (AgentHooksExample.main(_)),
+    "dsl-basic"      -> (DslBasicExample.main(_)),
+    "dsl-builder"    -> (DslBuilderExample.main(_)),
+    "dsl-delegation" -> (DslDelegationExample.main(_)),
+    "dsl-codex"      -> (DslCodexExample.main(_)),
+    "dsl-cross"      -> (DslCrossProviderExample.main(_)),
+    "capture"        -> (CaptureCheckingExample.main(_))
+  )
+
+  def main(args: Array[String]): Unit =
+    val example = args.headOption
+      .filterNot(_.startsWith("-"))
+      .orElse(Option(envOrNull("EXAMPLE")))
+
+    example match
+      case Some(name) =>
+        dispatchers.get(name) match
+          case Some(run) => run(args.drop(1))
+          case None =>
+            System.err.println(s"Unknown example: '$name'\n")
+            printHelp()
+      case None =>
+        if args.contains("--help") || args.contains("-h") then printHelp()
+        else dispatchers("macro")(args) // default
+
+  private def printHelp(): Unit =
+    println("Usage: ./mill examples.run <example-name>")
+    println()
+    println("Available examples:")
+    examples.toSeq.sortBy(_._1).foreach { (name, cls) =>
+      println(f"  $name%-18s $cls")
+    }
+    println()
+    println("Examples:")
+    println("  ./mill examples.run dsl-basic        # DSL one-shot + streaming + eval")
+    println("  ./mill examples.run dsl-codex         # Codex interpreter")
+    println("  ./mill examples.run dsl-cross         # Claude <> Codex cross-provider")
+    println("  ./mill examples.run macro             # Default macro tool example")
+
+  private def envOrNull(key: String): String =
     val env = js.Dynamic.global.process.env
     val value = env.selectDynamic(key)
-    if js.isUndefined(value) || value == null then default
+    if js.isUndefined(value) || value == null then null
     else value.asInstanceOf[String]

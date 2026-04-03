@@ -113,44 +113,29 @@ object examples extends BunScalaJSModule {
     "dsl-cross"    -> "com.tjclp.scalagent.examples.DslCrossProviderExample"
   )
 
-  // List available examples
-  def list() = Task.Command {
-    println("Available examples:")
-    println("-------------------")
-    exampleClasses.toSeq.sortBy(_._1).foreach { case (name, cls) =>
-      println(s"  $name -> $cls")
-    }
-    println()
-    println("Run with:")
-    println("  ./mill examples.go --example simple")
-    println("  ./mill examples.go --example dsl-cross")
-    println("  ./mill examples.go                     # runs 'macro' by default")
-  }
+  // Fixed mainClass — ExampleRunner dispatches at runtime.
+  override def mainClass = Task { Some("com.tjclp.scalagent.examples.ExampleRunner") }
 
-  // Run an example by short name: ./mill examples.go --example simple
+  // Override run to forward CLI args as EXAMPLE env var to bun.
+  // Mill's ScalaJS run() drops CLI args entirely, so we handle it ourselves.
   //
-  // All examples are linked into one JS module via ExampleRunner (dispatcher).
-  // The --example flag is passed as EXAMPLE env var to the bun subprocess,
-  // where ExampleRunner reads it at runtime to select the right main class.
-  // This avoids the Mill task graph issue where mainClass (Task.Input) is
-  // evaluated before Task.Command bodies run.
-  def go(example: String = "macro") = Task.Command {
-    exampleClasses.get(example) match {
-      case None =>
-        sys.error(s"Unknown example '$example'. Available: ${exampleClasses.keys.toSeq.sorted.mkString(", ")}")
-      case _ => ()
-    }
-
+  //   ./mill examples.run dsl-basic      # run specific example
+  //   ./mill examples.run -- --help      # list all examples
+  //   ./mill examples.run                # runs 'macro' by default
+  override def run(args: mill.api.Task[mill.api.Args] = mill.api.Task.Anon(mill.api.Args())) = Task.Command {
+    val cliArgs = args().value
+    val example = cliArgs.headOption.getOrElse("")
     val linked = fastLinkJS()
     val entry = primaryEntrypoint(linked)
+    val env = if example.nonEmpty then
+      bunJsEnv() ++ Map("EXAMPLE" -> example)
+    else
+      bunJsEnv()
     runBun(
       bunExecutable(),
       Seq("run", entry.toString),
       cwd = linked.dest.path,
-      env = bunJsEnv() ++ Map("EXAMPLE" -> example)
+      env = env
     )
   }
-
-  // Fixed mainClass — ExampleRunner dispatches based on EXAMPLE env var at runtime.
-  override def mainClass = Task { Some("com.tjclp.scalagent.examples.ExampleRunner") }
 }
