@@ -370,6 +370,37 @@ package object scalagent {
 
   val ToolMacros = macros.ToolMacros
 
+  // --- core DSL package ---
+  // Agent takes type parameters, export companion object only
+  val Agent = core.Agent
+
+  type AgentRun[-R, +O] = core.AgentRun[R, O]
+  val AgentRun = core.AgentRun
+
+  type AgentEvent = core.AgentEvent
+  val AgentEvent = core.AgentEvent
+
+  type ExecutionPolicy = core.ExecutionPolicy
+  val ExecutionPolicy = core.ExecutionPolicy
+
+  type Budget = core.Budget
+  val Budget = core.Budget
+
+  type StopStrategy = core.StopStrategy
+  val StopStrategy = core.StopStrategy
+
+  type FallbackPolicy = core.FallbackPolicy
+  val FallbackPolicy = core.FallbackPolicy
+
+  type RunSummary = core.RunSummary
+  val RunSummary = core.RunSummary
+
+  type OutputCodec[O] = core.OutputCodec[O]
+  val OutputCodec = core.OutputCodec
+
+  // --- interop package ---
+  val ClaudeInterpreter = interop.claude.ClaudeInterpreter
+
   // ============================================================================
   // Helper Functions
   // ============================================================================
