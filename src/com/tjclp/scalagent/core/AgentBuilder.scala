@@ -9,9 +9,9 @@ import com.tjclp.scalagent.tools.ToolName
   *
   * {{{
   * AgentBuilder(agent)
-  *   .withTools(surface)        // C = Any & CanUseTools[AllTools]
-  *   .withBudget                // C = Any & CanUseTools[AllTools] & HasBudget
-  *   .withSpawnDepth[Depth2]    // C = Any & CanUseTools[AllTools] & HasBudget & CanSpawn[S[S[Z]]]
+  *   .withTools(surface)        // C = Any & CanUseTools[CustomTools]
+  *   .withBudget                // C = Any & CanUseTools[CustomTools] & HasBudget
+  *   .withSpawnDepth[Depth2]    // C = Any & CanUseTools[CustomTools] & HasBudget & CanSpawn[S[S[Z]]]
   *   .build                     // TypedAgent[..., C]
   * }}}
   *
@@ -30,8 +30,12 @@ final class AgentBuilder[P, I, O, C] private[core] (
     runtimeDepth: Int,
     agentTransform: (Agent[P, I, O], ToolSurface, Int) => Agent[P, I, O]
 ):
-  /** Add full tool access. Tools compose with previously added tools. */
-  def withTools(surface: ToolSurface): AgentBuilder[P, I, O, C & CanUseTools[AllTools]] =
+  /** Add an explicit tool allowlist. Tools compose with previously added tools.
+    *
+    * The resulting capability is `CustomTools`, not `AllTools`: the type reflects
+    * exactly what is known about the surface, not an unrestricted provider-wide grant.
+    */
+  def withTools(surface: ToolSurface): AgentBuilder[P, I, O, C & CanUseTools[CustomTools]] =
     new AgentBuilder(agent, tools ++ surface, runtimeDepth, agentTransform)
 
   /** Add read-only tool access. Tools compose with previously added tools. */
@@ -69,9 +73,9 @@ final class AgentBuilder[P, I, O, C] private[core] (
     new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
 
   /** Add MCP tools. Composes with existing tools and adds both
-    * `CanUseTools[AllTools]` and `HasMcpTools` capability markers.
+    * `CanUseTools[CustomTools]` and `HasMcpTools` capability markers.
     */
-  def withMcpTools(surface: mcp.McpToolSurface): AgentBuilder[P, I, O, C & CanUseTools[AllTools] & mcp.HasMcpTools] =
+  def withMcpTools(surface: mcp.McpToolSurface): AgentBuilder[P, I, O, C & CanUseTools[CustomTools] & mcp.HasMcpTools] =
     new AgentBuilder(agent, tools ++ surface.toToolSurface, runtimeDepth, agentTransform)
 
   /** Add MCP resource access capability. */

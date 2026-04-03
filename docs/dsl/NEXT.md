@@ -1,6 +1,6 @@
 # Next Steps
 
-Status: post-exploration. All 7 roadmap phases implemented on `dsl/core-exploration`.
+Status: post-exploration. Core DSL, interpreters, experimental control-plane safety, and live examples exist on `dsl/core-exploration`.
 
 ## Branch Summary
 
@@ -15,6 +15,7 @@ Status: post-exploration. All 7 roadmap phases implemented on `dsl/core-explorat
 | `3327617` | 7 | zio-blocks/scope integration (non-experimental capability safety) |
 | `c98ab52` | 7 | Sandbox hardening (private constructors, path traversal fix) |
 | `de316ab` | 6 | Utility scoring, TraceSummary, Complexity, TraceLogger |
+| `29bebba` | docs | NEXT.md with post-exploration priorities and known gaps |
 
 40 test suites, 0 failures. All existing tests unchanged.
 
@@ -78,10 +79,10 @@ Bridges one-shot `Agent.run` to stateful session management. Carries `ContextKer
 |---|---|---|
 | No live integration tests | High | All tests are unit/compile-time |
 | MCP resources/prompts implementation blocked | Medium | SDK doesn't expose them yet |
-| A2AServerAdapter is thin | Medium | Delegates to existing A2AServer, not full rewrite |
+| A2AServerAdapter is thin | Medium | Real DSL-backed executor exists, but transport still reuses the existing A2A server stack |
 | Capture checking + ZIO macro conflict | Low | Workaround: separate files. CC is experimental. |
 | `ContextKernel` not implemented | Low | Deferred intentionally — needs conversation support first |
-| DSL docs not updated | Low | Docs describe proposals, code is now real |
+| DSL docs/examples need continual tightening | Low | Keep examples aligned with honest `CustomTools` / effectful A2A flows |
 
 ## Key Patterns to Preserve
 

@@ -27,8 +27,8 @@ class TypedAgentSpec extends munit.FunSuite:
       AgentBuilder(echoAgent).withBudget.build
     // Compiles — type checks
 
-  test("withTools adds CanUseTools[AllTools]"):
-    val typed: TypedAgent[Nothing, String, String, Any & CanUseTools[AllTools]] =
+  test("withTools adds CanUseTools[CustomTools]"):
+    val typed: TypedAgent[Nothing, String, String, Any & CanUseTools[CustomTools]] =
       AgentBuilder(echoAgent).withTools(ToolSurface.empty).build
     // Compiles
 
@@ -44,7 +44,7 @@ class TypedAgentSpec extends munit.FunSuite:
 
   test("chained capabilities accumulate in intersection"):
     val typed: TypedAgent[Nothing, String, String,
-      Any & CanUseTools[AllTools] & HasBudget & CanSpawn[Depth2] & CanEscalateHuman] =
+      Any & CanUseTools[CustomTools] & HasBudget & CanSpawn[Depth2] & CanEscalateHuman] =
       AgentBuilder(echoAgent)
         .withTools(ToolSurface.empty)
         .withBudget

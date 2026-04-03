@@ -45,30 +45,17 @@ object TraceLogger:
         println(s"  [eval] score=${eval.score} complexity=${eval.complexity.totalNodes} nodes")
       }
 
-  /** Log to a callback function (JSONL-style). */
-  def callback(sink: String => Unit): TraceLogger = new TraceLogger:
+  /** Log to an effectful callback function (JSONL-style). */
+  def callbackZIO(sink: String => UIO[Unit]): TraceLogger = new TraceLogger:
     def logEvent(event: AgentEvent): UIO[Unit] =
-      ZIO.succeed {
-        val json = eventToJson(event)
-        sink(json.toJson)
-      }
+      sink(eventToJson(event).toJson)
 
     def logEvaluation[P, O](eval: Evaluation[P, O]): UIO[Unit] =
-      ZIO.succeed {
-        val json = Json.Obj(
-          "type" -> Json.Str("evaluation"),
-          "score" -> Json.Num(eval.score),
-          "isSuccess" -> Json.Bool(eval.trace.isSuccess),
-          "costUsd" -> Json.Num(eval.trace.costUsd),
-          "durationMs" -> Json.Num(eval.trace.durationMs),
-          "numTurns" -> Json.Num(eval.trace.numTurns),
-          "numToolCalls" -> Json.Num(eval.trace.numToolCalls),
-          "numDelegations" -> Json.Num(eval.trace.numDelegations),
-          "totalEvents" -> Json.Num(eval.trace.totalEvents),
-          "complexityNodes" -> Json.Num(eval.complexity.totalNodes)
-        )
-        sink(json.toJson)
-      }
+      sink(evaluationToJson(eval).toJson)
+
+  /** Log to a pure callback function (JSONL-style). */
+  def callback(sink: String => Unit): TraceLogger =
+    callbackZIO(line => ZIO.succeed(sink(line)))
 
   /** Compose multiple loggers — fan-out to all. */
   def all(loggers: TraceLogger*): TraceLogger = new TraceLogger:
@@ -97,3 +84,17 @@ object TraceLogger:
           "costUsd" -> Json.Num(summary.costUsd), "numTurns" -> Json.Num(summary.numTurns))
       case AgentEvent.Native(tag, payload) =>
         Json.Obj("type" -> Json.Str("native"), "tag" -> Json.Str(tag), "payload" -> payload)
+
+  private def evaluationToJson[P, O](eval: Evaluation[P, O]): Json =
+    Json.Obj(
+      "type" -> Json.Str("evaluation"),
+      "score" -> Json.Num(eval.score),
+      "isSuccess" -> Json.Bool(eval.trace.isSuccess),
+      "costUsd" -> Json.Num(eval.trace.costUsd),
+      "durationMs" -> Json.Num(eval.trace.durationMs),
+      "numTurns" -> Json.Num(eval.trace.numTurns),
+      "numToolCalls" -> Json.Num(eval.trace.numToolCalls),
+      "numDelegations" -> Json.Num(eval.trace.numDelegations),
+      "totalEvents" -> Json.Num(eval.trace.totalEvents),
+      "complexityNodes" -> Json.Num(eval.complexity.totalNodes)
+    )
