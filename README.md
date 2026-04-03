@@ -275,10 +275,21 @@ object MyTools:
 
 ```bash
 bun install
-./mill --no-server agent.compile
-./mill --no-server agent.test
-./mill examples.list
-EXAMPLE=simple ./mill --no-server examples.run
+./mill agent.compile
+./mill agent.test
+```
+
+## Running Examples
+
+```bash
+./mill examples.run dsl-basic        # DSL one-shot + streaming + eval
+./mill examples.run dsl-builder      # Builder + typed capabilities + JSONL logging
+./mill examples.run dsl-delegation   # Parent/child with Peano depth enforcement
+./mill examples.run dsl-codex        # Same DSL, OpenAI Codex provider
+./mill examples.run dsl-cross        # Claude ↔ Codex cross-provider chain
+./mill examples.run simple           # Simple Claude.ask() / query() / conversation()
+./mill examples.run macro            # Macro-defined custom tools
+./mill examples.run -- --help        # List all 19 available examples
 ```
 
 ## Project Structure
@@ -286,16 +297,22 @@ EXAMPLE=simple ./mill --no-server examples.run
 ```text
 scalagent/
 ├── build.mill
-├── package.json
-├── docs/
-├── examples/
+├── docs/dsl/                    # DSL design docs (ROADMAP, MAPPING, EXAMPLES, etc.)
+├── examples/                    # 19 runnable examples (Dsl*, Claude, A2A, tools)
 ├── src/com/tjclp/scalagent/
-│   ├── config/
-│   ├── messages/
-│   ├── streaming/
-│   ├── tools/
-│   └── ClaudeAgent.scala
-└── test/src/com/tjclp/scalagent/
+│   ├── core/                    # Provider-independent DSL (Agent, AgentRun, Capability, etc.)
+│   ├── interop/claude/          # Claude interpreter
+│   ├── interop/codex/           # Codex interpreter
+│   ├── interop/a2a/             # A2A interpreter
+│   ├── interop/mcp/             # MCP tool loader
+│   ├── codex/                   # Codex SDK facades + Scala types
+│   ├── experimental/            # Capture checking + zio-blocks/scope
+│   ├── config/                  # AgentOptions, Model, StructuredOutput
+│   ├── messages/                # AgentMessage ADT
+│   ├── streaming/               # AsyncIterator → ZStream bridge
+│   ├── tools/                   # ToolDef, ToolName, ToolResult
+│   └── ClaudeAgent.scala        # Claude SDK facade
+└── test/src/com/tjclp/scalagent/ # 43 test suites
 ```
 
 ## License

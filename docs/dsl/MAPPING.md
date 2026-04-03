@@ -1,8 +1,8 @@
 # Type Mapping
 
-Status: exploratory.
+Status: post-implementation. Two providers (Claude + Codex) validate these mappings.
 
-This document bridges the existing codebase types to the proposed DSL concepts. It is the concrete foundation for Phase 1 and 2 work — every DSL type should have a clear relationship to what already exists.
+This document bridges the existing codebase types to the DSL concepts. Every DSL type has a clear relationship to what already exists.
 
 ## Current Type Inventory
 
@@ -259,6 +259,29 @@ val logging: RunMiddleware = new RunMiddleware:
   def wrap[R, O](run: AgentRun[R, O]): AgentRun[R, O] =
     run.copy(events = run.events.tap(e => ZIO.logInfo(e.toString)))
 ```
+
+## Codex Provider Mapping
+
+The Codex interpreter (`interop/codex/`) validates that the mapping is provider-independent. Zero changes to `core/`.
+
+| Codex Type | DSL Concept |
+|---|---|
+| `Codex` (JS class) | `CodexClient` (Scala wrapper) |
+| `Thread` (JS class) | `CodexThread` (Scala wrapper) |
+| `ThreadEvent` (8 event types) | `CodexEvent` ADT → `AgentEvent` via `CodexEventMapper` |
+| `ThreadItem` (8 item types) | `CodexItem` ADT → `AgentEvent` via `CodexEventMapper` |
+| `ThreadOptions.sandboxMode` | `CanUseTools[ReadOnlyTools]` → `ReadOnly`, `CanUseTools[CustomTools]` → `WorkspaceWrite` |
+| `Turn.usage` (token counts) | `AgentEvent.Native("codex.usage", ...)` (no USD cost) |
+| `Turn.finalResponse` | `AgentRun.result: IO[AgentError, String]` |
+
+### Interpreter Inventory
+
+| Interpreter | Provider | Entry Points |
+|---|---|---|
+| `ClaudeInterpreter` | Claude Agent SDK | `string()`, `typed[A]()`, `builder()`, `typedBuilder[A]()` |
+| `A2AInterpreter` | A2A Protocol | `fromClient()`, `discover(url)` |
+| `CodexInterpreter` | OpenAI Codex SDK | `string()`, `builder()` |
+| `McpToolLoader` | MCP | `fromTools()`, `toServerConfig()` |
 
 ## What This Mapping Tells Us
 

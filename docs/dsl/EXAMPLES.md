@@ -1,8 +1,21 @@
 # DSL Usage Examples
 
-Status: post-implementation. All examples use the actual DSL API on `dsl/core-exploration`.
+Status: post-implementation. All examples use the actual DSL API on `dsl/core-exploration`. Two providers (Claude + Codex) prove the DSL is provider-independent.
 
 Each example shows a current SDK pattern ("before") and the DSL equivalent ("after") using real implemented types. Every code snippet references types that exist in the codebase.
+
+## Running Live Examples
+
+```bash
+./mill examples.run dsl-basic        # One-shot + streaming + TraceSummary + Evaluation
+./mill examples.run dsl-builder      # Builder + read-only tools + JSONL logging
+./mill examples.run dsl-delegation   # Typed parent/child with Peano depth enforcement
+./mill examples.run dsl-codex        # Same DSL, Codex provider (requires codex CLI)
+./mill examples.run dsl-cross        # Claude ↔ Codex cross-provider chain
+./mill examples.run -- --help        # List all 19 available examples
+```
+
+All DSL examples are in `examples/Dsl*.scala`. The `ExampleRunner` dispatcher selects the right example at runtime.
 
 ---
 
@@ -474,6 +487,75 @@ SandboxedRun.withAll(
 Two approaches exist:
 - **Capture checking** (`experimental/Capabilities.scala`) — Scala 3 `language.experimental.captureChecking` with `SharedCapability`. The compiler tracks capability lifetimes.
 - **zio-blocks/scope** (`experimental/ScopedCapabilities.scala`) — Non-experimental alternative using opaque `$[A]` types and `Unscoped` type class. Works today without experimental flags.
+
+---
+
+## Example 12: Codex Interpreter — Same DSL, Different Provider
+
+The DSL is provider-independent. The same `Agent`, `AgentRun`, `AgentEvent`, `ExecutionPolicy`, and `AgentBuilder` types work identically with the OpenAI Codex SDK.
+
+```scala
+import com.tjclp.scalagent.codex.*
+import com.tjclp.scalagent.interop.codex.CodexInterpreter
+
+// Create a Codex client (picks up OPENAI_API_KEY from env)
+val client = CodexClient.create()
+val threadOptions = CodexThreadOptions(
+  sandboxMode = Some(SandboxMode.ReadOnly),
+  approvalPolicy = Some(ApprovalMode.Never)
+)
+
+// Same Agent trait as Claude
+val agent: Agent[Any, String, String] =
+  CodexInterpreter.string(client, threadOptions)
+
+// Same ExecutionPolicy
+val policy = ExecutionPolicy(maxTurns = Some(3))
+
+// Same run → events → result pattern
+val run = agent.run("user", "What is 7 * 8?", policy)
+
+// Same TraceSummary → Evaluation pipeline
+val trace = TraceSummary.fromEvents(events)
+val eval = Evaluation.fromTrace("user", output, trace, utility)
+```
+
+Builder works too — `sandboxMode` maps from capability types:
+
+```scala
+val readOnlyAgent = CodexInterpreter.builder(client, threadOptions)
+  .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
+  .withBudget
+  .build
+// sandboxMode = ReadOnly (derived from CanUseTools[ReadOnlyTools])
+```
+
+**Live example:** `./mill examples.run dsl-codex`
+
+---
+
+## Example 13: Cross-Provider Chain — Claude and Codex Cooperating
+
+Both providers implement `Agent[Any, String, String]`. They can chain: one generates, the other answers.
+
+```scala
+val claudeAgent: Agent[Any, String, String] =
+  ClaudeInterpreter.string(claudeAgent, claudeOptions)
+
+val codexAgent: Agent[Any, String, String] =
+  CodexInterpreter.string(codexClient, codexOptions)
+
+// Claude generates a question
+val question = claudeAgent.run("orchestrator", "Generate a trivia question about space.", policy).result
+
+// Codex answers it — same Agent trait, same policy, same evaluation
+val answer = codexAgent.run("orchestrator", question, policy).result
+
+// Both runs produce AgentEvent streams, both fold into TraceSummary,
+// both score via Utility.weighted — the DSL doesn't care which provider.
+```
+
+**Live example:** `./mill examples.run dsl-cross`
 
 ---
 

@@ -1,10 +1,10 @@
 # Next Steps
 
-Status: post-exploration. Core DSL, interpreters, experimental control-plane safety, and live examples exist on `dsl/core-exploration`.
+Status: post-exploration. Core DSL, two provider interpreters (Claude + Codex), experimental control-plane safety, and live cross-provider examples exist on `dsl/core-exploration`.
 
 ## Branch Summary
 
-8 commits, ~5,500 lines added, 0 lines removed from existing code:
+12 commits, ~7,200 lines added, 0 lines removed from existing code:
 
 | Commit | Phase | What |
 |---|---|---|
@@ -16,8 +16,23 @@ Status: post-exploration. Core DSL, interpreters, experimental control-plane saf
 | `c98ab52` | 7 | Sandbox hardening (private constructors, path traversal fix) |
 | `de316ab` | 6 | Utility scoring, TraceSummary, Complexity, TraceLogger |
 | `29bebba` | docs | NEXT.md with post-exploration priorities and known gaps |
+| `28cb8f5` | 6+ | Live examples, CustomTools fix, TraceLogger.callbackZIO |
+| `42c9a6d` | 8 | Codex interpreter — proves DSL is provider-independent |
+| `657de26` | 8 | Codex + cross-provider examples, ExampleRunner dispatcher |
+| `edb236c` | fix | examples.run forwards CLI args via EXAMPLE env |
 
-40 test suites, 0 failures. All existing tests unchanged.
+43 test suites, 0 failures. All existing tests unchanged.
+
+## Running Examples
+
+```bash
+./mill examples.run dsl-basic        # DSL one-shot + streaming + eval
+./mill examples.run dsl-builder      # Builder + read-only tools + JSONL logging
+./mill examples.run dsl-delegation   # Typed parent/child with Peano depth
+./mill examples.run dsl-codex        # Same DSL, Codex provider
+./mill examples.run dsl-cross        # Claude ↔ Codex cross-provider chain
+./mill examples.run -- --help        # List all 19 examples
+```
 
 ## Priority 1: PR and Review
 
@@ -77,12 +92,10 @@ Bridges one-shot `Agent.run` to stateful session management. Carries `ContextKer
 
 | Gap | Severity | Notes |
 |---|---|---|
-| No live integration tests | High | All tests are unit/compile-time |
 | MCP resources/prompts implementation blocked | Medium | SDK doesn't expose them yet |
 | A2AServerAdapter is thin | Medium | Real DSL-backed executor exists, but transport still reuses the existing A2A server stack |
 | Capture checking + ZIO macro conflict | Low | Workaround: separate files. CC is experimental. |
 | `ContextKernel` not implemented | Low | Deferred intentionally — needs conversation support first |
-| DSL docs/examples need continual tightening | Low | Keep examples aligned with honest `CustomTools` / effectful A2A flows |
 
 ## Key Patterns to Preserve
 

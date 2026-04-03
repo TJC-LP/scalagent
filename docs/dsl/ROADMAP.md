@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: exploratory and additive.
+Status: Phases 0-8 complete on `dsl/core-exploration`. No existing code was modified — all DSL work is additive.
 
 This roadmap assumes we keep the existing public Claude-first API working while we introduce a richer internal core.
 
@@ -19,8 +19,6 @@ What it does not yet have is a semantic center that these features all compose a
 
 ## Proposed Package Direction
 
-Initial target package layout:
-
 ```text
 src/com/tjclp/scalagent/core/
   Agent.scala
@@ -30,163 +28,89 @@ src/com/tjclp/scalagent/core/
   ExecutionPolicy.scala
   Budget.scala
   Utility.scala
-  ContextKernel.scala
+  ContextKernel.scala        # not yet implemented
   Delegation.scala
 
 src/com/tjclp/scalagent/interop/
   claude/
   a2a/
   mcp/
-  openai/
   codex/
 ```
 
 The exact names may change. The important part is the separation between core semantics and backend interpreters.
 
-## Phase 0: Documentation and Vocabulary
+---
 
-Deliverables:
+## Completed Phases
 
-- establish the semantic vocabulary in `docs/dsl`
-- define the boundary between DSL, A2A, MCP, and provider runtimes
-- settle on the minimum core concepts before adding code
+### Phase 0: Documentation and Vocabulary -- DONE
 
-Non-goals:
+Deliverables: `docs/dsl/` with ROADMAP, MAPPING, FOUNDATIONS, EXAMPLES.
 
-- no public API breakage
-- no mass rename of current `Claude*` surfaces
+### Phase 1: Introduce a Tiny Core -- DONE (`ac78f82`)
 
-## Phase 1: Introduce a Tiny Core
+Deliverables: `Agent`, `AgentRun`, `AgentEvent`, `ExecutionPolicy`, `Budget`, `RunSummary`, `OutputCodec`.
 
-Deliverables:
+Success: one-shot typed run without mentioning Claude in `core/`. Normalized events with `Native` escape hatch.
 
-- add `Agent`, `AgentRun`, `AgentEvent`, and `ExecutionPolicy`
-- keep the initial core intentionally small
-- make the first version map cleanly onto existing Claude behavior
+### Phase 2: Capability Lifting -- DONE (`dab4683`)
 
-Rules:
+Deliverables: `Capability` trait (unsealed), `CanUseTools[T]`, `CanSpawn[D]`, `HasBudget`, `CanReadMemory`, `CanWriteMemory`, `CanEscalateHuman`. Peano depth types (`Z`, `S[N]`, `DepthLTE`). `TypedAgent[P, I, O, C]` with phantom intersection accumulation. `AgentBuilder` with `agentTransform`.
 
-- do not try to encode every provider feature yet
-- keep native escape hatches available
-- prefer additive wrappers over invasive rewrites
+Success: "can this agent do X?" is answered by the type signature.
 
-Success criteria:
+### Phase 3: Claude Interpreter -- DONE (`ac78f82`)
 
-- we can express a one-shot typed run without mentioning Claude in the core package
-- we can stream normalized events while still retaining native events
+Deliverables: `ClaudeInterpreter` with `string()`, `typed[A]()`, `builder()`, `typedBuilder[A]()`. `EventMapper` mapping all 20+ `AgentMessage` cases to `AgentEvent`. `SharedRun` pattern (Queue + Promise + forkDaemon).
 
-## Phase 2: Capability Lifting
+Success: DSL sits on top of Claude without losing power. `AgentOptions` preserved for SDK-shaped control.
 
-Deliverables:
+### Phase 4: Protocol Interpreters -- DONE (`2e64127`)
 
-- move authority concerns into composable capabilities
-- introduce typed budget and deadline objects
-- separate semantic policy from provider-native options
+Deliverables: `A2AInterpreter` (fromClient, discover), `A2AEventMapper`, `A2AServerAdapter`. `McpToolLoader` (fromTools, toServerConfig). Core traits: `A2ARemoteAgent`, `CanDelegateA2A`, `McpToolSurface`, `McpResourceSurface`, `McpPromptSurface`.
 
-Likely first capabilities:
+Success: horizontal orchestration via A2A, vertical tool access via MCP.
 
-- tool use
-- delegation
-- memory read/write
-- human escalation
-- clock and deadline access
+### Phase 5: Delegation and Sprawl Control -- DONE (`dab4683`)
 
-Success criteria:
+Deliverables: `TypedAgent.delegate` and `delegateTyped` with `HasSpawn` evidence. `DelegationPolicy` (budgetFraction, maxChildTurns). Compile-time depth enforcement via `DepthLTE`. Runtime defense-in-depth assertions.
 
-- "can this agent do X?" is answered by capabilities or policy, not by prose documentation alone
+Success: parent agents can only delegate within their policy envelope. Traces report delegation depth.
 
-## Phase 3: Claude Interpreter
+### Phase 6: Utility and Evaluation -- DONE (`de316ab`, `28cb8f5`)
 
-Deliverables:
+Deliverables: `Utility[-P, -O]` with `costMinimizing`, `reliability`, `latencyMinimizing`, `simplicityBiased`, `weighted`. `TraceSummary.fromEvents`. `Complexity.fromTrace`. `Evaluation.evaluate`. `TraceLogger` with `noop`, `console`, `callback`, `callbackZIO`, `all`.
 
-- implement a Claude interpreter from core DSL to current Claude runtime
-- map normalized `AgentEvent` values from `AgentMessage`
-- preserve access to native `QueryStream` and session controls where available
+Success: "good agent" is measurable. Observer-dependent scoring from the formalization paper.
 
-Important constraint:
+### Phase 7: Capture Checking Experiments -- DONE (`086a4fc`, `3327617`, `c98ab52`)
 
-- `ClaudeAgent`, `AgentOptions`, and `QueryStream` should remain first-class for users who want SDK-shaped control
+Deliverables: `FileSandbox`, `BudgetSlice`, `SpawnPermit` extending `SharedCapability` (capture-checked). `SandboxedRun` scoped callbacks. `ScopedCapabilities` via zio-blocks/scope (non-experimental). Private constructors, path traversal fix.
 
-Success criteria:
+Success: both capture checking and zio-blocks approaches work on Scala.js.
 
-- the new DSL can sit on top of current Claude functionality without losing major power
+### Phase 8: Multi-Provider Proof -- DONE (`42c9a6d`, `657de26`, `edb236c`)
 
-## Phase 4: Protocol Interpreters
+Deliverables: `CodexInterpreter` backed by `@openai/codex-sdk`. `CodexClient`, `CodexThread`, `CodexEvent`/`CodexItem` ADTs. `CodexEventMapper` (8 item types → `AgentEvent`). Builder with `codexTransform` (capabilities → sandbox mode). Live examples: `DslCodexExample`, `DslCrossProviderExample` (Claude ↔ Codex chain). `ExampleRunner` dispatcher.
 
-Deliverables:
+Success: zero changes to `core/`. Same `Agent`, `AgentRun`, `AgentEvent`, `ExecutionPolicy`, `AgentBuilder`, `TypedAgent`, `TraceSummary`, `Utility`, `Evaluation` types work identically across both providers.
 
-- A2A adapter that treats a remote A2A agent as an `Agent`
-- MCP adapter that treats tools/resources/prompts as typed capabilities
-- protocol-specific metadata mappers for budgets, deadlines, and policy hints
+---
 
-Success criteria:
-
-- horizontal orchestration via A2A
-- vertical tool access via MCP
-- neither protocol becomes the semantic center of the library
-
-## Phase 5: Delegation and Sprawl Control
-
-Deliverables:
-
-- explicit parent-to-child budget slicing
-- typed or policy-enforced delegation depth
-- observable delegation events in traces
-- fallback chains for limit hits: fail, ask human, escalate, or reroute
-
-This is where the design becomes materially useful beyond API cleanup.
-
-Success criteria:
-
-- a parent agent can only delegate within its policy envelope
-- child runs cannot exceed their allocated budget
-- trace summaries can report delegation depth and fan-out
-
-## Phase 6: Utility and Evaluation
-
-Deliverables:
-
-- principal-relative `Utility`
-- trace summaries and evaluation hooks
-- the beginnings of an empirical complexity model
-
-This phase is about making "good agent" measurable without pretending utility is universal.
-
-## Phase 7: Capture Checking Experiments
-
-Deliverables:
-
-- experimental module for non-escaping rights
-- prototype capture-checked values such as `BudgetSlice` and `SpawnPermit`
-
-Important constraint:
-
-- keep this experimental until ergonomics and compiler support are acceptable
-
-This should be the sharpest tool in the box, not the first one we reach for.
-
-## What We Should Not Do First
+## What We Should Not Do
 
 - do not genericize `AgentOptions` into an all-purpose universal config type
 - do not force all runtimes to expose identical control surfaces
 - do not replace provider-native ADTs with a flattened generic event model only
 - do not hide native handles from advanced users
 
-## Open Questions
+## Remaining Work
 
-- How much of stochasticity belongs in the public API versus evaluators and trace summaries?
-- Should depth be modeled with Peano-style phantom types, singleton integers, or purely runtime policy first?
-- How should `ExecutionPolicy` map to provider-native controls that do not line up one-to-one?
-- Which normalized events are stable enough to commit to early?
-- What is the smallest useful context model for `ContextKernel`?
+See `docs/dsl/NEXT.md` for current priorities:
 
-## Immediate Next Step After Docs
-
-The next code step should be a tiny, non-breaking `core` experiment:
-
-- `Agent`
-- `AgentRun`
-- `AgentEvent`
-- `ExecutionPolicy`
-
-Then prove it against one real interpreter: Claude.
+1. PR and review
+2. Integration testing (beyond live examples)
+3. `ContextKernel` (context evolution across turns)
+4. SDK parity check
+5. `Conversation` DSL (multi-turn)
