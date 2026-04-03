@@ -420,6 +420,17 @@ package object scalagent {
   // Reviewer takes type parameters — export companion only
   val Reviewer = core.Reviewer
 
+  // --- core DSL: classified review ---
+  type Visibility = core.Visibility
+  type Public = core.Public
+  type Internal = core.Internal
+  type Secret = core.Secret
+  type TopSecret = core.TopSecret
+  type Classified[+A, L <: core.Visibility] = core.Classified[A, L]
+  val Classified = core.Classified
+  type CanSee[Viewer <: core.Visibility, Data <: core.Visibility] = core.CanSee[Viewer, Data]
+  val CanSee = core.CanSee
+
   type Evaluation[P, O] = core.Evaluation[P, O]
   val Evaluation = core.Evaluation
 

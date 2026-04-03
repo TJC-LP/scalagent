@@ -18,3 +18,13 @@ object AgenticReview:
   ): IO[AgentError, Evaluation[P, O]] =
     permit.consume()
     Evaluation.withReview(evaluation, reviewer)
+
+  /** Enrich an evaluation with a reviewer that is only allowed to see classified outputs
+    * when the reviewer's clearance dominates the output's visibility.
+    */
+  def enrichClassified[P, O, ReviewerLevel <: Visibility, DataLevel <: Visibility](
+      permit: ReviewPermit,
+      evaluation: Evaluation[P, Classified[O, DataLevel]],
+      reviewer: Reviewer[P, Classified[O, DataLevel]]
+  )(using CanSee[ReviewerLevel, DataLevel]): IO[AgentError, Evaluation[P, Classified[O, DataLevel]]] =
+    enrich(permit, evaluation, reviewer)
