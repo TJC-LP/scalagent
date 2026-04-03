@@ -398,6 +398,22 @@ package object scalagent {
   type OutputCodec[O] = core.OutputCodec[O]
   val OutputCodec = core.OutputCodec
 
+  // --- core DSL: utility and evaluation ---
+  type TraceSummary = core.TraceSummary
+  val TraceSummary = core.TraceSummary
+
+  type Complexity = core.Complexity
+  val Complexity = core.Complexity
+
+  // Utility takes type parameters — export companion only
+  val Utility = core.Utility
+
+  type Evaluation[P, O] = core.Evaluation[P, O]
+  val Evaluation = core.Evaluation
+
+  type TraceLogger = core.TraceLogger
+  val TraceLogger = core.TraceLogger
+
   // --- core DSL: capability types ---
   type Depth = core.Depth
   type Z = core.Z
