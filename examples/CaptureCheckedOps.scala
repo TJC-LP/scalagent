@@ -14,6 +14,8 @@ import com.tjclp.scalagent.experimental.*
   */
 object CaptureCheckedOps:
 
+  private val nodePath = scala.scalajs.js.Dynamic.global.require("node:path")
+
   def sandboxDemo(): Unit =
     SandboxedRun.withSandbox("/tmp/scalagent-sandbox") { fs =>
       println(s"  Sandbox root: ${fs.root}")
@@ -23,6 +25,10 @@ object CaptureCheckedOps:
       def readConfig(sandbox: FileSandbox^): String =
         s"config from ${sandbox.root}"
       println(s"  Config: ${readConfig(fs)}")
+
+      val attackerPath = "../scalagent-sandbox-evil/secret.txt"
+      val naiveResolved = nodePath.resolve(fs.root, attackerPath).asInstanceOf[String]
+      println(s"  Without a real sandbox, prompt injection could redirect reads to: $naiveResolved")
     }
 
     // REJECTED by capture checker — uncomment to see the compile error:

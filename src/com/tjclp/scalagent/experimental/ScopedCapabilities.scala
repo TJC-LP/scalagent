@@ -29,9 +29,9 @@ import zio.blocks.scope.Resource
   * == Why not capture checking? ==
   *
   * Scala 3 capture checking (`SharedCapability`, `^`) is experimental and
-  * conflicts with ZIO's macro-based tracer. This approach uses stable
-  * language features (opaque types + macros) for similar compile-time
-  * guarantees without experimental dependencies.
+  * conflicts with parts of the current toolchain. This approach instead uses
+  * `zio-blocks/scope` opaque scoped values and macro validation for compile-time
+  * escape prevention on the stable control-plane path.
   */
 object ScopedCapabilities:
 

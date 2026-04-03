@@ -14,8 +14,11 @@ import caps.SharedCapability
   *   - An agent can't store the sandbox in a field that outlives the run
   *   - An agent can't return a closure that captures the sandbox
   *   - A child agent can only use the sandbox if it was explicitly passed
+  *
+  * Construction is restricted to the `experimental` package so callers
+  * must go through `SandboxedRun` or `ScopedCapabilities`.
   */
-class FileSandbox(val root: String) extends SharedCapability:
+final class FileSandbox private[experimental] (val root: String) extends SharedCapability:
   private val nodePath = scala.scalajs.js.Dynamic.global.require("node:path")
   private val nodeFs = scala.scalajs.js.Dynamic.global.require("node:fs")
 
@@ -39,7 +42,10 @@ class FileSandbox(val root: String) extends SharedCapability:
   private def resolveSafe(path: String): String =
     val resolved = nodePath.resolve(root, path).asInstanceOf[String]
     val normalizedRoot = nodePath.resolve(root).asInstanceOf[String]
-    if !resolved.startsWith(normalizedRoot) then
+    val relative = nodePath.relative(normalizedRoot, resolved).asInstanceOf[String]
+    val escapesRoot =
+      relative.startsWith("..") || nodePath.isAbsolute(relative).asInstanceOf[Boolean]
+    if escapesRoot then
       throw new SecurityException(s"Path escape attempt: $path resolves outside sandbox $root")
     resolved
 
@@ -47,8 +53,11 @@ class FileSandbox(val root: String) extends SharedCapability:
   *
   * Grants spending authority up to a fixed amount. The compiler prevents
   * it from being copied, leaked, or retained beyond its authorized scope.
+  *
+  * Construction is restricted to the `experimental` package so callers
+  * must go through `SandboxedRun` or `ScopedCapabilities`.
   */
-class BudgetSlice(private var _remaining: Double) extends SharedCapability:
+final class BudgetSlice private[experimental] (private var _remaining: Double) extends SharedCapability:
   require(_remaining >= 0, s"Budget cannot be negative: ${_remaining}")
 
   def remaining: Double = _remaining
@@ -74,8 +83,11 @@ class BudgetSlice(private var _remaining: Double) extends SharedCapability:
   *
   * Authorizes delegation to child agents with a depth limit.
   * Each spawn consumes one level. At depth zero, no further spawning.
+  *
+  * Construction is restricted to the `experimental` package so callers
+  * must go through `SandboxedRun` or `ScopedCapabilities`.
   */
-class SpawnPermit(val maxDepth: Int) extends SharedCapability:
+final class SpawnPermit private[experimental] (val maxDepth: Int) extends SharedCapability:
   require(maxDepth >= 0, s"Depth cannot be negative: $maxDepth")
 
   def canSpawn: Boolean = maxDepth > 0

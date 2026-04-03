@@ -10,6 +10,21 @@ import scala.compiletime.testing.typeChecks
   */
 class ScopedCapabilitiesSpec extends munit.FunSuite:
 
+  private val nodeFs = scala.scalajs.js.Dynamic.global.require("node:fs")
+  private val nodeOs = scala.scalajs.js.Dynamic.global.require("node:os")
+  private val nodePath = scala.scalajs.js.Dynamic.global.require("node:path")
+
+  private def withSiblingEscapeFixture[A](f: String => A): A =
+    val base =
+      nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), "scalagent-scope-")).asInstanceOf[String]
+    val safe = nodePath.join(base, "safe").asInstanceOf[String]
+    val evil = nodePath.join(base, "safe-evil").asInstanceOf[String]
+    val secret = nodePath.join(evil, "secret.txt").asInstanceOf[String]
+    nodeFs.mkdirSync(safe, scala.scalajs.js.Dynamic.literal(recursive = true))
+    nodeFs.mkdirSync(evil, scala.scalajs.js.Dynamic.literal(recursive = true))
+    nodeFs.writeFileSync(secret, "pwnd")
+    f(safe)
+
   // --- Basic scope usage ---
 
   test("FileSandbox can be allocated and used within scope"):
@@ -52,6 +67,17 @@ class ScopedCapabilitiesSpec extends munit.FunSuite:
     }
     assert(canSpawn)
 
+  test("scope-based sandbox rejects sibling-prefix escape"):
+    intercept[SecurityException] {
+      withSiblingEscapeFixture { safeRoot =>
+        Scope.global.scoped { scope =>
+          import scope.*
+          val fs = allocate(ScopedCapabilities.sandboxResource(safeRoot))
+          (scope $ fs)(_.read("../safe-evil/secret.txt"))
+        }
+      }
+    }
+
   // --- Scope safety: compile-time enforcement ---
 
   test("$[FileSandbox] cannot escape scope — no Unscoped instance"):
@@ -80,6 +106,15 @@ class ScopedCapabilitiesSpec extends munit.FunSuite:
           val b = allocate(ScopedCapabilities.budgetResource(10.0))
           scope.leak(b)
         }
+    """))
+
+  test("userland code cannot instantiate experimental capabilities directly"):
+    assert(!typeChecks("""
+      package userland
+      import com.tjclp.scalagent.experimental.{FileSandbox, BudgetSlice, SpawnPermit}
+      val fs = new FileSandbox("/tmp")
+      val budget = new BudgetSlice(1.0)
+      val permit = new SpawnPermit(1)
     """))
 
   // --- Combined usage ---
