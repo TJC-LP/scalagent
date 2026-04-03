@@ -1,0 +1,48 @@
+package com.tjclp.scalagent.experimental
+
+import zio.blocks.scope.Resource
+
+/** Scope-based capability resources using zio-blocks/scope.
+  *
+  * This provides `Resource[A]` factories for agent capabilities.
+  * Used with `Scope.global.scoped` for compile-time safety:
+  *
+  * {{{
+  * import zio.blocks.scope.Scope
+  * import com.tjclp.scalagent.experimental.ScopedCapabilities.*
+  *
+  * val config: String = Scope.global.scoped { scope =>
+  *   import scope.*
+  *   val fs = allocate(sandboxResource("/safe/dir"))
+  *   val budget = allocate(budgetResource(10.0))
+  *
+  *   // $ operator ensures capabilities are used safely (macro-validated):
+  *   (scope $ budget)(_.spend(1.0))
+  *   (scope $ fs)(_.read("config.json"))
+  *   // Returns String — Unscoped, so it can escape the scope
+  * }
+  *
+  * // COMPILE ERROR if you try to return $[FileSandbox] — no Unscoped instance
+  * // COMPILE ERROR if you try to capture fs in a closure via $ operator
+  * }}}
+  *
+  * == Why not capture checking? ==
+  *
+  * Scala 3 capture checking (`SharedCapability`, `^`) is experimental and
+  * conflicts with ZIO's macro-based tracer. This approach uses stable
+  * language features (opaque types + macros) for similar compile-time
+  * guarantees without experimental dependencies.
+  */
+object ScopedCapabilities:
+
+  /** Scope-managed FileSandbox. Path traversal validated at runtime. */
+  def sandboxResource(root: String): Resource[FileSandbox] =
+    Resource(FileSandbox(root))
+
+  /** Scope-managed BudgetSlice. Spending tracked; child slices deduct from parent. */
+  def budgetResource(amountUsd: Double): Resource[BudgetSlice] =
+    Resource(BudgetSlice(amountUsd))
+
+  /** Scope-managed SpawnPermit. Delegation authority with depth limit. */
+  def permitResource(maxDepth: Int): Resource[SpawnPermit] =
+    Resource(SpawnPermit(maxDepth))
