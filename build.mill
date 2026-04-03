@@ -108,7 +108,9 @@ object examples extends BunScalaJSModule {
     "agent-hooks"  -> "com.tjclp.scalagent.examples.AgentHooksExample",
     "dsl-basic"    -> "com.tjclp.scalagent.examples.DslBasicExample",
     "dsl-builder"  -> "com.tjclp.scalagent.examples.DslBuilderExample",
-    "dsl-delegation" -> "com.tjclp.scalagent.examples.DslDelegationExample"
+    "dsl-delegation" -> "com.tjclp.scalagent.examples.DslDelegationExample",
+    "dsl-codex"    -> "com.tjclp.scalagent.examples.DslCodexExample",
+    "dsl-cross"    -> "com.tjclp.scalagent.examples.DslCrossProviderExample"
   )
 
   // List available examples
@@ -120,12 +122,18 @@ object examples extends BunScalaJSModule {
     }
     println()
     println("Run with:")
-    println("  ./mill examples.go --example simple   # run specific example")
-    println("  ./mill examples.go --example hook     # run hook example")
-    println("  ./mill examples.go                    # runs 'macro' by default")
+    println("  ./mill examples.go --example simple")
+    println("  ./mill examples.go --example dsl-cross")
+    println("  ./mill examples.go                     # runs 'macro' by default")
   }
 
   // Run an example by short name: ./mill examples.go --example simple
+  //
+  // All examples are linked into one JS module via ExampleRunner (dispatcher).
+  // The --example flag is passed as EXAMPLE env var to the bun subprocess,
+  // where ExampleRunner reads it at runtime to select the right main class.
+  // This avoids the Mill task graph issue where mainClass (Task.Input) is
+  // evaluated before Task.Command bodies run.
   def go(example: String = "macro") = Task.Command {
     exampleClasses.get(example) match {
       case None =>
@@ -133,26 +141,16 @@ object examples extends BunScalaJSModule {
       case _ => ()
     }
 
-    // Set system property so mainClass (Task.Input) picks it up during linking
-    System.setProperty("scalagent.example", example)
-
     val linked = fastLinkJS()
     val entry = primaryEntrypoint(linked)
     runBun(
       bunExecutable(),
       Seq("run", entry.toString),
       cwd = linked.dest.path,
-      env = bunJsEnv()
+      env = bunJsEnv() ++ Map("EXAMPLE" -> example)
     )
   }
 
-  // Dynamic mainClass based on system property or EXAMPLE env var
-  override def mainClass = Task.Input {
-    val example = Option(System.getProperty("scalagent.example"))
-      .orElse(Task.env.get("EXAMPLE"))
-      .getOrElse("macro")
-    val cls = exampleClasses.get(example)
-    if cls.isEmpty then println(s"Warning: Unknown example '$example', using 'macro'")
-    cls.orElse(Some(exampleClasses("macro")))
-  }
+  // Fixed mainClass — ExampleRunner dispatches based on EXAMPLE env var at runtime.
+  override def mainClass = Task { Some("com.tjclp.scalagent.examples.ExampleRunner") }
 }
