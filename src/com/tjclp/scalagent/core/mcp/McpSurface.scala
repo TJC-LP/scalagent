@@ -2,6 +2,7 @@ package com.tjclp.scalagent.core.mcp
 
 import zio.Task
 import com.tjclp.scalagent.core.ToolSurface
+import com.tjclp.scalagent.mcp.McpToolName
 import com.tjclp.scalagent.tools.ToolDef
 
 // ============================================================================
@@ -19,7 +20,11 @@ final case class McpToolSurface(
     tools: List[ToolDef[?]]
 ):
   /** Convert to a plain ToolSurface for composition. */
-  def toToolSurface: ToolSurface = ToolSurface(tools)
+  def toToolSurface: ToolSurface =
+    ToolSurface.withAllowlist(
+      tools = tools,
+      allowedTools = tools.map(tool => McpToolName(serverName, tool.name).toToolName)
+    )
 
   def names: List[String] = tools.map(_.name)
   def isEmpty: Boolean = tools.isEmpty

@@ -76,7 +76,7 @@ object ClaudeInterpreter:
       if toolSurface.isEmpty then make[O](claudeAgent, baseOptions)
       else
         val restrictedOptions = baseOptions.copy(
-          allowedTools = Some(toolSurface.names.map(com.tjclp.scalagent.tools.ToolName(_)))
+          allowedTools = Some(toolSurface.distinctAllowedTools)
         )
         make[O](claudeAgent, restrictedOptions)
 

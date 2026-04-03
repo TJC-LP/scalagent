@@ -1,5 +1,7 @@
 package com.tjclp.scalagent.core
 
+import com.tjclp.scalagent.tools.ToolName
+
 /** Builds a `TypedAgent` by accumulating capability evidence as phantom intersection types.
   *
   * Each `.withX` method returns a new builder with a wider `C` type,
@@ -34,7 +36,17 @@ final class AgentBuilder[P, I, O, C] private[core] (
 
   /** Add read-only tool access. Tools compose with previously added tools. */
   def withReadOnlyTools(surface: ToolSurface): AgentBuilder[P, I, O, C & CanUseTools[ReadOnlyTools]] =
-    new AgentBuilder(agent, tools ++ surface, runtimeDepth, agentTransform)
+    val combined = tools ++ surface
+    require(
+      combined.isReadOnlyCompatible,
+      "withReadOnlyTools only supports tools whose provider allowlist is read-only"
+    )
+    new AgentBuilder(
+      agent,
+      combined ++ ToolSurface.readOnlyBuiltins,
+      runtimeDepth,
+      agentTransform
+    )
 
   /** Add spawn capability at the specified Peano depth. */
   def withSpawnDepth[D <: Depth](using d: DepthValue[D]): AgentBuilder[P, I, O, C & CanSpawn[D]] =
