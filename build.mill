@@ -110,6 +110,7 @@ object examples extends BunScalaJSModule {
     "dsl-builder"  -> "com.tjclp.scalagent.examples.DslBuilderExample",
     "dsl-delegation" -> "com.tjclp.scalagent.examples.DslDelegationExample",
     "dsl-review"   -> "com.tjclp.scalagent.examples.DslReviewExample",
+    "dsl-cells"    -> "com.tjclp.scalagent.examples.DslClandestineCellExample",
     "dsl-codex"    -> "com.tjclp.scalagent.examples.DslCodexExample",
     "dsl-cross"    -> "com.tjclp.scalagent.examples.DslCrossProviderExample"
   )

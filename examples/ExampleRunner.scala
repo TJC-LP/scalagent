@@ -30,6 +30,8 @@ object ExampleRunner:
     "dsl-basic"      -> "DslBasicExample",
     "dsl-builder"    -> "DslBuilderExample",
     "dsl-delegation" -> "DslDelegationExample",
+    "dsl-review"     -> "DslReviewExample",
+    "dsl-cells"      -> "DslClandestineCellExample",
     "dsl-codex"      -> "DslCodexExample",
     "dsl-cross"      -> "DslCrossProviderExample",
     "capture"        -> "CaptureCheckingExample"
@@ -52,6 +54,8 @@ object ExampleRunner:
     "dsl-basic"      -> (DslBasicExample.main(_)),
     "dsl-builder"    -> (DslBuilderExample.main(_)),
     "dsl-delegation" -> (DslDelegationExample.main(_)),
+    "dsl-review"     -> (DslReviewExample.main(_)),
+    "dsl-cells"      -> (DslClandestineCellExample.main(_)),
     "dsl-codex"      -> (DslCodexExample.main(_)),
     "dsl-cross"      -> (DslCrossProviderExample.main(_)),
     "capture"        -> (CaptureCheckingExample.main(_))
@@ -83,6 +87,7 @@ object ExampleRunner:
     println()
     println("Examples:")
     println("  ./mill examples.run dsl-basic        # DSL one-shot + streaming + eval")
+    println("  ./mill examples.run dsl-cells        # zero-trust clandestine cell simulation")
     println("  ./mill examples.run dsl-codex         # Codex interpreter")
     println("  ./mill examples.run dsl-cross         # Claude <> Codex cross-provider")
     println("  ./mill examples.run macro             # Default macro tool example")
