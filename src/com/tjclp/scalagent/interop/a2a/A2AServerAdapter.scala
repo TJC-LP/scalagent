@@ -4,6 +4,7 @@ import scala.scalajs.js
 import scala.scalajs.js.annotation.*
 import scala.scalajs.js.JSConverters.*
 import scala.scalajs.js.JSON as JsJSON
+import scala.collection.mutable
 import scala.concurrent.ExecutionContext.Implicits.global
 import zio.*
 import zio.stream.*
@@ -90,6 +91,7 @@ private final class DslA2AEndpointLive[O](
 ) extends A2AEndpoint:
 
   private var bunServer: js.Dynamic = null
+  private val activeRuns = mutable.Map.empty[String, Fiber[Nothing, Unit]]
 
   override def url: String = config.toAgentCard.url
 
@@ -165,10 +167,11 @@ private final class DslA2AEndpointLive[O](
       handler = (ctx, bus) => {
         val prompt = A2AConverters.toScala(ctx.userMessage).text
         val (taskId, contextId) = taskIds(ctx)
+        val taskKey = taskId.value
         publishTaskSnapshot(ctx, bus)
 
         Unsafe.unsafe { implicit unsafe =>
-          runtime.unsafe.runToFuture {
+          val effect =
             ZIO
               .scoped {
                 val run = agent.run((), prompt, policy)
@@ -205,13 +208,24 @@ private final class DslA2AEndpointLive[O](
                   bus.finished()
                 }
               }
-          }.toJSPromise.`then`[Unit](_ => ())
+              .ensuring(ZIO.succeed(activeRuns.remove(taskKey)).unit)
+
+          val fiber = runtime.unsafe.fork(effect)
+          activeRuns.update(taskKey, fiber)
+          runtime.unsafe.runToFuture(fiber.await.unit).toJSPromise.`then`[Unit](_ => ())
         }
       },
-      cancelHandler = (_, bus) => {
-        bus.finished()
-        js.Promise.resolve(())
-      }
+      cancelHandler = (taskId, bus) =>
+        Unsafe.unsafe { implicit unsafe =>
+          activeRuns.remove(taskId) match
+            case Some(fiber) =>
+              runtime.unsafe.runToFuture(
+                fiber.interrupt.unit *> ZIO.succeed(bus.finished())
+              ).toJSPromise.`then`[Unit](_ => ())
+            case None =>
+              bus.finished()
+              js.Promise.resolve(())
+        }
     )
 
   private def createFetchHandler(

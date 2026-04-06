@@ -54,6 +54,47 @@ class A2AInterpreterSpec extends FunSuite:
     override def deletePushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
       ZIO.dieMessage("unused in test")
 
+  private final class InterruptibleA2AClient(
+      started: Promise[Nothing, Unit],
+      interrupted: Ref[Boolean]
+  ) extends A2AClient:
+    override def agentCard: Task[AgentCard] =
+      ZIO.succeed(AgentCard.minimal("Remote", "Remote test agent", "http://example.test"))
+
+    override def send(message: A2AMessage, config: Option[MessageSendConfiguration]): Task[A2ATask] =
+      ZIO.dieMessage("unused in test")
+
+    override def stream(message: A2AMessage, config: Option[MessageSendConfiguration]): ZStream[Any, Throwable, A2AResponse.StreamEvent] =
+      ZStream.unwrap {
+        started.succeed(()).as(
+          ZStream.acquireReleaseWith(ZIO.unit)(_ => interrupted.set(true)).flatMap(_ => ZStream.never)
+        )
+      }
+
+    override def getTask(taskId: TaskId, historyLength: Option[Int]): Task[A2ATask] =
+      ZIO.dieMessage("unused in test")
+
+    override def cancelTask(taskId: TaskId): Task[A2ATask] =
+      ZIO.dieMessage("unused in test")
+
+    override def resubscribe(taskId: TaskId): ZStream[Any, Throwable, A2AResponse.StreamEvent] =
+      ZStream.empty
+
+    override def getAgentCard: Task[AgentCard] =
+      agentCard
+
+    override def setPushNotificationConfig(taskId: TaskId, config: PushNotificationConfig): Task[PushNotificationConfig] =
+      ZIO.dieMessage("unused in test")
+
+    override def getPushNotificationConfig(taskId: TaskId, configId: Option[String]): Task[PushNotificationConfig] =
+      ZIO.dieMessage("unused in test")
+
+    override def listPushNotificationConfigs(taskId: TaskId): Task[List[PushNotificationConfig]] =
+      ZIO.dieMessage("unused in test")
+
+    override def deletePushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
+      ZIO.dieMessage("unused in test")
+
   test("events and result share one underlying remote stream"):
     val taskId = TaskId("task-123")
     val contextId = ContextId("ctx-456")
@@ -123,4 +164,24 @@ class A2AInterpreterSpec extends FunSuite:
     runTask(program).map { result =>
       assert(result.left.exists(_.isInstanceOf[AgentError.Unknown]))
       assertEquals(client.streamCalls, 1)
+    }
+
+  test("closing the scope interrupts the underlying A2A stream"):
+    val program =
+      for
+        started <- Promise.make[Nothing, Unit]
+        interrupted <- Ref.make(false)
+        remote <- A2AInterpreter.fromClient(new InterruptibleA2AClient(started, interrupted))
+        _ <- ZIO.scoped {
+          for
+            fiber <- remote.run((), "hello", ExecutionPolicy.unbounded).result.fork
+            _ <- started.await
+            _ <- fiber.interrupt
+          yield ()
+        }
+        wasInterrupted <- interrupted.get
+      yield wasInterrupted
+
+    runTask(program).map { wasInterrupted =>
+      assert(wasInterrupted)
     }

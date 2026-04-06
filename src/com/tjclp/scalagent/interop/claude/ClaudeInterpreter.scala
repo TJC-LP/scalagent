@@ -4,8 +4,10 @@ import zio.*
 import zio.stream.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.core.*
+import com.tjclp.scalagent.core.mcp.McpToolSurface
 import com.tjclp.scalagent.config.{AgentOptions, OutputFormat, StructuredOutput}
 import com.tjclp.scalagent.errors.AgentError
+import com.tjclp.scalagent.interop.mcp.McpToolLoader
 import com.tjclp.scalagent.messages.{AgentMessage, ResultOutcome}
 import com.tjclp.scalagent.{ClaudeAgent, CollectionPolicy}
 
@@ -71,13 +73,18 @@ object ClaudeInterpreter:
   private def claudeTransform[O](
       claudeAgent: ClaudeAgent,
       baseOptions: AgentOptions
-  )(using codec: OutputCodec[O]): (Agent[Any, String, O], ToolSurface, Int) => Agent[Any, String, O] =
-    (_, toolSurface, _) =>
-      if toolSurface.isEmpty then make[O](claudeAgent, baseOptions)
+  )(using codec: OutputCodec[O]): (Agent[Any, String, O], ToolSurface, List[McpToolSurface], Int) => Agent[Any, String, O] =
+    (_, toolSurface, mcpToolSurfaces, _) =>
+      if toolSurface.isEmpty && mcpToolSurfaces.isEmpty then make[O](claudeAgent, baseOptions)
       else
-        val restrictedOptions = baseOptions.copy(
+        val runtime = Runtime.default
+        val allMcpToolSurfaces =
+          mergeMcpToolSurfaces(localToolSurface(toolSurface, mcpToolSurfaces).toList ++ mcpToolSurfaces)
+        val restrictedOptions = allMcpToolSurfaces.foldLeft(baseOptions.copy(
           allowedTools = Some(toolSurface.distinctAllowedTools)
-        )
+        )) { (opts, surface) =>
+          opts.withMcpServer(surface.serverName, McpToolLoader.toServerFactory(surface, runtime))
+        }
         make[O](claudeAgent, restrictedOptions)
 
   /** Create an agent with any output type that has an OutputCodec. */
@@ -92,7 +99,7 @@ object ClaudeInterpreter:
           Ref.unsafe.make[SharedState[O]](SharedState.Empty())
         }
 
-        def getShared: UIO[SharedRun[O]] =
+        def getShared: URIO[Scope, SharedRun[O]] =
           Promise.make[Nothing, SharedRun[O]].flatMap { myPromise =>
             stateRef.modify {
               case SharedState.Ready(shared) =>
@@ -118,10 +125,11 @@ object ClaudeInterpreter:
       options: AgentOptions,
       policy: ExecutionPolicy,
       codec: OutputCodec[O]
-  ): UIO[SharedRun[O]] =
+  ): URIO[Scope, SharedRun[O]] =
     for
       queue <- Queue.unbounded[Take[AgentError, AgentEvent]]
       resultPromise <- Promise.make[AgentError, O]
+      cancelledError = AgentError.Interrupted("Agent run scope closed")
       sink = (message: AgentMessage) =>
         ZIO.foreachDiscard(EventMapper.mapMessage(message)) { event =>
           queue.offer(Take.single(event)).unit
@@ -144,12 +152,34 @@ object ClaudeInterpreter:
         case Exit.Failure(cause) =>
           val error = cause.failureOption.getOrElse(AgentError.Unknown(cause.prettyPrint))
           resultPromise.fail(error).ignore *> queue.offer(Take.fail(error)).unit
-      }
-      _ <- runner.forkDaemon
+      }.onInterrupt(
+        resultPromise.fail(cancelledError).ignore *>
+          queue.offer(Take.fail(cancelledError)).ignore
+      )
+      _ <- runner.forkScoped
     yield SharedRun(
       events = ZStream.fromQueue(queue).flattenTake,
       result = resultPromise.await
     )
+
+  private def localToolSurface(
+      toolSurface: ToolSurface,
+      mcpToolSurfaces: List[McpToolSurface]
+  ): Option[McpToolSurface] =
+    val explicitMcpToolNames = mcpToolSurfaces.flatMap(_.tools.map(_.name)).toSet
+    val localTools = toolSurface.tools.filterNot(tool => explicitMcpToolNames.contains(tool.name)).distinctBy(_.name)
+    Option.when(localTools.nonEmpty)(McpToolSurface(ToolSurface.localToolServerName, localTools))
+
+  private def mergeMcpToolSurfaces(
+      surfaces: List[McpToolSurface]
+  ): List[McpToolSurface] =
+    surfaces
+      .groupBy(_.serverName)
+      .toList
+      .sortBy(_._1)
+      .map { case (serverName, grouped) =>
+        McpToolSurface(serverName, grouped.flatMap(_.tools).distinctBy(_.name))
+      }
 
   /** Overlay ExecutionPolicy onto base AgentOptions. */
   private def overlayPolicy[O](

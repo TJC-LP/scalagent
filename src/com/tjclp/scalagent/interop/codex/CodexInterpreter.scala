@@ -4,6 +4,7 @@ import zio.*
 import zio.stream.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.core.*
+import com.tjclp.scalagent.core.mcp.McpToolSurface
 import com.tjclp.scalagent.errors.AgentError
 import com.tjclp.scalagent.codex.{CodexClient, CodexEvent, CodexItem, CodexThreadOptions, SandboxMode}
 
@@ -53,8 +54,8 @@ object CodexInterpreter:
   private def codexTransform(
       client: CodexClient,
       baseOptions: CodexThreadOptions
-  ): (Agent[Any, String, String], ToolSurface, Int) => Agent[Any, String, String] =
-    (_, toolSurface, _) =>
+  ): (Agent[Any, String, String], ToolSurface, List[McpToolSurface], Int) => Agent[Any, String, String] =
+    (_, toolSurface, _, _) =>
       val sandboxMode =
         if toolSurface.isEmpty then SandboxMode.ReadOnly
         else if toolSurface.isReadOnlyCompatible then SandboxMode.ReadOnly
@@ -74,7 +75,7 @@ object CodexInterpreter:
           Ref.unsafe.make[SharedState[String]](SharedState.Empty())
         }
 
-        def getShared: UIO[SharedRun[String]] =
+        def getShared: URIO[Scope, SharedRun[String]] =
           Promise.make[Nothing, SharedRun[String]].flatMap { myPromise =>
             stateRef.modify {
               case SharedState.Ready(shared) =>
@@ -99,10 +100,11 @@ object CodexInterpreter:
       input: String,
       threadOptions: CodexThreadOptions,
       policy: ExecutionPolicy
-  ): UIO[SharedRun[String]] =
+  ): URIO[Scope, SharedRun[String]] =
     for
       queue <- Queue.unbounded[Take[AgentError, AgentEvent]]
       resultPromise <- Promise.make[AgentError, String]
+      cancelledError = AgentError.Interrupted("Agent run scope closed")
       mapperState = CodexEventMapper.createState()
       thread = client.startThread(threadOptions)
       eventStream = thread.runStreamed(input)
@@ -131,8 +133,11 @@ object CodexInterpreter:
           resultPromise
             .fail(AgentError.Unknown("Codex stream completed with no final result"))
             .ignore *> queue.offer(Take.end).unit
-      }
-      _ <- runner.forkDaemon
+      }.onInterrupt(
+        resultPromise.fail(cancelledError).ignore *>
+          queue.offer(Take.fail(cancelledError)).ignore
+      )
+      _ <- runner.forkScoped
     yield SharedRun(
       events = ZStream.fromQueue(queue).flattenTake,
       result = resultPromise.await

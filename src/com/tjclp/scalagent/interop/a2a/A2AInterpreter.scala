@@ -37,7 +37,7 @@ object A2AInterpreter:
             Ref.unsafe.make[SharedState[String]](SharedState.Empty())
           }
 
-          def getShared: UIO[SharedRun[String]] =
+          def getShared: URIO[Scope, SharedRun[String]] =
             Promise.make[Nothing, SharedRun[String]].flatMap { myPromise =>
               stateRef.modify {
                 case SharedState.Ready(shared) =>
@@ -68,10 +68,11 @@ object A2AInterpreter:
   private def buildSharedRun(
       stream: ZStream[Any, Throwable, A2AResponse.StreamEvent],
       policy: ExecutionPolicy
-  ): UIO[SharedRun[String]] =
+  ): URIO[Scope, SharedRun[String]] =
     for
       queue <- Queue.unbounded[Take[AgentError, AgentEvent]]
       resultPromise <- Promise.make[AgentError, String]
+      cancelledError = AgentError.Interrupted("Agent run scope closed")
       normalized = stream
         .mapError(t => AgentError.Unknown(s"A2A stream error: ${t.getMessage}", Some(t)))
         .flatMap(event => ZStream.fromIterable(A2AEventMapper.mapStreamEvent(event)))
@@ -97,8 +98,11 @@ object A2AInterpreter:
           resultPromise
             .fail(AgentError.Unknown("A2A stream completed with no final result"))
             .ignore *> queue.offer(Take.end).unit
-      }
-      _ <- runner.forkDaemon
+      }.onInterrupt(
+        resultPromise.fail(cancelledError).ignore *>
+          queue.offer(Take.fail(cancelledError)).ignore
+      )
+      _ <- runner.forkScoped
     yield SharedRun(
       events = ZStream.fromQueue(queue).flattenTake,
       result = resultPromise.await

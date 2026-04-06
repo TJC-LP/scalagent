@@ -27,20 +27,21 @@ import com.tjclp.scalagent.tools.ToolName
 final class AgentBuilder[P, I, O, C] private[core] (
     agent: Agent[P, I, O],
     tools: ToolSurface,
+    mcpToolSurfaces: List[mcp.McpToolSurface],
     runtimeDepth: Int,
-    agentTransform: (Agent[P, I, O], ToolSurface, Int) => Agent[P, I, O]
+    agentTransform: (Agent[P, I, O], ToolSurface, List[mcp.McpToolSurface], Int) => Agent[P, I, O]
 ):
   /** Add an explicit tool allowlist. Tools compose with previously added tools.
-    *
-    * The resulting capability is `CustomTools`, not `AllTools`: the type reflects
-    * exactly what is known about the surface, not an unrestricted provider-wide grant.
-    *
-    * '''Note:''' For Claude-backed agents, custom `ToolDef` handlers are not automatically
-    * registered as MCP servers. Use `withMcpTools` for tools that need runtime execution,
-    * or use `withTools` only for built-in tool name restrictions (e.g., Read, Grep, Glob).
-    */
+   *
+   * The resulting capability is `CustomTools`, not `AllTools`: the type reflects
+   * exactly what is known about the surface, not an unrestricted provider-wide grant.
+   *
+   * Claude-backed builders expose any `ToolDef`s in the surface through an
+   * implicit in-process MCP server at build time. Use `withMcpTools` when you
+   * need an explicit server name / provenance rather than the default local one.
+   */
   def withTools(surface: ToolSurface): AgentBuilder[P, I, O, C & CanUseTools[CustomTools]] =
-    new AgentBuilder(agent, tools ++ surface, runtimeDepth, agentTransform)
+    new AgentBuilder(agent, tools ++ surface, mcpToolSurfaces, runtimeDepth, agentTransform)
 
   /** Add read-only tool access. Tools compose with previously added tools.
     *
@@ -56,47 +57,54 @@ final class AgentBuilder[P, I, O, C] private[core] (
     new AgentBuilder(
       agent,
       combined ++ ToolSurface.readOnlyBuiltins,
+      mcpToolSurfaces,
       runtimeDepth,
       agentTransform
     )
 
   /** Add spawn capability at the specified Peano depth. */
   def withSpawnDepth[D <: Depth](using d: DepthValue[D]): AgentBuilder[P, I, O, C & CanSpawn[D]] =
-    new AgentBuilder(agent, tools, d.value, agentTransform)
+    new AgentBuilder(agent, tools, mcpToolSurfaces, d.value, agentTransform)
 
   /** Add budget enforcement capability. */
   def withBudget: AgentBuilder[P, I, O, C & HasBudget] =
-    new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
+    new AgentBuilder(agent, tools, mcpToolSurfaces, runtimeDepth, agentTransform)
 
   /** Add memory read capability. */
   def withMemoryRead: AgentBuilder[P, I, O, C & CanReadMemory] =
-    new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
+    new AgentBuilder(agent, tools, mcpToolSurfaces, runtimeDepth, agentTransform)
 
   /** Add memory write capability. */
   def withMemoryWrite: AgentBuilder[P, I, O, C & CanWriteMemory] =
-    new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
+    new AgentBuilder(agent, tools, mcpToolSurfaces, runtimeDepth, agentTransform)
 
   /** Add human escalation capability. */
   def withEscalation: AgentBuilder[P, I, O, C & CanEscalateHuman] =
-    new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
+    new AgentBuilder(agent, tools, mcpToolSurfaces, runtimeDepth, agentTransform)
 
   /** Add MCP tools. Composes with existing tools and adds both
-    * `CanUseTools[CustomTools]` and `HasMcpTools` capability markers.
-    */
+   * `CanUseTools[CustomTools]` and `HasMcpTools` capability markers.
+   */
   def withMcpTools(surface: mcp.McpToolSurface): AgentBuilder[P, I, O, C & CanUseTools[CustomTools] & mcp.HasMcpTools] =
-    new AgentBuilder(agent, tools ++ surface.toToolSurface, runtimeDepth, agentTransform)
+    new AgentBuilder(
+      agent,
+      tools ++ surface.toToolSurface,
+      mcpToolSurfaces :+ surface,
+      runtimeDepth,
+      agentTransform
+    )
 
   /** Add MCP resource access capability. */
   def withMcpResources(surface: mcp.McpResourceSurface): AgentBuilder[P, I, O, C & mcp.HasMcpResources] =
-    new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
+    new AgentBuilder(agent, tools, mcpToolSurfaces, runtimeDepth, agentTransform)
 
   /** Add MCP prompt access capability. */
   def withMcpPrompts(surface: mcp.McpPromptSurface): AgentBuilder[P, I, O, C & mcp.HasMcpPrompts] =
-    new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
+    new AgentBuilder(agent, tools, mcpToolSurfaces, runtimeDepth, agentTransform)
 
   /** Add A2A delegation capability. */
   def withA2ADelegation: AgentBuilder[P, I, O, C & a2a.CanDelegateA2A] =
-    new AgentBuilder(agent, tools, runtimeDepth, agentTransform)
+    new AgentBuilder(agent, tools, mcpToolSurfaces, runtimeDepth, agentTransform)
 
   /** Build the `TypedAgent` with all accumulated capabilities.
     *
@@ -104,17 +112,17 @@ final class AgentBuilder[P, I, O, C] private[core] (
     * the underlying agent's runtime behavior.
     */
   def build: TypedAgent[P, I, O, C] =
-    val configuredAgent = agentTransform(agent, tools, runtimeDepth)
+    val configuredAgent = agentTransform(agent, tools, mcpToolSurfaces, runtimeDepth)
     new TypedAgent[P, I, O, C](configuredAgent, tools, runtimeDepth)
 
 object AgentBuilder:
   /** Start building from any Agent with identity transform (no runtime enforcement). */
   def apply[P, I, O](agent: Agent[P, I, O]): AgentBuilder[P, I, O, Any] =
-    new AgentBuilder(agent, ToolSurface.empty, 0, (a, _, _) => a)
+    new AgentBuilder(agent, ToolSurface.empty, Nil, 0, (a, _, _, _) => a)
 
   /** Start building with an interpreter-provided transform for runtime enforcement. */
   def withTransform[P, I, O](
       agent: Agent[P, I, O],
-      transform: (Agent[P, I, O], ToolSurface, Int) => Agent[P, I, O]
+      transform: (Agent[P, I, O], ToolSurface, List[mcp.McpToolSurface], Int) => Agent[P, I, O]
   ): AgentBuilder[P, I, O, Any] =
-    new AgentBuilder(agent, ToolSurface.empty, 0, transform)
+    new AgentBuilder(agent, ToolSurface.empty, Nil, 0, transform)

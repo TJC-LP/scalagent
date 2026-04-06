@@ -184,6 +184,11 @@ class McpToolNameSpec extends FunSuite:
     assertEquals(Context7Tools.resolveLibraryId.value, "mcp__context7__resolve-library-id")
     assertEquals(Context7Tools.getLibraryDocs.value, "mcp__context7__get-library-docs")
 
+  test("known MCP tool names normalize to built-in ToolName cases"):
+    assertEquals(Context7Tools.resolveLibraryId.toToolName, ToolName.McpResolveLibraryId)
+    assertEquals(Context7Tools.getLibraryDocs.toToolName, ToolName.McpGetLibraryDocs)
+    assert(ToolName.isReadOnly(Context7Tools.resolveLibraryId.toToolName))
+
   // ============================================
   // Integration with AgentOptions
   // ============================================

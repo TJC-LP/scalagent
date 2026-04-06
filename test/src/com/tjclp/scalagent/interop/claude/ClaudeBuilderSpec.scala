@@ -8,6 +8,7 @@ import zio.json.*
 import com.tjclp.scalagent.*
 import com.tjclp.scalagent.core.*
 import com.tjclp.scalagent.core.mcp.McpToolSurface
+import com.tjclp.scalagent.mcp.McpToolName
 import com.tjclp.scalagent.tools.ToolName
 
 class ClaudeBuilderSpec extends FunSuite:
@@ -42,6 +43,26 @@ class ClaudeBuilderSpec extends FunSuite:
     runTask(program.provide(TestClaudeAgent.withResult("ok"))).map { maybeOptions =>
       val allowed = maybeOptions.flatMap(_.allowedTools).getOrElse(Nil)
       assert(allowed.contains(ToolName.Custom("mcp__weather__ask_weather")))
+      assert(maybeOptions.exists(_.mcpServers.contains("weather")))
+    }
+
+  test("builder with direct tools registers implicit local MCP server"):
+    val program =
+      for
+        claude <- ZIO.service[ClaudeAgent]
+        agent = ClaudeInterpreter
+          .builder(claude)
+          .withTools(ToolSurface(List(customTool)))
+          .build
+        _ <- ZIO.scoped(agent.run((), "hello").result)
+        options <- TestClaudeAgent.getOptions
+      yield options.headOption
+
+    runTask(program.provide(TestClaudeAgent.withResult("ok"))).map { maybeOptions =>
+      val expectedName = McpToolName(ToolSurface.localToolServerName, customTool.name).toToolName
+      val allowed = maybeOptions.flatMap(_.allowedTools).getOrElse(Nil)
+      assert(allowed.contains(expectedName))
+      assert(maybeOptions.exists(_.mcpServers.contains(ToolSurface.localToolServerName)))
     }
 
   test("builder with read-only tools wires built-in read-only allowlist"):

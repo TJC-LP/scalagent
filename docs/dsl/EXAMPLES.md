@@ -185,7 +185,7 @@ What changed:
 - `ToolDef` is identical — it was already the right abstraction
 - `ToolSurface(weatherTool)` wraps tools with a provider allowlist
 - `AgentBuilder` accumulates phantom types: `CanUseTools[CustomTools] & HasBudget`
-- `ClaudeInterpreter.builder()` provides `agentTransform` that wires `ToolSurface.distinctAllowedTools` into `AgentOptions.allowedTools` at build time
+- `ClaudeInterpreter.builder()` provides `agentTransform` that wires `ToolSurface.distinctAllowedTools` into `AgentOptions.allowedTools` and registers any `ToolDef`s through in-process MCP servers at build time
 - The type signature tells you what this agent can do
 
 ---
@@ -686,7 +686,7 @@ val agent: TypedAgent[Any, String, String, CanUseTools[ReadOnlyTools]] =
 // Type is correct, but rawAgent still has full tool access at the provider level
 ```
 
-The `agentTransform` callback is what makes phantom types real. `ClaudeInterpreter.builder()` provides a transform that wires `ToolSurface.distinctAllowedTools` into `AgentOptions.allowedTools`. Bare `AgentBuilder(agent)` uses an identity transform — types check, but nothing is enforced.
+The `agentTransform` callback is what makes phantom types real. `ClaudeInterpreter.builder()` provides a transform that wires `ToolSurface.distinctAllowedTools` into `AgentOptions.allowedTools` and registers `ToolDef` handlers through in-process MCP servers. Bare `AgentBuilder(agent)` uses an identity transform — types check, but nothing is enforced.
 
 Always use `ClaudeInterpreter.builder()` (or another interpreter's builder) to get runtime enforcement backing the type-level claims.
 

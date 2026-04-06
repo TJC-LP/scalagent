@@ -5,9 +5,11 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import zio.*
 import zio.json.*
+import zio.stream.*
 import com.tjclp.scalagent.*
 import com.tjclp.scalagent.config.StructuredOutput
 import com.tjclp.scalagent.core.*
+import com.tjclp.scalagent.streaming.QueryStream
 import com.tjclp.scalagent.TestFixtures.*
 
 class ClaudeInterpreterSpec extends FunSuite:
@@ -17,6 +19,35 @@ class ClaudeInterpreterSpec extends FunSuite:
     Unsafe.unsafe { implicit unsafe =>
       runtime.unsafe.runToFuture(task)
     }
+
+  private final class InterruptibleClaudeAgent(
+      started: Promise[Nothing, Unit],
+      interrupted: Ref[Boolean],
+      emitProgress: Boolean
+  ) extends ClaudeAgent:
+    override def query(
+        prompt: String,
+        opts: AgentOptions
+    ): ZStream[Any, AgentError, AgentMessage] =
+      ZStream.fail(AgentError.ConfigurationError("unused in test"))
+
+    override def queryComplete(
+        prompt: String,
+        opts: AgentOptions,
+        collectionPolicy: CollectionPolicy,
+        sink: QueryCollector.MessageSink
+    ): IO[AgentError, QueryResult] =
+      (
+        started.succeed(()).unit *>
+          ZIO.when(emitProgress)(sink(assistantMessage).orDie) *>
+          ZIO.never
+      ).onInterrupt(interrupted.set(true))
+
+    override def queryRaw(
+        prompt: String,
+        opts: AgentOptions
+    ): IO[AgentError, QueryStream] =
+      ZIO.fail(AgentError.ConfigurationError("unused in test"))
 
   test("string interpreter emits normalized events and returns final text"):
     val program =
@@ -119,4 +150,25 @@ class ClaudeInterpreterSpec extends FunSuite:
     runTask(program.provide(TestClaudeAgent.withError(rateLimitedError))).map { case (resultEither, eventsEither) =>
       assert(resultEither.left.exists(_.isInstanceOf[AgentError.RateLimited]))
       assert(eventsEither.left.exists(_.isInstanceOf[AgentError.RateLimited]))
+    }
+
+  test("closing the scope interrupts the underlying provider run"):
+    val program =
+      for
+        started <- Promise.make[Nothing, Unit]
+        interrupted <- Ref.make(false)
+        claude = new InterruptibleClaudeAgent(started, interrupted, emitProgress = false)
+        agent = ClaudeInterpreter.string(claude)
+        _ <- ZIO.scoped {
+          for
+            fiber <- agent.run((), "Hello", ExecutionPolicy.unbounded).result.fork
+            _ <- started.await
+            _ <- fiber.interrupt
+          yield ()
+        }
+        wasInterrupted <- interrupted.get
+      yield wasInterrupted
+
+    runTask(program).map { wasInterrupted =>
+      assert(wasInterrupted)
     }

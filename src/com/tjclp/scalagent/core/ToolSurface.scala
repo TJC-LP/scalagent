@@ -1,5 +1,6 @@
 package com.tjclp.scalagent.core
 
+import com.tjclp.scalagent.mcp.McpToolName
 import com.tjclp.scalagent.tools.ToolDef
 import com.tjclp.scalagent.tools.ToolName
 
@@ -28,7 +29,7 @@ final case class ToolSurface(
     val keptNames = kept.map(_.name).toSet
     ToolSurface(
       tools = kept,
-      allowedTools = allowedTools.filter(tn => keptNames.contains(tn.raw))
+      allowedTools = allowedTools.filter(tn => ToolSurface.matchesDefName(tn, keptNames))
     )
 
   def names: List[String] = tools.map(_.name)
@@ -43,20 +44,26 @@ final case class ToolSurface(
   def isReadOnlyCompatible: Boolean = allowedTools.forall(ToolName.isReadOnly)
 
 object ToolSurface:
+  private[scalagent] val localToolServerName = "scalagent_dsl_local_tools"
+
   val empty: ToolSurface = ToolSurface(Nil, Nil)
 
-  /** Create a surface from ToolDefs, deriving provider allowlist names from the tool names. */
+  /** Create a surface from ToolDefs, deriving provider allowlist names from
+    * the implicit local MCP server used by interpreter builders.
+    */
   def apply(tools: ToolDef[?]*): ToolSurface =
     fromDefs(tools.toList)
 
-  /** Create a surface from ToolDefs, deriving provider allowlist names from the tool names. */
+  /** Create a surface from ToolDefs, deriving provider allowlist names from
+    * the implicit local MCP server used by interpreter builders.
+    */
   def apply(tools: List[ToolDef[?]]): ToolSurface =
     fromDefs(tools)
 
   def fromDefs(tools: List[ToolDef[?]]): ToolSurface =
     ToolSurface(
       tools = tools,
-      allowedTools = tools.map(tool => ToolName(tool.name))
+      allowedTools = tools.map(tool => McpToolName(localToolServerName, tool.name).toToolName)
     )
 
   def withAllowlist(
@@ -71,3 +78,7 @@ object ToolSurface:
       tools = Nil,
       allowedTools = List(ToolName.Read, ToolName.Grep, ToolName.Glob)
     )
+
+  private[core] def matchesDefName(toolName: ToolName, keptNames: Set[String]): Boolean =
+    keptNames.contains(toolName.raw) ||
+      McpToolName.fromString(toolName.raw).exists(name => keptNames.contains(name.toolName))
