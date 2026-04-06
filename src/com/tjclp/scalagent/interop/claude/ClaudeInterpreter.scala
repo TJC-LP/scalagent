@@ -88,27 +88,23 @@ object ClaudeInterpreter:
     new Agent[Any, String, O]:
       def run(principal: Any, input: String, policy: ExecutionPolicy): AgentRun[Any, O] =
         val options = overlayPolicy(baseOptions, policy, codec)
-        var state: SharedState[O] = SharedState.Empty()
+        val stateRef: Ref[SharedState[O]] = Unsafe.unsafe { implicit u =>
+          Ref.unsafe.make[SharedState[O]](SharedState.Empty())
+        }
 
         def getShared: UIO[SharedRun[O]] =
-          ZIO.suspendSucceed {
-            state match
+          Promise.make[Nothing, SharedRun[O]].flatMap { myPromise =>
+            stateRef.modify {
               case SharedState.Ready(shared) =>
-                ZIO.succeed(shared)
-              case SharedState.Initializing(promise) =>
-                promise.await
+                (ZIO.succeed(shared), SharedState.Ready(shared))
+              case SharedState.Initializing(existing) =>
+                (existing.await, SharedState.Initializing(existing))
               case SharedState.Empty() =>
-                for
-                  promise <- Promise.make[Nothing, SharedRun[O]]
-                  _ <- ZIO.succeed {
-                    state = SharedState.Initializing(promise)
-                  }
-                  shared <- buildSharedRun(claudeAgent, input, options, policy, codec)
-                  _ <- promise.succeed(shared)
-                  _ <- ZIO.succeed {
-                    state = SharedState.Ready(shared)
-                  }
-                yield shared
+                val init = buildSharedRun(claudeAgent, input, options, policy, codec).flatMap { shared =>
+                  myPromise.succeed(shared) *> stateRef.set(SharedState.Ready(shared)).as(shared)
+                }
+                (init, SharedState.Initializing(myPromise))
+            }.flatten
           }
 
         AgentRun(

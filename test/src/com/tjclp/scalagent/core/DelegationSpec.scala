@@ -59,8 +59,8 @@ class DelegationSpec extends munit.FunSuite:
     val child = Budget.Unlimited.slice(0.5)
     assertEquals(child, Budget.Unlimited)
 
-  test("ExecutionPolicy.childPolicy uses slice"):
-    val parent = ExecutionPolicy.simple(budgetUsd = 10.0, maxTurns = 20)
-    val child = parent.childPolicy(0.25)
-    assertEquals(child.budget, Budget.Usd(2.5))
-    assertEquals(child.maxTurns, Some(20)) // inherited
+  test("ToolSurface ++ deduplicates by name"):
+    import com.tjclp.scalagent.tools.ToolName
+    val surface = ToolSurface(Nil, List(ToolName.Read, ToolName.Grep))
+    val combined = surface ++ surface
+    assertEquals(combined.allowedTools, List(ToolName.Read, ToolName.Grep))

@@ -142,7 +142,7 @@ private final class CodexThreadLive(jsThread: JsThread) extends CodexThread:
           item.id,
           item.command,
           item.aggregated_output,
-          item.exit_code.toOption.map(_.toInt),
+          item.exit_code.toOption.map(_.toInt), // POSIX exit codes are 0-255; Double.toInt is safe
           item.status
         )
       case "file_change" =>
@@ -187,4 +187,6 @@ private final class CodexThreadLive(jsThread: JsThread) extends CodexThread:
         val str = js.JSON.stringify(value)
         if str == null then Json.Null
         else zio.json.ast.Json.decoder.decodeJson(str).getOrElse(Json.Str(str))
-      catch case _: Throwable => Json.Null
+      catch case e: Throwable =>
+        scala.Console.err.println(s"[CodexClient] jsToJson failed: ${e.getMessage}")
+        Json.Null

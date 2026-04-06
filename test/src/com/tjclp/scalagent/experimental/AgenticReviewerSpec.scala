@@ -42,7 +42,7 @@ class AgenticReviewerSpec extends munit.FunSuite:
       utility = Utility.reliability[String, String]
     )
 
-    intercept[IllegalArgumentException] {
+    val ex = intercept[zio.FiberFailure] {
       SandboxedRun.withReviewPermit(maxReviews = 1) { permit =>
         Unsafe.unsafe { implicit u =>
           Runtime.default.unsafe.run(AgenticReview.enrich(permit, baseEval, reviewer)).getOrThrowFiberFailure()
@@ -50,3 +50,4 @@ class AgenticReviewerSpec extends munit.FunSuite:
         }
       }
     }
+    assert(ex.getMessage.contains("ReviewPermit exhausted"))

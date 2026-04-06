@@ -38,16 +38,40 @@ final class FileSandbox private[experimental] (val root: String) extends SharedC
     val entries = nodeFs.readdirSync(resolved).asInstanceOf[scala.scalajs.js.Array[String]]
     entries.toList
 
-  /** Resolve a path within the sandbox, rejecting escapes. */
+  /** Resolve a path within the sandbox, rejecting escapes.
+    *
+    * First performs a lexical check (fast, always works), then resolves
+    * symlinks via realpathSync when possible to prevent symlink-based escapes.
+    */
   private def resolveSafe(path: String): String =
-    val resolved = nodePath.resolve(root, path).asInstanceOf[String]
     val normalizedRoot = nodePath.resolve(root).asInstanceOf[String]
-    val relative = nodePath.relative(normalizedRoot, resolved).asInstanceOf[String]
-    val escapesRoot =
-      relative.startsWith("..") || nodePath.isAbsolute(relative).asInstanceOf[Boolean]
-    if escapesRoot then
+    val resolved = nodePath.resolve(root, path).asInstanceOf[String]
+
+    // Phase 1: lexical check (catches ".." traversals even when paths don't exist)
+    val lexicalRelative = nodePath.relative(normalizedRoot, resolved).asInstanceOf[String]
+    val lexicalEscape =
+      lexicalRelative.startsWith("..") || nodePath.isAbsolute(lexicalRelative).asInstanceOf[Boolean]
+    if lexicalEscape then
       throw new SecurityException(s"Path escape attempt: $path resolves outside sandbox $root")
-    resolved
+
+    // Phase 2: symlink check (catches symlinks that point outside the sandbox)
+    try
+      val realRoot = nodeFs.realpathSync(normalizedRoot).asInstanceOf[String]
+      val realResolved =
+        try nodeFs.realpathSync(resolved).asInstanceOf[String]
+        catch case _: Throwable =>
+          // File doesn't exist yet (write case) — resolve parent dir instead
+          val parent = nodeFs.realpathSync(nodePath.dirname(resolved).asInstanceOf[String]).asInstanceOf[String]
+          nodePath.join(parent, nodePath.basename(resolved).asInstanceOf[String]).asInstanceOf[String]
+      val realRelative = nodePath.relative(realRoot, realResolved).asInstanceOf[String]
+      val realEscape =
+        realRelative.startsWith("..") || nodePath.isAbsolute(realRelative).asInstanceOf[Boolean]
+      if realEscape then
+        throw new SecurityException(s"Path escape attempt: $path resolves outside sandbox $root (via symlink)")
+      realResolved
+    catch
+      case e: SecurityException => throw e
+      case _: Throwable => resolved // root doesn't exist yet; lexical check passed
 
 /** Capture-checked budget slice.
   *

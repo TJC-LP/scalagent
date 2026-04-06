@@ -70,23 +70,23 @@ object CodexInterpreter:
     new Agent[Any, String, String]:
       def run(principal: Any, input: String, policy: ExecutionPolicy): AgentRun[Any, String] =
         val effectiveOptions = overlayPolicy(threadOptions, policy)
-        var state: SharedState[String] = SharedState.Empty()
+        val stateRef: Ref[SharedState[String]] = Unsafe.unsafe { implicit u =>
+          Ref.unsafe.make[SharedState[String]](SharedState.Empty())
+        }
 
         def getShared: UIO[SharedRun[String]] =
-          ZIO.suspendSucceed {
-            state match
+          Promise.make[Nothing, SharedRun[String]].flatMap { myPromise =>
+            stateRef.modify {
               case SharedState.Ready(shared) =>
-                ZIO.succeed(shared)
-              case SharedState.Initializing(promise) =>
-                promise.await
+                (ZIO.succeed(shared), SharedState.Ready(shared))
+              case SharedState.Initializing(existing) =>
+                (existing.await, SharedState.Initializing(existing))
               case SharedState.Empty() =>
-                for
-                  promise <- Promise.make[Nothing, SharedRun[String]]
-                  _ <- ZIO.succeed { state = SharedState.Initializing(promise) }
-                  shared <- buildSharedRun(client, input, effectiveOptions, policy)
-                  _ <- promise.succeed(shared)
-                  _ <- ZIO.succeed { state = SharedState.Ready(shared) }
-                yield shared
+                val init = buildSharedRun(client, input, effectiveOptions, policy).flatMap { shared =>
+                  myPromise.succeed(shared) *> stateRef.set(SharedState.Ready(shared)).as(shared)
+                }
+                (init, SharedState.Initializing(myPromise))
+            }.flatten
           }
 
         AgentRun(
@@ -113,10 +113,13 @@ object CodexInterpreter:
           ZIO.foreachDiscard(agentEvents) { event =>
             queue.offer(Take.single(event)).unit *>
               (event match
-                case AgentEvent.Completed(summary) =>
+                case AgentEvent.Completed(summary) if summary.isSuccess =>
                   summary.resultText match
                     case Some(text) => resultPromise.succeed(text).ignore
                     case None => resultPromise.fail(AgentError.Unknown("Codex completed with no result text")).ignore
+                case AgentEvent.Completed(summary) =>
+                  val reason = summary.resultText.getOrElse(summary.stopReason.getOrElse("unknown"))
+                  resultPromise.fail(AgentError.Unknown(s"Codex turn failed: $reason")).ignore
                 case _ => ZIO.unit)
           }
         },

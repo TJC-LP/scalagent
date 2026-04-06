@@ -34,11 +34,19 @@ final class AgentBuilder[P, I, O, C] private[core] (
     *
     * The resulting capability is `CustomTools`, not `AllTools`: the type reflects
     * exactly what is known about the surface, not an unrestricted provider-wide grant.
+    *
+    * '''Note:''' For Claude-backed agents, custom `ToolDef` handlers are not automatically
+    * registered as MCP servers. Use `withMcpTools` for tools that need runtime execution,
+    * or use `withTools` only for built-in tool name restrictions (e.g., Read, Grep, Glob).
     */
   def withTools(surface: ToolSurface): AgentBuilder[P, I, O, C & CanUseTools[CustomTools]] =
     new AgentBuilder(agent, tools ++ surface, runtimeDepth, agentTransform)
 
-  /** Add read-only tool access. Tools compose with previously added tools. */
+  /** Add read-only tool access. Tools compose with previously added tools.
+    *
+    * Automatically injects `ToolSurface.readOnlyBuiltins` (Read, Grep, Glob)
+    * in addition to the provided surface.
+    */
   def withReadOnlyTools(surface: ToolSurface): AgentBuilder[P, I, O, C & CanUseTools[ReadOnlyTools]] =
     val combined = tools ++ surface
     require(

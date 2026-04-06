@@ -12,7 +12,6 @@ import com.tjclp.scalagent.interop.claude.ClaudeInterpreter
   * - AgentBuilder.withSpawnDepth — Peano-encoded delegation depth
   * - TypedAgent.delegate — budget-sliced delegation with HasSpawn evidence
   * - DelegationPolicy — budget fraction and child turn limits
-  * - ExecutionPolicy.childPolicy — parent policy slicing
   * - Compile-time depth enforcement via DepthLTE
   *
   * Run with: ./mill examples.go --example dsl-delegation

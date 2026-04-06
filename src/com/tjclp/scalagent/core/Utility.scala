@@ -81,7 +81,9 @@ object Utility:
   def named[P, O](name: String, utility: Utility[P, O], weight: Double): NamedComponent[P, O] =
     NamedComponent(name, utility, weight)
 
-  /** Weighted composite of multiple utilities. */
+  /** Convenience overload that auto-names components ("component_1", etc.).
+    * Delegates to `weightedNamed` — use that directly for interpretable breakdowns.
+    */
   def weighted[P, O](components: (Utility[P, O], Double)*): Utility[P, O] =
     val namedComponents =
       components.zipWithIndex.map { case ((utility, weight), idx) =>

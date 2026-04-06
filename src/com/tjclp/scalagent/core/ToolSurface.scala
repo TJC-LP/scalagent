@@ -15,20 +15,31 @@ final case class ToolSurface(
 ):
   def ++(other: ToolSurface): ToolSurface =
     ToolSurface(
-      tools = tools ++ other.tools,
-      allowedTools = allowedTools ++ other.allowedTools
+      tools = (tools ++ other.tools).distinctBy(_.name),
+      allowedTools = (allowedTools ++ other.allowedTools).distinct
     )
 
+  /** Filter tool definitions and synchronize the allowlist to match.
+    * Names in allowedTools that don't correspond to a remaining ToolDef
+    * are dropped, preventing filtered-out tools from remaining authorized.
+    */
   def filter(pred: ToolDef[?] => Boolean): ToolSurface =
+    val kept = tools.filter(pred)
+    val keptNames = kept.map(_.name).toSet
     ToolSurface(
-      tools = tools.filter(pred),
-      allowedTools = allowedTools
+      tools = kept,
+      allowedTools = allowedTools.filter(tn => keptNames.contains(tn.raw))
     )
 
   def names: List[String] = tools.map(_.name)
   def isEmpty: Boolean = tools.isEmpty && allowedTools.isEmpty
   def size: Int = tools.size
   def distinctAllowedTools: List[ToolName] = allowedTools.distinct
+
+  /** Checks whether all names in the allowlist are known read-only tools.
+    * This validates the allowlist, not the ToolDef handlers themselves,
+    * because handlers are opaque JS functions whose behavior cannot be introspected.
+    */
   def isReadOnlyCompatible: Boolean = allowedTools.forall(ToolName.isReadOnly)
 
 object ToolSurface:

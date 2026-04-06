@@ -68,7 +68,9 @@ final class TypedAgent[-P, -I, +O, C] private[core] (
       childSpawn: HasSpawn[CC] { type MaxDepth = CD },
       depthOk: DepthLTE[CD, PD]
   ): AgentRun[Any, CO] =
-    // Runtime defense-in-depth (type-level already verified)
+    // Runtime defense-in-depth: maxRuntimeDepth is the Int reification of the
+    // Peano depth type (e.g., Depth2 = S[S[Z]] → 2). The type-level constraint
+    // DepthLTE[CD, PD] already guarantees correctness; this is a belt-and-suspenders check.
     require(
       child.maxRuntimeDepth < maxRuntimeDepth,
       s"Child depth (${child.maxRuntimeDepth}) must be < parent depth ($maxRuntimeDepth)"

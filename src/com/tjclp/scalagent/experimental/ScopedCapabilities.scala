@@ -2,6 +2,20 @@ package com.tjclp.scalagent.experimental
 
 import zio.blocks.scope.Resource
 
+/** The `experimental` package provides two capability-safety mechanisms:
+  *
+  *   - '''Capture checking''' (`Capabilities.scala`, `SandboxedRun.scala`): Uses
+  *     Scala 3's `-language:experimental.captureChecking` to prevent capability escape
+  *     at compile time. Requires the experimental compiler flag.
+  *
+  *   - '''Scope-based''' (`ScopedCapabilities.scala`): Uses `zio-blocks/scope` for
+  *     compile-time resource safety without experimental flags. This is the stable
+  *     alternative for production use.
+  *
+  * If capture checking stabilizes in a future Scala release, the two approaches
+  * may converge. Until then, prefer `ScopedCapabilities` for new code.
+  */
+
 /** Scope-based capability resources using zio-blocks/scope.
   *
   * This provides `Resource[A]` factories for agent capabilities.

@@ -24,18 +24,6 @@ class ExecutionPolicySpec extends munit.FunSuite:
     assertEquals(p.stopStrategy, StopStrategy.Natural)
     assertEquals(p.fallback, FallbackPolicy.Fail)
 
-  test("childPolicy slices the budget"):
-    val parent = ExecutionPolicy.simple(budgetUsd = 10.0, maxTurns = 20)
-    val child = parent.childPolicy(0.3)
-    assertEquals(child.budget, Budget.Usd(3.0))
-    // maxTurns is inherited
-    assertEquals(child.maxTurns, Some(20))
-
-  test("childPolicy with Unlimited budget stays Unlimited"):
-    val parent = ExecutionPolicy.unbounded
-    val child = parent.childPolicy(0.5)
-    assertEquals(child.budget, Budget.Unlimited)
-
   test("deadline can be set"):
     val p = ExecutionPolicy(deadline = Some(Duration.fromSeconds(30)))
     assertEquals(p.deadline, Some(Duration.fromSeconds(30)))

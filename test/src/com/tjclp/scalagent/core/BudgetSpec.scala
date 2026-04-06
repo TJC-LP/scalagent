@@ -45,6 +45,9 @@ class BudgetSpec extends munit.FunSuite:
   test("anything - Unlimited is zero"):
     assertEquals(Budget.usd(100.0) - Budget.Unlimited, Budget.Usd(0.0))
 
+  test("Unlimited - Unlimited is Unlimited"):
+    assertEquals(Budget.Unlimited - Budget.Unlimited, Budget.Unlimited)
+
   // --- Slice ---
 
   test("slice of Usd returns fraction"):

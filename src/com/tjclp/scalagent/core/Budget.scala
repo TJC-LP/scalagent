@@ -25,9 +25,10 @@ enum Budget:
 
   /** Subtract spent amount. Floors at zero. */
   def -(other: Budget): Budget = (this, other) match
-    case (Unlimited, _)  => Unlimited
-    case (_, Unlimited)  => Usd(0.0)
-    case (Usd(a), Usd(b)) => Usd(math.max(0, a - b))
+    case (Unlimited, Unlimited) => Unlimited
+    case (Unlimited, _)         => Unlimited
+    case (_, Unlimited)         => Usd(0.0)
+    case (Usd(a), Usd(b))      => Usd(math.max(0, a - b))
 
   /** Remaining budget after spending. */
   def remaining(spent: Double): Budget = this match

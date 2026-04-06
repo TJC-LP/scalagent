@@ -14,10 +14,7 @@ final case class ExecutionPolicy(
     deadline: Option[Duration] = None,
     stopStrategy: StopStrategy = StopStrategy.Natural,
     fallback: FallbackPolicy = FallbackPolicy.Fail
-):
-  /** Create a child policy with a sliced budget. */
-  def childPolicy(budgetFraction: Double): ExecutionPolicy =
-    copy(budget = budget.slice(budgetFraction))
+)
 
 object ExecutionPolicy:
   /** No constraints — run until natural completion. */
