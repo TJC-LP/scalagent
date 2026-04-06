@@ -370,6 +370,167 @@ package object scalagent {
 
   val ToolMacros = macros.ToolMacros
 
+  // --- core DSL package ---
+  // Agent takes type parameters, export companion object only
+  val Agent = core.Agent
+
+  type AgentRun[-R, +O] = core.AgentRun[R, O]
+  val AgentRun = core.AgentRun
+
+  type AgentEvent = core.AgentEvent
+  val AgentEvent = core.AgentEvent
+
+  type ExecutionPolicy = core.ExecutionPolicy
+  val ExecutionPolicy = core.ExecutionPolicy
+
+  type Budget = core.Budget
+  val Budget = core.Budget
+
+  type StopStrategy = core.StopStrategy
+  val StopStrategy = core.StopStrategy
+
+  type FallbackPolicy = core.FallbackPolicy
+  val FallbackPolicy = core.FallbackPolicy
+
+  type RunSummary = core.RunSummary
+  val RunSummary = core.RunSummary
+
+  type OutputCodec[O] = core.OutputCodec[O]
+  val OutputCodec = core.OutputCodec
+
+  // --- core DSL: utility and evaluation ---
+  type TraceSummary = core.TraceSummary
+  val TraceSummary = core.TraceSummary
+
+  type Complexity = core.Complexity
+  val Complexity = core.Complexity
+
+  // Utility takes type parameters — export companion only
+  val Utility = core.Utility
+
+  type ScoreComponent = core.ScoreComponent
+  val ScoreComponent = core.ScoreComponent
+
+  type ScoreBreakdown = core.ScoreBreakdown
+  val ScoreBreakdown = core.ScoreBreakdown
+
+  type ReviewScore = core.ReviewScore
+  val ReviewScore = core.ReviewScore
+
+  // Reviewer takes type parameters — export companion only
+  val Reviewer = core.Reviewer
+
+  // --- core DSL: classified review ---
+  type Visibility = core.Visibility
+  type Public = core.Public
+  type Internal = core.Internal
+  type Secret = core.Secret
+  type TopSecret = core.TopSecret
+  type Classified[+A, L <: core.Visibility] = core.Classified[A, L]
+  val Classified = core.Classified
+  type CanSee[Viewer <: core.Visibility, Data <: core.Visibility] = core.CanSee[Viewer, Data]
+  val CanSee = core.CanSee
+
+  type Evaluation[P, O] = core.Evaluation[P, O]
+  val Evaluation = core.Evaluation
+
+  type TraceLogger = core.TraceLogger
+  val TraceLogger = core.TraceLogger
+
+  // --- core DSL: capability types ---
+  type Depth = core.Depth
+  type Z = core.Z
+  type S[N <: core.Depth] = core.S[N]
+  type Depth0 = core.Depth0
+  type Depth1 = core.Depth1
+  type Depth2 = core.Depth2
+  type Depth3 = core.Depth3
+
+  type Capability = core.Capability
+  type CanUseTools[T <: core.ToolSet] = core.CanUseTools[T]
+  type CanSpawn[D <: core.Depth] = core.CanSpawn[D]
+  type CanReadMemory = core.CanReadMemory
+  type CanWriteMemory = core.CanWriteMemory
+  type CanEscalateHuman = core.CanEscalateHuman
+  type HasBudget = core.HasBudget
+
+  type ToolSet = core.ToolSet
+  type AllTools = core.AllTools
+  type ReadOnlyTools = core.ReadOnlyTools
+  type CustomTools = core.CustomTools
+
+  type ReadOnlyCaps = core.ReadOnlyCaps
+  type FullCaps = core.FullCaps
+  type SupervisorCaps[D <: core.Depth] = core.SupervisorCaps[D]
+
+  type ToolSurface = core.ToolSurface
+  val ToolSurface = core.ToolSurface
+
+  type DelegationPolicy = core.DelegationPolicy
+  val DelegationPolicy = core.DelegationPolicy
+
+  // TypedAgent and AgentBuilder take type parameters — export companions
+  val TypedAgent = core.TypedAgent
+  val AgentBuilder = core.AgentBuilder
+
+  // Type class evidence
+  type HasSpawn[C] = core.HasSpawn[C]
+  val HasSpawn = core.HasSpawn
+  type HasToolsCap[C] = core.HasToolsCap[C]
+  val HasToolsCap = core.HasToolsCap
+  type DepthLTE[A <: core.Depth, B <: core.Depth] = core.DepthLTE[A, B]
+  val DepthLTE = core.DepthLTE
+  type DepthValue[D <: core.Depth] = core.DepthValue[D]
+  val DepthValue = core.DepthValue
+
+  // --- core DSL: A2A types ---
+  type A2ARemoteAgent[-P, -I, +O] = core.a2a.A2ARemoteAgent[P, I, O]
+  type A2AEndpoint = core.a2a.A2AEndpoint
+  type CanDelegateA2A = core.a2a.CanDelegateA2A
+
+  // --- core DSL: MCP types ---
+  type McpToolSurface = core.mcp.McpToolSurface
+  val McpToolSurface = core.mcp.McpToolSurface
+  type McpResource = core.mcp.McpResource
+  val McpResource = core.mcp.McpResource
+  type McpResourceContent = core.mcp.McpResourceContent
+  val McpResourceContent = core.mcp.McpResourceContent
+  type McpPrompt = core.mcp.McpPrompt
+  val McpPrompt = core.mcp.McpPrompt
+  type McpPromptArgument = core.mcp.McpPromptArgument
+  val McpPromptArgument = core.mcp.McpPromptArgument
+  type HasMcpTools = core.mcp.HasMcpTools
+  type HasMcpResources = core.mcp.HasMcpResources
+  type HasMcpPrompts = core.mcp.HasMcpPrompts
+  type FullMcpCaps = core.mcp.FullMcpCaps
+
+  // --- interop package ---
+  val ClaudeInterpreter = interop.claude.ClaudeInterpreter
+  val A2AInterpreter = interop.a2a.A2AInterpreter
+  val A2AServerAdapter = interop.a2a.A2AServerAdapter
+  val McpToolLoader = interop.mcp.McpToolLoader
+  val CodexInterpreter = interop.codex.CodexInterpreter
+  val CodexEventMapper = interop.codex.CodexEventMapper
+
+  // --- Codex types ---
+  type CodexClient = codex.CodexClient
+  val CodexClient = codex.CodexClient
+  type CodexThread = codex.CodexThread
+  type CodexClientOptions = codex.CodexClientOptions
+  val CodexClientOptions = codex.CodexClientOptions
+  type CodexThreadOptions = codex.CodexThreadOptions
+  val CodexThreadOptions = codex.CodexThreadOptions
+  type CodexEvent = codex.CodexEvent
+  val CodexEvent = codex.CodexEvent
+  type CodexItem = codex.CodexItem
+  val CodexItem = codex.CodexItem
+  type CodexTurn = codex.CodexTurn
+  type CodexUsage = codex.CodexUsage
+  type SandboxMode = codex.SandboxMode
+  val SandboxMode = codex.SandboxMode
+  type ApprovalMode = codex.ApprovalMode
+  val ApprovalMode = codex.ApprovalMode
+
   // ============================================================================
   // Helper Functions
   // ============================================================================

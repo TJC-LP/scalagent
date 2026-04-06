@@ -31,3 +31,22 @@ class PackageExportsSpec extends FunSuite:
   test("SessionUuid is available from package object"):
     val uuid = SessionUuid("123e4567-e89b-12d3-a456-426614174000")
     assert(uuid.isRight)
+
+  test("core DSL types are available from package object"):
+    val policy: ExecutionPolicy = ExecutionPolicy.simple(0.5, 3)
+    val budget: Budget = Budget.usd(1.0)
+    val summary: RunSummary = RunSummary(
+      durationMs = 100L,
+      numTurns = 1,
+      costUsd = 0.01,
+      isSuccess = true
+    )
+
+    val event: AgentEvent = AgentEvent.Completed(summary)
+    assertEquals(policy.maxTurns, Some(3))
+    assertEquals(budget.toUsd, Some(1.0))
+    assert(event.isInstanceOf[AgentEvent.Completed])
+
+  test("ClaudeInterpreter is available from package object"):
+    val interpreter = ClaudeInterpreter
+    assert(interpreter != null)

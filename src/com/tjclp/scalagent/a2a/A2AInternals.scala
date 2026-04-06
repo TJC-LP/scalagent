@@ -93,7 +93,7 @@ private[a2a] object A2AStreamEventParser:
     catch
       case _: Throwable => value.toString
 
-private[a2a] object BunJsonRpcResponses:
+private[scalagent] object BunJsonRpcResponses:
   def fromResult(result: js.Any, requestId: js.Any = null): js.Dynamic =
     if isAsyncIterable(result) then
       response(

@@ -127,8 +127,10 @@ object ToolName:
 
   /** Check if a tool name is read-only (no side effects) */
   def isReadOnly(tool: ToolName): Boolean = tool match
-    case Read | Glob | Grep | WebFetch | WebSearch | TaskOutput | LSP | GetDiagnostics => true
-    case _                                                                              => false
+    case Read | Glob | Grep | WebFetch | WebSearch | TaskOutput | McpResolveLibraryId | McpGetLibraryDocs | LSP |
+        GetDiagnostics =>
+      true
+    case _ => false
 
   // JSON codecs
   given JsonEncoder[ToolName] = StringEnumJsonCodec.encoder(_.raw)

@@ -74,8 +74,12 @@ object McpToolName:
     /** Get the raw string value */
     def value: String = name
 
-    /** Convert to ToolName for use in tool lists */
-    def toToolName: ToolName = ToolName.Custom(name)
+    /** Convert to ToolName for use in tool lists.
+      *
+      * Known MCP tool names are normalized to their concrete ToolName cases so
+      * read-only classification continues to work for built-in MCP surfaces.
+      */
+    def toToolName: ToolName = ToolName(name)
 
     /** Extract the server name */
     def serverName: String =
