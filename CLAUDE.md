@@ -27,6 +27,25 @@ Default to using Bun instead of Node.js.
 
 Use `./mill agent.test` for the Scala/MUnit suite. Use `bun test` only for JS/TS tests.
 
+## Build Dependencies
+
+JS dependencies are declared in `build.mill` using the `bun""` string interpolator from
+mill-bun-plugin v0.2.0, which validates package specifiers at compile time:
+
+```scala
+import mill.bun.bun
+
+def bunDeps = Task { Seq(
+  bun"@anthropic-ai/claude-agent-sdk@^0.2.90",
+  bun"zod@^4.0.0"
+)}
+```
+
+The `agent` module mixes in `BunPublishModule`, which embeds
+`META-INF/bun/bun-dependencies.json` in the published JAR. Downstream consumers
+get all npm deps resolved automatically with no manual `bun install` or `bunDeps` declaration.
+See `standalone-example/` for a working demo.
+
 ## Examples
 
 ```bash
@@ -35,6 +54,16 @@ Use `./mill agent.test` for the Scala/MUnit suite. Use `bun test` only for JS/TS
 ./mill examples.run dsl-cross        # Claude + Codex cross-provider
 ./mill examples.run -- --help        # List all available examples
 ```
+
+### Standalone consumer example
+
+```bash
+cd standalone-example
+COURSIER_REPOSITORIES="ivy2Local|central" ./mill app.compile
+COURSIER_REPOSITORIES="ivy2Local|central" ./mill app.fastLinkJS
+```
+
+This project has zero `bunDeps` — all JS deps flow from the Scalagent JAR manifest.
 
 ```ts#index.test.ts
 import { test, expect } from "bun:test";
