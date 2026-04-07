@@ -31,7 +31,10 @@ object ExampleRunner:
     "dsl-builder"    -> "DslBuilderExample",
     "dsl-delegation" -> "DslDelegationExample",
     "dsl-review"     -> "DslReviewExample",
+    "dsl-structured" -> "DslStructuredOutputExample",
+    "dsl-dirscope"   -> "DslDirectoryScopeExample",
     "dsl-cells"      -> "DslClandestineCellExample",
+    "dsl-auto"       -> "DslAutoPermissionExample",
     "dsl-codex"      -> "DslCodexExample",
     "dsl-cross"      -> "DslCrossProviderExample",
     "capture"        -> "CaptureCheckingExample"
@@ -55,7 +58,10 @@ object ExampleRunner:
     "dsl-builder"    -> (DslBuilderExample.main(_)),
     "dsl-delegation" -> (DslDelegationExample.main(_)),
     "dsl-review"     -> (DslReviewExample.main(_)),
+    "dsl-structured" -> (DslStructuredOutputExample.main(_)),
+    "dsl-dirscope"   -> (DslDirectoryScopeExample.main(_)),
     "dsl-cells"      -> (DslClandestineCellExample.main(_)),
+    "dsl-auto"       -> (DslAutoPermissionExample.main(_)),
     "dsl-codex"      -> (DslCodexExample.main(_)),
     "dsl-cross"      -> (DslCrossProviderExample.main(_)),
     "capture"        -> (CaptureCheckingExample.main(_))

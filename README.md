@@ -1,38 +1,194 @@
 # Scalagent
 
-A type-safe Scala.js wrapper for `@anthropic-ai/claude-agent-sdk`, with idiomatic ZIO, forward-compatible message modeling, and policy-driven collection for long-running agent workloads.
+Type-safe agent execution for mission-critical environments.
+Scala 3 + ZIO on the battle-tested TypeScript agent ecosystem.
 
-## Status
+> SDK baseline `@anthropic-ai/claude-agent-sdk@^0.2.90` | Scalagent `0.5.0` | Scala `3.8.3` | Bun or Node.js 18+
 
-- SDK baseline: `@anthropic-ai/claude-agent-sdk` `0.2.90`
-- Current repo build version: `0.5.0`
-- Scala version: `3.8.3`
-- Preferred JS runtime: `bun`
-- Runtime requirement: `ANTHROPIC_API_KEY`
+```scala
+import com.tjclp.scalagent.*
 
-For a compatibility inventory against the installed SDK baseline, see `docs/COMPATIBILITY.md`.
+// Capabilities are visible in the type AND enforced at runtime
+val agent = ClaudeInterpreter.builder(claudeAgent)
+  .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
+  .withBudget
+  .build
+// Type: TypedAgent[Any, String, String, CanUseTools[ReadOnlyTools] & HasBudget]
 
-## Features
+val policy = ExecutionPolicy(
+  budget       = Budget.usd(1.00),
+  maxTurns     = Some(3),
+  stopStrategy = StopStrategy.FirstResponse
+)
 
-- `ZStream`-based query and session APIs
-- Forward-compatible message ADT with `UnknownEnvelope` fallbacks
-- Deterministic query/session cleanup with idempotent `close()` behavior
-- Policy-driven collection via `CollectionPolicy` and `QueryCollector`
-- Semantic `ask()` helpers that prefer final result payloads over transcript concatenation
-- Main-thread skill preloading via `AgentOptions.withSkills(...)`
-- Structured outputs with compile-time schema derivation
-- Tool DSL, hooks, MCP server config, and multi-turn sessions
+ZIO.scoped {
+  agent.run("analyst", "Summarize the risk report.", policy).result
+}
+```
+
+Wrong tool? Type error. Budget exceeded? Runtime enforcement. Resource leak? Scope-bounded by ZIO.
+
+## Why Scalagent
+
+**Typed safety on the TS ecosystem.** Scala.js compiles to JavaScript. Your agents run on `@anthropic-ai/claude-agent-sdk`, the same battle-tested TypeScript library used in production. Scalagent adds type-level capability tracking, execution policies, and observable event streams on top — without replacing the runtime you already trust.
+
+**Explicit effects.** Tools, delegation, memory access, filesystem access, and human escalation are named capabilities with observable traces. Side effects don't hide in implicit configuration. When an agent calls a tool or spawns a child, the type signature and event stream both say so.
+
+**Provider-independent.** The same `Agent[P, I, O]` trait runs on Claude, Codex, or A2A remote agents. Switch interpreters, keep your pipeline. Evaluation, tracing, and utility scoring work identically across providers.
+
+**Mission-critical.** Built for defense, critical infrastructure, and regulated environments where "what did the agent do and why?" must have a typed, auditable answer. See `docs/VISION.md` for the full positioning.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────┐
+│  Your Code (Scala 3 / ZIO)             │
+│  Agent, ExecutionPolicy, TypedAgent     │
+├─────────────────────────────────────────┤
+│  Scalagent Core (provider-independent)  │
+│  AgentRun, AgentEvent, Capability       │
+├─────────────────────────────────────────┤
+│  Interpreters (Scala.js → JavaScript)   │
+│  ClaudeInterpreter · CodexInterpreter   │
+│  A2AInterpreter · McpToolLoader         │
+├─────────────────────────────────────────┤
+│  @anthropic-ai/claude-agent-sdk (TS)    │
+│  Battle-tested production runtime       │
+├─────────────────────────────────────────┤
+│  Bun / Node.js                          │
+└─────────────────────────────────────────┘
+```
+
+Scala.js compiles your code to JavaScript. At runtime it calls the official TypeScript SDK directly — no FFI overhead, no serialization boundary. You get Scala's type system and ZIO's effect model with the TS ecosystem's production maturity.
+
+## Provider Independence
+
+The same function works with any provider:
+
+```scala
+def execute(agent: Agent[Any, String, String], input: String, policy: ExecutionPolicy) =
+  ZIO.scoped {
+    val run = agent.run("user", input, policy)
+    for
+      events <- run.events.runCollect.map(_.toList)
+      output <- run.result
+    yield (events, output)
+  }
+
+val claude = ClaudeInterpreter.string(claudeAgent)
+val codex  = CodexInterpreter.string(codexClient)
+
+execute(claude, "What is 7 * 8?", policy)
+execute(codex,  "What is 7 * 8?", policy)
+```
+
+Both are `Agent[Any, String, String]`. `AgentEvent`, `TraceSummary`, and `Evaluation` are provider-agnostic. Replace the interpreter, keep everything else.
+
+## Compile-Time Safety
+
+### Capability Types
+
+The builder accumulates phantom intersection types. Each `.with*` call narrows what the agent can do — visible in the type signature, enforced at runtime by the interpreter.
+
+```scala
+val agent = ClaudeInterpreter.builder(claudeAgent)
+  .withTools(ToolSurface(weatherTool))       // & CanUseTools[CustomTools]
+  .withSpawnDepth[Depth2]                    // & CanSpawn[Depth2]
+  .withBudget                                // & HasBudget
+  .build
+```
+
+Attempting to delegate from an agent without `CanSpawn` is a compile error, not a runtime surprise.
+
+### Delegation Depth
+
+Peano-encoded depth types prevent unbounded agent nesting at compile time:
+
+```scala
+val parent = ClaudeInterpreter.builder(claudeAgent)
+  .withSpawnDepth[Depth2]
+  .withBudget
+  .build
+
+val child = ClaudeInterpreter.builder(claudeAgent)
+  .withSpawnDepth[Depth1]
+  .build
+
+// Compile-time proof: DepthLTE[Depth1, Depth1] ✓
+// Try Depth2 under Depth2? Type error.
+parent.delegateTyped(child, "supervisor", prompt, policy,
+  DelegationPolicy(budgetFraction = 0.3, maxChildTurns = Some(5)))
+```
+
+The runtime also asserts `child.maxRuntimeDepth < parent.maxRuntimeDepth` as defense-in-depth.
+
+### Classified Review
+
+Type-level visibility controls prevent information leakage across clearance boundaries:
+
+```scala
+val report: Classified[FieldReport, Secret] = classify(fieldReport)
+
+// Only reviewers with sufficient clearance can see classified output
+val reviewer: Reviewer[String, Classified[FieldReport, Secret]] = ...
+
+// Requires CanSee[ReviewerLevel, Secret] evidence at compile time
+AgenticReview.enrichClassified(permit, evaluation, reviewer)
+```
+
+### Structured Output
+
+Define a case class. Derive a schema. The agent's output type becomes your type — no string parsing, no runtime casting:
+
+```scala
+case class RiskAssessment(
+  severity: String,
+  score: Double,
+  findings: List[String],
+  recommendation: String
+) derives JsonDecoder
+
+given StructuredOutput[RiskAssessment] = StructuredOutput.derive[RiskAssessment]
+
+// Output type is RiskAssessment, not String
+val agent = ClaudeInterpreter.typedBuilder[RiskAssessment](claudeAgent)
+  .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
+  .withBudget
+  .build
+// TypedAgent[Any, String, RiskAssessment, CanUseTools[ReadOnlyTools] & HasBudget]
+
+ZIO.scoped {
+  val assessment: RiskAssessment = agent
+    .run("analyst", "Assess risk for Project Alpha.", policy)
+    .result
+  // assessment.score, assessment.findings — fully typed
+}
+```
+
+The `StructuredOutput.derive` macro generates a JSON schema from the case class and wires it into the provider's native structured output mode. The `OutputCodec` type class handles dispatch: `String` output is passthrough, structured types use the schema to constrain the provider and parse the response.
+
+### Directory Scoping
+
+Restrict where an agent's file tools can operate:
+
+```scala
+val agent = ClaudeInterpreter.builder(claudeAgent)
+  .withWorkingDirectory("/data/reports")
+  .withAdditionalDirectory("/data/shared")
+  .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
+  .withBudget
+  .build
+// TypedAgent[..., CanUseTools[ReadOnlyTools] & HasBudget & HasDirectoryScope]
+```
+
+`HasDirectoryScope` in the type signature proves the agent was directory-scoped at build time. At runtime, the interpreter wires the paths into the provider's native directory restrictions (`AgentOptions.cwd` for Claude, `CodexThreadOptions.workingDirectory` for Codex).
 
 ## Installation
-
-Use the current published release when consuming from Maven Central. For local development against this repo, the build version is `0.5.0`.
 
 ### Mill
 
 ```scala
-def ivyDeps = Seq(
-  mvn"com.tjclp::scalagent::0.5.0"
-)
+ivy"com.tjclp::scalagent::0.5.0"
 ```
 
 ### SBT
@@ -51,269 +207,121 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.5.0"
 </dependency>
 ```
 
-## Requirements
+### Requirements
 
-- Mill
-- Bun or Node.js 18+
-- Scala `3.7.4`
-- `ANTHROPIC_API_KEY`
+- Scala 3.8.3+ with Scala.js
+- Bun (preferred) or Node.js 18+
+- `bun install` to fetch the TypeScript SDK and ZIO dependencies
 
 ## Quick Start
 
-### Simple One-Shot Query
+### One-Shot Query
 
 ```scala
 import com.tjclp.scalagent.*
-import zio.*
 
-object MyApp extends ZIOAppDefault:
-  val run =
-    for
-      answer <- Claude.ask("What is 2 + 2?")
-      _      <- Console.printLine(s"Answer: $answer")
-    yield ()
+val agent = ClaudeInterpreter.string(claudeAgent)
+
+val answer = ZIO.scoped {
+  agent.run("user", "What is the capital of France?", ExecutionPolicy.unbounded).result
+}
 ```
 
-### Streaming Responses
+### Streaming with Evaluation
 
 ```scala
-import com.tjclp.scalagent.*
-import zio.*
+val policy = ExecutionPolicy(budget = Budget.usd(0.50), maxTurns = Some(3))
+val utility = Utility.reliability[String, String]
 
-object StreamingApp extends ZIOAppDefault:
-  val run =
-    Claude.query("Count from 1 to 5, one number per line")
-      .textOnly
-      .foreach(text => Console.print(text).orDie)
-```
-
-### Multi-Turn Conversation
-
-```scala
-import com.tjclp.scalagent.*
-import zio.*
-
-object ConversationApp extends ZIOAppDefault:
-  val run =
-    for
-      session <- ClaudeSession.create(AgentOptions.default.withModel(Model.Sonnet4_6))
-      _       <- session.send("Remember the number 42").runDrain
-      answer  <- session.ask("What number did I ask you to remember?")
-      _       <- Console.printLine(s"Claude remembered: $answer")
-    yield ()
-```
-
-### Structured Output
-
-```scala
-import com.tjclp.scalagent.*
-import zio.*
-import zio.json.*
-
-case class Analysis(summary: String, score: Int, suggestions: List[String]) derives JsonDecoder
-given StructuredOutput[Analysis] = StructuredOutput.derive[Analysis]
-
-object AnalysisApp extends ZIOAppDefault:
-  val run =
-    val options = AgentOptions.default
-      .withModel(Model.Sonnet4_6)
-      .withStructuredOutput[Analysis]
-
-    for
-      result   <- Claude.queryComplete("Analyze this code...", options)
-      analysis <- ZIO.fromEither(result.outcome.parseAs[Analysis])
-      _        <- Console.printLine(s"Analysis: $analysis")
-    yield ()
-```
-
-## Collection Policies
-
-`queryComplete()` and session collection are policy-driven so callers can control transcript retention explicitly.
-
-```scala
-import com.tjclp.scalagent.*
-import zio.*
-
-val options = AgentOptions.default.withPromptSuggestions
-
-val effect =
+ZIO.scoped {
+  val run = agent.run("analyst", "Analyze the quarterly report.", policy)
   for
-    result <- Claude.queryComplete(
-      prompt = "Summarize the repository status",
-      options = options,
-      collectionPolicy = CollectionPolicy.BoundedRecent(
-        limit = 12,
-        includeStreamingDeltas = false,
-        stopAtResult = true
-      )
-    )
-    answer <- result.semanticTextOrFail
-  yield answer
+    events <- run.events.runCollect.map(_.toList)
+    output <- run.result
+    trace   = TraceSummary.fromEvents(events)
+    eval    = Evaluation.fromTrace("analyst", output, trace, utility)
+    _      <- ZIO.succeed(println(s"Score: ${eval.score}, Turns: ${trace.numTurns}, Cost: $$${trace.costUsd}"))
+  yield output
+}
 ```
 
-Available policies include:
+Events stream in real time. The trace captures timing, cost, tool calls, and completion status. Evaluation scores the output against your utility function.
 
-- `CollectionPolicy.Full`
-- `CollectionPolicy.NoStreamingDeltas`
-- `CollectionPolicy.UntilResult`
-- `CollectionPolicy.ResultOnly`
-- `CollectionPolicy.SummaryOnly`
-- `CollectionPolicy.Disabled`
-- `CollectionPolicy.BoundedRecent(...)`
-
-## Skill Preloading
-
-Top-level preloaded skills are exposed directly on `AgentOptions`.
-
-```scala
-val options = AgentOptions.default
-  .withSkills("slides", "spreadsheets")
-  .withSettingSources(SettingSource.User, SettingSource.Project)
-```
-
-Compatibility behavior:
-
-- preferred path: augment or synthesize a main-thread agent using SDK-native `agent` / `agents` / `AgentDefinition.skills`
-- fallback path: resolve `SKILL.md` files from configured setting sources and inject them into the effective system prompt
-- existing runtime skill loading via `withSkillsEnabled` remains available
-
-## Message Compatibility
-
-`scalagent` preserves known SDK message variants and degrades gracefully when the SDK evolves.
-
-Important properties:
-
-- unknown top-level messages become `AgentMessage.Unknown`
-- unknown system events become `SystemEvent.Unknown`
-- unknown content blocks become `ContentBlock.Unknown`
-- unknown deltas become `StreamDelta.Unknown`
-- unknown variants preserve raw JSON and envelope metadata in `UnknownEnvelope`
-- image content blocks are parsed into `ContentBlock.Image`
-- unrecoverable malformed payloads become `AgentError.MessageParseError`
-
-## Query and Session Lifecycle
-
-`QueryStream` and `ClaudeSession` are hardened for long-running use:
-
-- stream termination runs cleanup automatically
-- early consumer termination triggers generator cleanup
-- `interrupt()` attempts interruption and then cleanup
-- `close()` is idempotent
-- cleanup failures are recorded and surfaced as warnings without masking the primary outcome
-
-## Configuration
-
-Use `AgentOptions` to configure queries:
-
-```scala
-val options = AgentOptions.default
-  .withModel(Model.Sonnet4_6)
-  .withMaxTurns(10)
-  .withMaxBudgetUsd(0.50)
-  .withPermissionMode(PermissionMode.AcceptEdits)
-  .withMcpServer("myserver", McpServerConfig.stdio("node", "server.js"))
-```
-
-Common builder methods include:
-
-- `withModel(...)`
-- `withSystemPrompt(...)`
-- `withMaxTurns(...)`
-- `withMaxBudgetUsd(...)`
-- `withPermissionMode(...)`
-- `withAllowedTools(...)`
-- `withMcpServer(...)`
-- `withStructuredOutput[T]`
-- `withMainAgent(...)`
-- `withSkills(...)`
-- `withSkillsEnabled`
-- `withFileCheckpointing`
-- `withFallbackModel(...)`
-
-## Advanced Usage
-
-### Raw Query Access
-
-```scala
-for
-  queryStream <- ClaudeAgent.queryRaw("Complex task...")
-  fiber       <- queryStream.messages.foreach(handleMessage).fork
-  _           <- ZIO.sleep(30.seconds)
-  _           <- queryStream.interrupt
-  _           <- fiber.join
-yield ()
-```
-
-### QueryStream Control Methods
-
-| Method | Description |
-|--------|-------------|
-| `interrupt` | Interrupt the running query |
-| `close()` | Abort the query and terminate resources |
-| `setPermissionMode(...)` | Change permission handling |
-| `setModel(...)` | Change the active model |
-| `supportedModels` | Inspect SDK-supported models |
-| `mcpServerStatus` | Inspect MCP connection state |
-| `rewindFiles(...)` | Rewind tracked files |
-| `setMcpServers(...)` | Reconfigure MCP servers dynamically |
-
-### Macro Tool Definitions
-
-```scala
-import com.tjclp.scalagent.*
-
-object MyTools:
-  @Tool("get_weather", "Get the current weather for a location")
-  def getWeather(
-      @Param("City or location name") location: String,
-      @Param("Temperature unit") unit: Option[String] = None
-  ): String =
-    s"Weather in $location: 22°${unit.getOrElse("C")}"
-```
-
-## Building and Testing
+## Examples
 
 ```bash
-bun install
-./mill agent.compile
-./mill agent.test
-```
-
-## Running Examples
-
-```bash
-./mill examples.run dsl-basic        # DSL one-shot + streaming + eval
-./mill examples.run dsl-builder      # Builder + typed capabilities + JSONL logging
-./mill examples.run dsl-delegation   # Parent/child with Peano depth enforcement
-./mill examples.run dsl-codex        # Same DSL, OpenAI Codex provider
-./mill examples.run dsl-cross        # Claude ↔ Codex cross-provider chain
-./mill examples.run simple           # Simple Claude.ask() / query() / conversation()
+./mill examples.run dsl-basic        # One-shot + streaming + eval
+./mill examples.run dsl-builder      # Builder + capability types + JSONL logging
+./mill examples.run dsl-delegation   # Peano-bounded parent/child delegation
+./mill examples.run dsl-review       # Explainable scoring + semantic review
+./mill examples.run dsl-structured   # Typed structured output (RiskAssessment)
+./mill examples.run dsl-cells        # Zero-trust clandestine cell simulation
+./mill examples.run dsl-codex        # Codex interpreter
+./mill examples.run dsl-cross        # Claude <> Codex cross-provider chain
+./mill examples.run capture          # Capture-checked sandbox capabilities
+./mill examples.run simple           # Simple Claude.ask() one-shot
 ./mill examples.run macro            # Macro-defined custom tools
-./mill examples.run -- --help        # List all 19 available examples
+./mill examples.run -- --help        # List all available examples
 ```
+
+## Low-Level SDK Access
+
+For direct SDK control, Scalagent provides full access to the underlying Claude Agent SDK:
+
+```scala
+// One-shot
+val answer = Claude.ask("What is 2 + 2?")
+
+// Multi-turn session
+val session = ClaudeSession.open()
+session.send("Remember: my name is Alice.")
+session.send("What is my name?") // "Alice"
+session.close()
+```
+
+The low-level API supports all `AgentOptions` configuration (model selection, permission mode, tool definitions, system prompts, structured output) and all collection policies. See `docs/COMPATIBILITY.md` for the full SDK surface coverage.
 
 ## Project Structure
 
 ```text
 scalagent/
 ├── build.mill
-├── docs/dsl/                    # DSL design docs (ROADMAP, MAPPING, EXAMPLES, etc.)
-├── examples/                    # 19 runnable examples (Dsl*, Claude, A2A, tools)
+├── docs/VISION.md                   # Strategic direction
+├── docs/dsl/                        # DSL design docs (foundations, roadmap, examples)
+├── examples/                        # Runnable examples (DSL + SDK)
 ├── src/com/tjclp/scalagent/
-│   ├── core/                    # Provider-independent DSL (Agent, AgentRun, Capability, etc.)
-│   ├── interop/claude/          # Claude interpreter
-│   ├── interop/codex/           # Codex interpreter
-│   ├── interop/a2a/             # A2A interpreter
-│   ├── interop/mcp/             # MCP tool loader
-│   ├── codex/                   # Codex SDK facades + Scala types
-│   ├── experimental/            # Capture checking + zio-blocks/scope
-│   ├── config/                  # AgentOptions, Model, StructuredOutput
-│   ├── messages/                # AgentMessage ADT
-│   ├── streaming/               # AsyncIterator → ZStream bridge
-│   ├── tools/                   # ToolDef, ToolName, ToolResult
-│   └── ClaudeAgent.scala        # Claude SDK facade
-└── test/src/com/tjclp/scalagent/ # 43 test suites
+│   ├── core/                        # Provider-independent kernel
+│   ├── interop/claude/              # Claude interpreter
+│   ├── interop/codex/               # Codex interpreter
+│   ├── interop/a2a/                 # A2A interpreter + server adapter
+│   ├── interop/mcp/                 # MCP tool loader
+│   ├── experimental/                # Capture checking + scoped capabilities
+│   ├── codex/                       # Codex client facades
+│   ├── config/                      # AgentOptions, Model, StructuredOutput
+│   ├── messages/                    # AgentMessage ADT
+│   ├── streaming/                   # AsyncIterator → ZStream bridge
+│   ├── tools/                       # ToolDef, ToolName, ToolResult
+│   └── ClaudeAgent.scala            # Claude SDK facade
+└── test/src/                        # 48 test suites
 ```
+
+## Building and Testing
+
+```bash
+bun install                          # Fetch TS SDK + ZIO dependencies
+./mill agent.compile                 # Compile library
+./mill agent.test                    # Run test suite
+./mill examples.compile              # Compile all examples
+./mill examples.run dsl-basic        # Run a specific example
+```
+
+## Documentation
+
+- [`docs/VISION.md`](docs/VISION.md) — strategic direction and design principles
+- [`docs/dsl/FOUNDATIONS.md`](docs/dsl/FOUNDATIONS.md) — formal model (`Agent = I → D(Eff[O])`)
+- [`docs/dsl/EXAMPLES.md`](docs/dsl/EXAMPLES.md) — 13 detailed usage patterns with before/after
+- [`docs/dsl/ROADMAP.md`](docs/dsl/ROADMAP.md) — implementation phases and remaining work
+- [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) — SDK surface coverage matrix
 
 ## License
 

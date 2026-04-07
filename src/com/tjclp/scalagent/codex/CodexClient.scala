@@ -1,6 +1,7 @@
 package com.tjclp.scalagent.codex
 
 import scala.scalajs.js
+import scala.scalajs.js.JSConverters.*
 import zio.*
 import zio.stream.*
 import zio.json.ast.Json
@@ -64,8 +65,38 @@ trait CodexClient:
 /** A Codex conversation thread. */
 trait CodexThread:
   def id: Option[String]
-  def runStreamed(input: String): ZStream[Any, Throwable, CodexEvent]
-  def run(input: String): Task[CodexTurn]
+  def runStreamed(input: String, options: CodexTurnOptions): ZStream[Any, Throwable, CodexEvent]
+  def runStreamed(input: Seq[CodexInputItem], options: CodexTurnOptions): ZStream[Any, Throwable, CodexEvent]
+  def run(input: String, options: CodexTurnOptions): Task[CodexTurn]
+  def run(input: Seq[CodexInputItem], options: CodexTurnOptions): Task[CodexTurn]
+
+  def runStreamed(input: CodexInput, options: CodexTurnOptions): ZStream[Any, Throwable, CodexEvent] =
+    input match
+      case text: String => runStreamed(text, options)
+      case items: Seq[?] => runStreamed(items.asInstanceOf[Seq[CodexInputItem]], options)
+
+  def run(input: CodexInput, options: CodexTurnOptions): Task[CodexTurn] =
+    input match
+      case text: String => run(text, options)
+      case items: Seq[?] => run(items.asInstanceOf[Seq[CodexInputItem]], options)
+
+  def runStreamed(input: String): ZStream[Any, Throwable, CodexEvent] =
+    runStreamed(input, CodexTurnOptions.default)
+
+  def runStreamed(input: Seq[CodexInputItem]): ZStream[Any, Throwable, CodexEvent] =
+    runStreamed(input, CodexTurnOptions.default)
+
+  def runStreamed(input: CodexInput): ZStream[Any, Throwable, CodexEvent] =
+    runStreamed(input, CodexTurnOptions.default)
+
+  def run(input: String): Task[CodexTurn] =
+    run(input, CodexTurnOptions.default)
+
+  def run(input: Seq[CodexInputItem]): Task[CodexTurn] =
+    run(input, CodexTurnOptions.default)
+
+  def run(input: CodexInput): Task[CodexTurn] =
+    run(input, CodexTurnOptions.default)
 
 object CodexClient:
   /** Create a CodexClient from options. */
@@ -88,17 +119,29 @@ private final class CodexThreadLive(jsThread: JsThread) extends CodexThread:
     val raw = jsThread.id
     if raw == null then None else Some(raw.asInstanceOf[String])
 
-  def runStreamed(input: String): ZStream[Any, Throwable, CodexEvent] =
+  def runStreamed(input: String, options: CodexTurnOptions): ZStream[Any, Throwable, CodexEvent] =
+    runStreamedRaw(input, options)
+
+  def runStreamed(input: Seq[CodexInputItem], options: CodexTurnOptions): ZStream[Any, Throwable, CodexEvent] =
+    runStreamedRaw(input.map(_.toRaw).toJSArray, options)
+
+  def run(input: String, options: CodexTurnOptions): Task[CodexTurn] =
+    runRaw(input, options)
+
+  def run(input: Seq[CodexInputItem], options: CodexTurnOptions): Task[CodexTurn] =
+    runRaw(input.map(_.toRaw).toJSArray, options)
+
+  private def runStreamedRaw(input: js.Any, options: CodexTurnOptions): ZStream[Any, Throwable, CodexEvent] =
     ZStream.unwrap {
-      ZIO.fromPromiseJS(jsThread.runStreamed(input)).map { streamedTurn =>
+      ZIO.fromPromiseJS(jsThread.runStreamed(input, options.toRaw)).map { streamedTurn =>
         AsyncIteratorOps
           .toZStreamWithReturn(streamedTurn.events)
           .map(parseEvent)
       }
     }
 
-  def run(input: String): Task[CodexTurn] =
-    ZIO.fromPromiseJS(jsThread.run(input)).map(parseTurn)
+  private def runRaw(input: js.Any, options: CodexTurnOptions): Task[CodexTurn] =
+    ZIO.fromPromiseJS(jsThread.run(input, options.toRaw)).map(parseTurn)
 
   private def parseEvent(raw: JsThreadEvent): CodexEvent =
     raw.`type` match

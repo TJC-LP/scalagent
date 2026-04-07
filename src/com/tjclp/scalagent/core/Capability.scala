@@ -37,6 +37,9 @@ trait CanEscalateHuman extends Capability
 /** Agent has an enforced budget constraint. */
 trait HasBudget extends Capability
 
+/** Agent has a directory scope (cwd and/or additionalDirectories). */
+trait HasDirectoryScope extends Capability
+
 // ============================================================================
 // Tool set classification markers
 // ============================================================================

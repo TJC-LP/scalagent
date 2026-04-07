@@ -510,6 +510,14 @@ object AgentOptions:
     def withAllowedTools(tools: ToolName*): AgentOptions =
       opts.copy(allowedTools = Some(tools.toList))
 
+    /** Apply safe tool default: if allowedTools is unset, restrict to no tools.
+      * Preserves any explicit allowedTools already configured.
+      * Used by DSL interpreters to ensure agents have no tool access unless opted in.
+      */
+    def withSafeToolDefault: AgentOptions =
+      if opts.allowedTools.isEmpty then opts.copy(allowedTools = Some(Nil))
+      else opts
+
     /** Set disallowed tools using type-safe ToolName enum */
     def withDisallowedTools(tools: ToolName*): AgentOptions =
       opts.copy(disallowedTools = Some(tools.toList))

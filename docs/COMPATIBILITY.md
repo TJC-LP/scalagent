@@ -1,6 +1,6 @@
 # Compatibility Matrix
 
-Baseline: `@anthropic-ai/claude-agent-sdk` `^0.2.72`
+Baseline: `@anthropic-ai/claude-agent-sdk` `^0.2.90`
 
 This document tracks the current compatibility posture of `scalagent` against the installed TypeScript SDK baseline.
 

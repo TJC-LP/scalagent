@@ -5,8 +5,11 @@ import zio.stream.*
 import zio.json.ast.Json
 import com.tjclp.scalagent.core.*
 import com.tjclp.scalagent.core.mcp.McpToolSurface
+import scala.scalajs.js
+import scala.scalajs.js.JSConverters.*
 import com.tjclp.scalagent.config.{AgentOptions, OutputFormat, StructuredOutput}
 import com.tjclp.scalagent.errors.AgentError
+import com.tjclp.scalagent.hooks.HookEvent
 import com.tjclp.scalagent.interop.mcp.McpToolLoader
 import com.tjclp.scalagent.messages.{AgentMessage, ResultOutcome}
 import com.tjclp.scalagent.{ClaudeAgent, CollectionPolicy}
@@ -28,25 +31,33 @@ object ClaudeInterpreter:
     case Initializing(promise: Promise[Nothing, SharedRun[O]])
     case Ready(shared: SharedRun[O])
 
-  /** Create a string-output agent backed by ClaudeAgent. */
+  /** Create a string-output agent backed by ClaudeAgent.
+    *
+    * No tool access by default. To grant tools, use
+    * `builder().withTools().build` or pass options with explicit `withAllowedTools`.
+    */
   def string(
       claudeAgent: ClaudeAgent,
       baseOptions: AgentOptions = AgentOptions.default
   ): Agent[Any, String, String] =
-    make[String](claudeAgent, baseOptions)
+    make[String](claudeAgent, baseOptions.withSafeToolDefault)
 
-  /** Create a typed-output agent backed by ClaudeAgent. */
+  /** Create a typed-output agent backed by ClaudeAgent.
+    *
+    * No tool access by default. To grant tools, use
+    * `typedBuilder().withTools().build` or pass options with explicit `withAllowedTools`.
+    */
   def typed[A](
       claudeAgent: ClaudeAgent,
       baseOptions: AgentOptions = AgentOptions.default
   )(using StructuredOutput[A]): Agent[Any, String, A] =
-    make[A](claudeAgent, baseOptions)
+    make[A](claudeAgent, baseOptions.withSafeToolDefault)
 
   /** Start building a capability-typed string agent.
     *
-    * The builder's `agentTransform` wires tool surface declarations into
-    * `AgentOptions`, so `.withTools(surface).build` produces an agent that
-    * actually restricts tool access at the provider level.
+    * No tool access until `.withTools()`, `.withReadOnlyTools()`, or
+    * `.withAllTools()` is called. The builder's `agentTransform` wires
+    * tool surface declarations into `AgentOptions` at build time.
     */
   def builder(
       claudeAgent: ClaudeAgent,
@@ -73,19 +84,31 @@ object ClaudeInterpreter:
   private def claudeTransform[O](
       claudeAgent: ClaudeAgent,
       baseOptions: AgentOptions
-  )(using codec: OutputCodec[O]): (Agent[Any, String, O], ToolSurface, List[McpToolSurface], Int) => Agent[Any, String, O] =
-    (_, toolSurface, mcpToolSurfaces, _) =>
-      if toolSurface.isEmpty && mcpToolSurfaces.isEmpty then make[O](claudeAgent, baseOptions)
-      else
-        val runtime = Runtime.default
-        val allMcpToolSurfaces =
-          mergeMcpToolSurfaces(localToolSurface(toolSurface, mcpToolSurfaces).toList ++ mcpToolSurfaces)
-        val restrictedOptions = allMcpToolSurfaces.foldLeft(baseOptions.copy(
-          allowedTools = Some(toolSurface.distinctAllowedTools)
-        )) { (opts, surface) =>
-          opts.withMcpServer(surface.serverName, McpToolLoader.toServerFactory(surface, runtime))
-        }
-        make[O](claudeAgent, restrictedOptions)
+  )(using codec: OutputCodec[O]): (Agent[Any, String, O], BuilderConfig) => Agent[Any, String, O] =
+    (_, cfg) =>
+      val toolSurface = cfg.tools
+      val mcpToolSurfaces = cfg.mcpToolSurfaces
+
+      val opts =
+        if toolSurface.isEmpty && mcpToolSurfaces.isEmpty then baseOptions.withSafeToolDefault
+        else
+          val runtime = Runtime.default
+          val allMcpToolSurfaces =
+            mergeMcpToolSurfaces(localToolSurface(toolSurface, mcpToolSurfaces).toList ++ mcpToolSurfaces)
+          allMcpToolSurfaces.foldLeft(baseOptions.copy(
+            allowedTools = Some(toolSurface.distinctAllowedTools)
+          )) { (o, surface) =>
+            o.withMcpServer(surface.serverName, McpToolLoader.toServerFactory(surface, runtime))
+          }
+
+      val withDir = cfg.directoryScope.fold(opts) { scope =>
+        opts.copy(
+          cwd = Some(scope.cwd),
+          additionalDirectories = scope.additionalDirectories
+        ).withHook(HookEvent.PreToolUse, scope.toHook)
+      }
+
+      make[O](claudeAgent, withDir)
 
   /** Create an agent with any output type that has an OutputCodec. */
   def make[O](

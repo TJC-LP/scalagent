@@ -453,6 +453,12 @@ package object scalagent {
   type CanWriteMemory = core.CanWriteMemory
   type CanEscalateHuman = core.CanEscalateHuman
   type HasBudget = core.HasBudget
+  type HasDirectoryScope = core.HasDirectoryScope
+
+  type DirectoryScope = core.DirectoryScope
+  val DirectoryScope = core.DirectoryScope
+  type BuilderConfig = core.BuilderConfig
+  val BuilderConfig = core.BuilderConfig
 
   type ToolSet = core.ToolSet
   type AllTools = core.AllTools
@@ -518,18 +524,32 @@ package object scalagent {
   type CodexThread = codex.CodexThread
   type CodexClientOptions = codex.CodexClientOptions
   val CodexClientOptions = codex.CodexClientOptions
+  type CodexConfigValue = codex.CodexConfigValue
+  val CodexConfigValue = codex.CodexConfigValue
+  type CodexInput = codex.CodexInput
   type CodexThreadOptions = codex.CodexThreadOptions
   val CodexThreadOptions = codex.CodexThreadOptions
+  type CodexTurnOptions = codex.CodexTurnOptions
+  val CodexTurnOptions = codex.CodexTurnOptions
+  type CodexInputItem = codex.CodexInputItem
+  val CodexInputItem = codex.CodexInputItem
   type CodexEvent = codex.CodexEvent
   val CodexEvent = codex.CodexEvent
   type CodexItem = codex.CodexItem
   val CodexItem = codex.CodexItem
   type CodexTurn = codex.CodexTurn
   type CodexUsage = codex.CodexUsage
+  type AbortSignal = codex.AbortSignal
+  type AbortController = codex.AbortController
+  val AbortController = codex.AbortController
   type SandboxMode = codex.SandboxMode
   val SandboxMode = codex.SandboxMode
   type ApprovalMode = codex.ApprovalMode
   val ApprovalMode = codex.ApprovalMode
+  type ModelReasoningEffort = codex.ModelReasoningEffort
+  val ModelReasoningEffort = codex.ModelReasoningEffort
+  type WebSearchMode = codex.WebSearchMode
+  val WebSearchMode = codex.WebSearchMode
 
   // ============================================================================
   // Helper Functions

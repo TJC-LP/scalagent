@@ -38,7 +38,7 @@ src/com/tjclp/scalagent/interop/
   codex/
 ```
 
-The exact names may change. The important part is the separation between core semantics and backend interpreters.
+The exact names may change. The important part is the separation between core semantics and backend interpreters. (VISION.md uses "harness" as the strategic term; "interpreter" is the code-level realization.)
 
 ---
 

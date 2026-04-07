@@ -124,6 +124,7 @@ Bridges one-shot `Agent.run` to stateful session management. Carries `ContextKer
 
 | Gap | Severity | Notes |
 |---|---|---|
+| Directory scope — symlink enforcement is best-effort | Low | `PreToolUse` hook enforces path boundaries for all file tools (Read/Write/Edit/Grep/Glob/Bash). Lexical path checks always work; symlink checks require the target filesystem to exist. For air-gapped enforcement of symlink escapes, consider layering OS-level sandboxing. |
 | MCP resources/prompts implementation blocked | Medium | SDK doesn't expose them yet |
 | A2AServerAdapter is thin | Medium | Real DSL-backed executor exists, but transport still reuses the existing A2A server stack |
 | Capture checking + ZIO macro conflict | Low | Workaround: separate files. CC is experimental. |

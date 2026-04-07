@@ -64,3 +64,25 @@ class DelegationSpec extends munit.FunSuite:
     val surface = ToolSurface(Nil, List(ToolName.Read, ToolName.Grep))
     val combined = surface ++ surface
     assertEquals(combined.allowedTools, List(ToolName.Read, ToolName.Grep))
+
+  // --- ToolSurface presets ---
+
+  test("ToolSurface.none is empty"):
+    assert(ToolSurface.none.isEmpty)
+    assertEquals(ToolSurface.none, ToolSurface.empty)
+
+  test("ToolSurface.readOnlyAll contains only read-only tools"):
+    import com.tjclp.scalagent.tools.ToolName
+    assert(ToolSurface.readOnlyAll.isReadOnlyCompatible)
+    assert(ToolSurface.readOnlyAll.allowedTools.contains(ToolName.WebFetch))
+
+  test("ToolSurface.standard includes Write but not Bash"):
+    import com.tjclp.scalagent.tools.ToolName
+    assert(!ToolSurface.standard.allowedTools.contains(ToolName.Bash))
+    assert(ToolSurface.standard.allowedTools.contains(ToolName.Write))
+    assert(ToolSurface.standard.allowedTools.contains(ToolName.Edit))
+
+  test("ToolSurface.allBuiltins includes Bash"):
+    import com.tjclp.scalagent.tools.ToolName
+    assert(ToolSurface.allBuiltins.allowedTools.contains(ToolName.Bash))
+    assert(!ToolSurface.allBuiltins.isEmpty)

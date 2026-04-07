@@ -40,6 +40,7 @@ object DslReviewExample extends ZIOAppDefault:
 
     val program = for
       claudeAgent <- ZIO.service[ClaudeAgent]
+      // No tools needed — both agents do pure Q&A with safe default (no tools)
       answerAgent = ClaudeInterpreter.string(claudeAgent, baseOptions)
       reviewAgent = ClaudeInterpreter.typed[ReviewJudgment](claudeAgent, baseOptions.withMaxTurns(2))
 

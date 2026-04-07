@@ -34,6 +34,7 @@ object DslBasicExample extends ZIOAppDefault:
 
     val program = for
       claudeAgent <- ZIO.service[ClaudeAgent]
+      // No tools needed for Q&A — safe default (no tools) applies
       agent = ClaudeInterpreter.string(claudeAgent, baseOptions)
 
       // --- One-shot query ---
