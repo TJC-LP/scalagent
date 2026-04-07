@@ -1,0 +1,30 @@
+//| mill-version: 1.1.5
+//| mill-jvm-version: system
+//| mvnDeps:
+//| - com.tjclp::mill-bun_mill1:0.2.0
+
+package build
+
+import mill.*, scalalib.*
+import mill.scalajslib.api.*
+import mill.scalajslib.bun.*
+
+// A standalone consumer of the published Scalagent JAR.
+// No bunDeps, no npmDeps, no package.json — all JS dependencies
+// are resolved automatically from the JAR's embedded manifest
+// (META-INF/bun/bun-dependencies.json).
+object app extends BunScalaJSModule {
+  def scalaVersion = "3.8.3"
+  override def moduleKind = Task { ModuleKind.ESModule }
+
+  // Published Scalagent JAR — its bun-dependencies.json manifest
+  // supplies @anthropic-ai/claude-agent-sdk, zod, etc. automatically.
+  def mvnDeps = Seq(
+    mvn"com.tjclp::scalagent_sjs1:0.5.1-SNAPSHOT",
+    mvn"dev.zio::zio::2.1.24"
+  )
+
+  override def moduleDir = build.moduleDir
+  override def sources = Task.Sources(moduleDir / "src")
+  override def bunBundleTarget = Task { "bun" }
+}
