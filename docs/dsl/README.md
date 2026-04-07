@@ -6,6 +6,8 @@ Status: exploratory.
 
 This folder scopes that direction. These documents are design notes, not a promise of immediate breaking changes.
 
+This DSL work serves the framework's mission-critical positioning (see `docs/VISION.md`): typed authority boundaries, auditable execution, and deterministic lifecycle behavior for defense and regulated environments.
+
 ## Goals
 
 - Make agent semantics explicit: typed input/output, event traces, execution policy, budgets, delegation, and utility.

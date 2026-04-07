@@ -193,6 +193,34 @@ object HookOutput:
         )
         .asInstanceOf[js.Object]
 
+  /** Make a permission decision for a tool call (for PreToolUse hooks).
+    *
+    * Unlike `Block` (which stops the agent session), this denies the specific
+    * tool call via `hookSpecificOutput.permissionDecision` and lets the agent
+    * continue with alternative approaches.
+    *
+    * @param allow
+    *   Whether to allow the tool call
+    * @param reason
+    *   Reason for the decision (shown to the model)
+    * @param systemMessage
+    *   Optional message to inject into the conversation
+    */
+  final case class ToolPermission(
+      allow: Boolean,
+      reason: Option[String] = None,
+      systemMessage: Option[String] = None
+  ) extends HookOutput:
+    def toRaw: js.Object =
+      val specific = js.Dynamic.literal(
+        hookEventName = "PreToolUse",
+        permissionDecision = if allow then "allow" else "deny"
+      )
+      reason.foreach(r => specific.permissionDecisionReason = r)
+      val obj = js.Dynamic.literal(hookSpecificOutput = specific)
+      systemMessage.foreach(msg => obj.systemMessage = msg)
+      obj.asInstanceOf[js.Object]
+
   // Convenience constructors
 
   /** Continue execution without any modifications */
@@ -215,6 +243,13 @@ object HookOutput:
 
   /** Continue with watch paths for CwdChanged/FileChanged hooks */
   def withWatchPaths(paths: List[String]): HookOutput = WatchPaths(paths)
+
+  /** Allow a tool call (for PreToolUse hooks) */
+  val allowTool: HookOutput = ToolPermission(allow = true)
+
+  /** Deny a tool call with reason (for PreToolUse hooks) */
+  def denyTool(reason: String): HookOutput =
+    ToolPermission(allow = false, reason = Some(reason))
 
   /** Return worktree path for WorktreeCreate hooks */
   def worktreePath(path: String): HookOutput = WorktreePath(path)

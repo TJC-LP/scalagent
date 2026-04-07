@@ -172,3 +172,16 @@ class ClaudeInterpreterSpec extends FunSuite:
     runTask(program).map { wasInterrupted =>
       assert(wasInterrupted)
     }
+
+  test("string interpreter defaults to no tools when none declared"):
+    val program =
+      for
+        claude  <- ZIO.service[ClaudeAgent]
+        agent    = ClaudeInterpreter.string(claude)
+        _       <- ZIO.scoped(agent.run((), "hello", ExecutionPolicy.unbounded).result)
+        options <- TestClaudeAgent.getOptions
+      yield options.headOption
+
+    runTask(program.provide(TestClaudeAgent.withResult("ok"))).map { maybeOpts =>
+      assertEquals(maybeOpts.flatMap(_.allowedTools), Some(Nil))
+    }

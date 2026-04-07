@@ -74,6 +74,7 @@ object DslCrossProviderExample extends ZIOAppDefault:
       Utility.simplicityBiased -> 0.2
     )
 
+    // No tools needed — both agents do pure Q&A with safe default (no tools)
     val program = for
       claudeAgent <- ZIO.service[ClaudeAgent].map { ca =>
         ClaudeInterpreter.string(ca, claudeOptions)

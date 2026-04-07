@@ -72,11 +72,50 @@ object ToolSurface:
   ): ToolSurface =
     ToolSurface(tools, allowedTools)
 
-  /** Built-in read-only Claude tools. */
+  /** No tools. Alias for `empty` with explicit intent. */
+  val none: ToolSurface = empty
+
+  /** Read-only file tools: Read, Grep, Glob. */
   val readOnlyBuiltins: ToolSurface =
     ToolSurface(
       tools = Nil,
       allowedTools = List(ToolName.Read, ToolName.Grep, ToolName.Glob)
+    )
+
+  /** All read-only built-in tools (file, web, IDE). */
+  val readOnlyAll: ToolSurface =
+    ToolSurface(
+      tools = Nil,
+      allowedTools = List(
+        ToolName.Read, ToolName.Grep, ToolName.Glob,
+        ToolName.WebFetch, ToolName.WebSearch,
+        ToolName.TaskOutput, ToolName.LSP, ToolName.GetDiagnostics,
+        ToolName.McpResolveLibraryId, ToolName.McpGetLibraryDocs
+      )
+    )
+
+  /** Standard dev tools: read-only + Write + Edit (no Bash). */
+  val standard: ToolSurface =
+    ToolSurface(
+      tools = Nil,
+      allowedTools = readOnlyBuiltins.allowedTools ++ List(
+        ToolName.Write, ToolName.Edit, ToolName.NotebookEdit
+      )
+    )
+
+  /** All built-in tools including Bash. Explicit opt-in to full access. */
+  val allBuiltins: ToolSurface =
+    ToolSurface(
+      tools = Nil,
+      allowedTools = List(
+        ToolName.Read, ToolName.Write, ToolName.Edit, ToolName.Glob, ToolName.Grep,
+        ToolName.NotebookEdit, ToolName.Bash, ToolName.Task,
+        ToolName.WebFetch, ToolName.WebSearch,
+        ToolName.TodoWrite, ToolName.AskUserQuestion,
+        ToolName.EnterPlanMode, ToolName.ExitPlanMode,
+        ToolName.KillShell, ToolName.TaskOutput, ToolName.SlashCommand, ToolName.Skill,
+        ToolName.LSP, ToolName.GetDiagnostics
+      )
     )
 
   private[core] def matchesDefName(toolName: ToolName, keptNames: Set[String]): Boolean =

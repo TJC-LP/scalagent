@@ -7,15 +7,15 @@ import com.tjclp.scalagent.core.*
 import com.tjclp.scalagent.codex.*
 import com.tjclp.scalagent.interop.codex.CodexInterpreter
 
-/** DSL Codex example: same Agent trait, different provider.
-  *
-  * Demonstrates:
-  * - CodexClient.create() — wraps the OpenAI Codex SDK
-  * - CodexInterpreter.string() — Agent[Any, String, String] backed by Codex
-  * - CodexInterpreter.builder() — capability-typed Codex agent
-  * - Same ExecutionPolicy, AgentEvent, TraceSummary, Evaluation pipeline
-  *
-  * Run with: ./mill examples.go --example dsl-codex
+  /** DSL Codex example: same Agent trait, different provider.
+    *
+    * Demonstrates:
+    * - CodexClient.create() — wraps the OpenAI Codex SDK
+    * - CodexInterpreter.string() — Agent[Any, CodexInput, String] backed by Codex
+    * - CodexInterpreter.sandboxedBuilder() — explicit Codex sandbox builder
+    * - Same ExecutionPolicy, AgentEvent, TraceSummary, Evaluation pipeline
+    *
+    * Run with: ./mill examples.go --example dsl-codex
   *
   * Requires: codex CLI installed (brew install openai-codex or npm i -g @openai/codex)
   * Requires: OPENAI_API_KEY environment variable
@@ -74,13 +74,12 @@ object DslCodexExample extends ZIOAppDefault:
       _ <- Console.printLine(s"  Success: ${trace.isSuccess}").orDie
       _ <- logger.logEvaluation(eval)
 
-      // --- Builder with read-only sandbox ---
-      _ <- Console.printLine("\n=== Codex Builder (ReadOnly sandbox) ===").orDie
-      readOnlyAgent = CodexInterpreter.builder(client, threadOptions)
-        .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
+      // --- Builder with explicit read-only sandbox ---
+      _ <- Console.printLine("\n=== Codex Builder (explicit ReadOnly sandbox) ===").orDie
+      readOnlyAgent = CodexInterpreter.sandboxedBuilder(client, SandboxMode.ReadOnly, threadOptions)
         .withBudget
         .build
-      // Type: TypedAgent[Any, String, String, CanUseTools[ReadOnlyTools] & HasBudget]
+      // Type: TypedAgent[Any, CodexInput, String, HasBudget]
 
       builderResult <- ZIO.scoped {
         readOnlyAgent
@@ -91,8 +90,9 @@ object DslCodexExample extends ZIOAppDefault:
 
       // --- Provider interchangeability proof ---
       _ <- Console.printLine("\n=== Provider Independence ===").orDie
-      _ <- Console.printLine("  Both agents implement Agent[Any, String, String]").orDie
+      _ <- Console.printLine("  Both agents can be used anywhere Agent[Any, String, String] is expected").orDie
+      _ <- Console.printLine("  Codex also accepts multimodal CodexInput when you need images").orDie
       _ <- Console.printLine("  Same ExecutionPolicy, AgentEvent, TraceSummary, Evaluation").orDie
-      _ <- Console.printLine("  Same AgentBuilder with CanUseTools[ReadOnlyTools] & HasBudget").orDie
+      _ <- Console.printLine("  Explicit Codex sandbox selection avoids pretending there is per-tool allowlisting").orDie
       _ <- Console.printLine("  Zero changes to core/ — only interop/codex/ is new").orDie
     yield ()

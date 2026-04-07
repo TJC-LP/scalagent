@@ -578,15 +578,34 @@ val trace = TraceSummary.fromEvents(events)
 val eval = Evaluation.fromTrace("user", output, trace, utility)
 ```
 
-Builder works too — `sandboxMode` maps from capability types:
+Builder works too. Prefer the explicit Codex sandbox builder when you want the runtime posture to be obvious:
 
 ```scala
-val readOnlyAgent = CodexInterpreter.builder(client, threadOptions)
-  .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
+val readOnlyAgent = CodexInterpreter.sandboxedBuilder(
+  client,
+  SandboxMode.ReadOnly,
+  threadOptions
+)
   .withBudget
   .build
-// sandboxMode = ReadOnly (derived from CanUseTools[ReadOnlyTools])
+// sandboxMode = ReadOnly (explicit)
 ```
+
+Low-level Codex parity also includes turn-local output schemas and multimodal input:
+
+```scala
+val thread = client.startThread(threadOptions)
+
+val turn = thread.run(
+  List(
+    CodexInputItem.Text("Describe the screenshots"),
+    CodexInputItem.LocalImage("./ui.png")
+  ),
+  CodexTurnOptions(outputSchema = Some(schema))
+)
+```
+
+If you do use the shared capability builder methods, Codex treats them as a compatibility fallback for sandbox inference only. The upstream Codex SDK still does not expose Claude-style per-tool allowlists or MCP tool registration.
 
 **Live example:** `./mill examples.run dsl-codex`
 

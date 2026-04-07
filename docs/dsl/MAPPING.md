@@ -270,7 +270,7 @@ The Codex interpreter (`interop/codex/`) validates that the mapping is provider-
 | `Thread` (JS class) | `CodexThread` (Scala wrapper) |
 | `ThreadEvent` (8 event types) | `CodexEvent` ADT → `AgentEvent` via `CodexEventMapper` |
 | `ThreadItem` (8 item types) | `CodexItem` ADT → `AgentEvent` via `CodexEventMapper` |
-| `ThreadOptions.sandboxMode` | `CanUseTools[ReadOnlyTools]` → `ReadOnly`, `CanUseTools[CustomTools]` → `WorkspaceWrite` |
+| `ThreadOptions.sandboxMode` | explicit `CodexThreadOptions.sandboxMode` or fallback inference from declared tool surface (`ReadOnlyTools` → `ReadOnly`, writable surfaces → `WorkspaceWrite`, `withAllTools` → `DangerFullAccess`) |
 | `Turn.usage` (token counts) | `AgentEvent.Native("codex.usage", ...)` (no USD cost) |
 | `Turn.finalResponse` | `AgentRun.result: IO[AgentError, String]` |
 
@@ -280,7 +280,7 @@ The Codex interpreter (`interop/codex/`) validates that the mapping is provider-
 |---|---|---|
 | `ClaudeInterpreter` | Claude Agent SDK | `string()`, `typed[A]()`, `builder()`, `typedBuilder[A]()` |
 | `A2AInterpreter` | A2A Protocol | `fromClient()`, `discover(url)` |
-| `CodexInterpreter` | OpenAI Codex SDK | `string()`, `builder()` |
+| `CodexInterpreter` | OpenAI Codex SDK | `string()`, `typed[A]()`, `builder()`, `sandboxedBuilder()`, `typedBuilder[A]()`, `typedSandboxedBuilder[A]()` |
 | `McpToolLoader` | MCP | `fromTools()`, `toServerConfig()` |
 
 ## What This Mapping Tells Us

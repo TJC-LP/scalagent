@@ -77,6 +77,14 @@ object CanUseTool:
       ZIO.succeed(PermissionResult.deny(s"Tool ${toolName.raw} is blocked"))
     else ZIO.succeed(PermissionResult.allow)
 
+  /** Compose two callbacks: first runs, and if it denies, short-circuit. Otherwise delegate to second. */
+  def compose(first: CanUseTool, second: CanUseTool): CanUseTool =
+    (toolName, input, ctx) =>
+      first(toolName, input, ctx).flatMap {
+        case deny: PermissionResult.Deny => ZIO.succeed(deny)
+        case _                           => second(toolName, input, ctx)
+      }
+
   /** Convert a Scala CanUseTool handler to JavaScript function for SDK.
     *
     * This bridges the ZIO-based handler to the SDK's expected JS function format.

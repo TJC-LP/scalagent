@@ -84,6 +84,53 @@ class ClaudeBuilderSpec extends FunSuite:
       assert(allowed.contains(ToolName.Glob))
     }
 
+  test("builder with no tools passes empty allowedTools to provider"):
+    val program =
+      for
+        claude <- ZIO.service[ClaudeAgent]
+        agent = ClaudeInterpreter.builder(claude).build
+        _ <- ZIO.scoped(agent.run((), "hello").result)
+        options <- TestClaudeAgent.getOptions
+      yield options.headOption
+
+    runTask(program.provide(TestClaudeAgent.withResult("ok"))).map { maybeOpts =>
+      assertEquals(maybeOpts.flatMap(_.allowedTools), Some(Nil))
+    }
+
+  test("withWorkingDirectory wires cwd into AgentOptions"):
+    val program =
+      for
+        claude <- ZIO.service[ClaudeAgent]
+        agent = ClaudeInterpreter.builder(claude)
+          .withWorkingDirectory("/data/reports")
+          .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
+          .build
+        _ <- ZIO.scoped(agent.run((), "hello").result)
+        options <- TestClaudeAgent.getOptions
+      yield options.headOption
+
+    runTask(program.provide(TestClaudeAgent.withResult("ok"))).map { maybeOpts =>
+      assertEquals(maybeOpts.flatMap(_.cwd), Some("/data/reports"))
+    }
+
+  test("withWorkingDirectory and withAdditionalDirectory wire both into AgentOptions"):
+    val program =
+      for
+        claude <- ZIO.service[ClaudeAgent]
+        agent = ClaudeInterpreter.builder(claude)
+          .withWorkingDirectory("/data/reports")
+          .withAdditionalDirectory("/data/shared")
+          .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
+          .build
+        _ <- ZIO.scoped(agent.run((), "hello").result)
+        options <- TestClaudeAgent.getOptions
+      yield options.headOption
+
+    runTask(program.provide(TestClaudeAgent.withResult("ok"))).map { maybeOpts =>
+      assertEquals(maybeOpts.flatMap(_.cwd), Some("/data/reports"))
+      assertEquals(maybeOpts.map(_.additionalDirectories).getOrElse(Nil), List("/data/shared"))
+    }
+
   test("withReadOnlyTools rejects non-read-only allowlists"):
     intercept[IllegalArgumentException] {
       AgentBuilder(new Agent[Any, String, String]:
