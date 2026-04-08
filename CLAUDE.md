@@ -266,7 +266,6 @@ def bunDeps = Task { Seq(
 The `agent` module mixes in `BunPublishModule`, which embeds
 `META-INF/bun/bun-dependencies.json` in the published JAR. Downstream consumers
 get all npm deps resolved automatically with no manual `bun install` or `bunDeps`.
-See `standalone-example/` for a working demo.
 
 ## Examples
 
@@ -284,18 +283,6 @@ See `standalone-example/` for a working demo.
 ./mill examples.run macro            # @Tool macro-derived tools
 ./mill examples.run -- --help        # List all available examples
 ```
-
-### Standalone consumer
-
-Requires `./mill agent.publishLocal` first (uses SNAPSHOT from local ivy).
-
-```bash
-cd standalone-example
-COURSIER_REPOSITORIES="ivy2Local|central" ./mill app.compile
-COURSIER_REPOSITORIES="ivy2Local|central" ./mill app.fastLinkJS
-```
-
-Zero `bunDeps` — all JS deps flow from the Scalagent JAR manifest.
 
 ## Bun / JS Context
 
