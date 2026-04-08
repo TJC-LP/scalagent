@@ -3,7 +3,7 @@
 Type-safe agent execution for mission-critical environments.
 Scala 3 + ZIO on the battle-tested TypeScript agent ecosystem.
 
-> SDK baseline `@anthropic-ai/claude-agent-sdk@^0.2.90` | Scalagent `0.5.0` | Scala `3.8.3` | Bun or Node.js 18+
+> SDK baseline `@anthropic-ai/claude-agent-sdk@^0.2.90` | Scalagent `0.6.0` | Scala `3.8.3` | Bun or Node.js 18+
 
 ```scala
 import com.tjclp.scalagent.*
@@ -188,13 +188,13 @@ val agent = ClaudeInterpreter.builder(claudeAgent)
 ### Mill
 
 ```scala
-ivy"com.tjclp::scalagent::0.5.0"
+ivy"com.tjclp::scalagent::0.6.0"
 ```
 
 ### SBT
 
 ```scala
-libraryDependencies += "com.tjclp" %%% "scalagent" % "0.5.0"
+libraryDependencies += "com.tjclp" %%% "scalagent" % "0.6.0"
 ```
 
 ### Maven
@@ -203,7 +203,7 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.5.0"
 <dependency>
   <groupId>com.tjclp</groupId>
   <artifactId>scalagent_sjs1_3</artifactId>
-  <version>0.5.0</version>
+  <version>0.6.0</version>
 </dependency>
 ```
 
