@@ -287,6 +287,8 @@ See `standalone-example/` for a working demo.
 
 ### Standalone consumer
 
+Requires `./mill agent.publishLocal` first (uses SNAPSHOT from local ivy).
+
 ```bash
 cd standalone-example
 COURSIER_REPOSITORIES="ivy2Local|central" ./mill app.compile

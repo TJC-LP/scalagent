@@ -19,11 +19,13 @@ object app extends BunScalaJSModule {
 
   // Published Scalagent JAR — its bun-dependencies.json manifest
   // supplies @anthropic-ai/claude-agent-sdk, zod, etc. automatically.
+  // TODO: Update to release version after next publish (e.g. 0.5.1)
   def mvnDeps = Seq(
     mvn"com.tjclp::scalagent_sjs1:0.5.1-SNAPSHOT",
     mvn"dev.zio::zio::2.1.24"
   )
 
+  // Single-module project: the build root is the module root.
   override def moduleDir = build.moduleDir
   override def sources = Task.Sources(moduleDir / "src")
   override def bunBundleTarget = Task { "bun" }

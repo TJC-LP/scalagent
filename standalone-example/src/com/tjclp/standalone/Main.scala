@@ -11,7 +11,7 @@ import com.tjclp.scalagent.interop.claude.ClaudeInterpreter
 // No package.json, no manual `bun install`, no bunDeps declaration.
 object Main extends ZIOAppDefault:
 
-  val run: ZIO[Any, Any, Unit] =
+  val run =
     val options = AgentOptions.default
       .withModel(Model.haiku)
       .withPermissionMode(PermissionMode.DontAsk)
