@@ -623,3 +623,52 @@ class AgentOptionsSpec extends FunSuite:
 
   test("PermissionMode handles unsupported delegate as Custom"):
     assertEquals(PermissionMode.fromString("delegate"), PermissionMode.Custom("delegate"))
+
+  // ============================================
+  // Runtime Configuration Fields (SDK 0.2.113)
+  // ============================================
+
+  test("withTitle sets the session title"):
+    val opts = AgentOptions.default.withTitle("My Custom Session")
+    assertEquals(opts.title, Some("My Custom Session"))
+
+  test("toRaw emits title when set"):
+    val opts = AgentOptions.default.withTitle("Hello")
+    val raw = opts.toRaw.asInstanceOf[scala.scalajs.js.Dynamic]
+    assertEquals(raw.title.asInstanceOf[String], "Hello")
+
+  test("toRaw omits title when unset"):
+    val opts = AgentOptions.default
+    val raw = opts.toRaw.asInstanceOf[scala.scalajs.js.Dynamic]
+    assert(raw.title.asInstanceOf[scala.scalajs.js.UndefOr[String]].isEmpty)
+
+  // ============================================
+  // MCP per-tool permission policy (SDK 0.2.111)
+  // ============================================
+
+  test("McpServerConfig.HTTP emits per-tool permission_policy when configured"):
+    val cfg = McpServerConfig.HTTP(
+      url = "https://mcp.example.com",
+      tools = List(
+        McpServerToolPolicy(ToolName.fromString("read_doc"), McpToolPolicy.AlwaysAllow),
+        McpServerToolPolicy(ToolName.fromString("delete_doc"), McpToolPolicy.AlwaysDeny)
+      )
+    )
+    val raw = cfg.toRaw.asInstanceOf[scala.scalajs.js.Dynamic]
+    assertEquals(raw.`type`.asInstanceOf[String], "http")
+    val tools = raw.tools.asInstanceOf[scala.scalajs.js.Array[scala.scalajs.js.Dynamic]]
+    assertEquals(tools.length, 2)
+    assertEquals(tools(0).name.asInstanceOf[String], "read_doc")
+    assertEquals(tools(0).permission_policy.asInstanceOf[String], "always_allow")
+    assertEquals(tools(1).permission_policy.asInstanceOf[String], "always_deny")
+
+  test("McpServerConfig.SSE omits tools key when none configured"):
+    val cfg = McpServerConfig.SSE(url = "https://sse.example.com")
+    val raw = cfg.toRaw.asInstanceOf[scala.scalajs.js.Dynamic]
+    assert(raw.tools.asInstanceOf[scala.scalajs.js.UndefOr[scala.scalajs.js.Any]].isEmpty)
+
+  test("McpToolPolicy.fromString is forward-compatible"):
+    assertEquals(McpToolPolicy.fromString("always_allow"), McpToolPolicy.AlwaysAllow)
+    assertEquals(McpToolPolicy.fromString("always_ask"), McpToolPolicy.AlwaysAsk)
+    assertEquals(McpToolPolicy.fromString("always_deny"), McpToolPolicy.AlwaysDeny)
+    assertEquals(McpToolPolicy.fromString("future_value"), McpToolPolicy.Custom("future_value"))

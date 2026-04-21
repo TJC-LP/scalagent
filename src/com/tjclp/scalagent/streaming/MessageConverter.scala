@@ -219,6 +219,10 @@ object MessageConverter:
             sessionId = requiredSessionId(obj, raw)
           )
         }
+      case Some("mirror_error") =>
+        guardTopLevelUnknown(raw, "system", Some("mirror_error"), context) {
+          parseMirrorError(obj, raw)
+        }
       case other =>
         AgentMessage.System(
           event = parseSystemEvent(obj, raw, other, context),
@@ -256,6 +260,9 @@ object MessageConverter:
         }
       case Some("session_state_changed") => guardedSystemEvent(raw, context, subtype) {
           parseSessionStateChangedEvent(obj)
+        }
+      case Some("memory_recall") => guardedSystemEvent(raw, context, subtype) {
+          parseMemoryRecallEvent(obj, raw)
         }
       case other =>
         SystemEvent.Unknown(unknownEnvelope(raw, "system", other, context))
@@ -626,6 +633,29 @@ object MessageConverter:
     SystemEvent.SessionStateChanged(
       state = SdkSessionState.fromString(stateStr)
     )
+
+  private def parseMirrorError(obj: js.Dynamic, raw: Json): AgentMessage.MirrorError =
+    val key = requiredDynamic(obj, "key", raw, "system.mirror_error.key")
+    AgentMessage.MirrorError(
+      error = requiredString(obj, "error", raw),
+      projectKey = requiredString(key, "projectKey", raw),
+      mirroredSessionId = SessionId(requiredString(key, "sessionId", raw)),
+      subpath = stringField(key, "subpath"),
+      uuid = requiredUuid(obj, raw),
+      sessionId = requiredSessionId(obj, raw)
+    )
+
+  private def parseMemoryRecallEvent(obj: js.Dynamic, raw: Json): SystemEvent.MemoryRecall =
+    val mode = MemoryRecallMode.fromString(requiredString(obj, "mode", raw))
+    val memories = dynamicArrayField(obj, "memories").flatMap { mem =>
+      for path <- stringField(mem, "path")
+      yield RecalledMemory(
+        path = path,
+        scope = stringField(mem, "scope").map(MemoryScope.fromString).getOrElse(MemoryScope.Custom("")),
+        content = stringField(mem, "content")
+      )
+    }
+    SystemEvent.MemoryRecall(mode = mode, memories = memories)
 
   private def parseMcpServer(server: js.Dynamic): Option[McpServerStatus] =
     for

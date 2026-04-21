@@ -1,6 +1,6 @@
 # Compatibility Matrix
 
-Baseline: `@anthropic-ai/claude-agent-sdk` `^0.2.90`
+Baseline: `@anthropic-ai/claude-agent-sdk` `^0.2.116`, `@openai/codex-sdk` `^0.122.0`
 
 This document tracks the current compatibility posture of `scalagent` against the installed TypeScript SDK baseline.
 
@@ -14,6 +14,13 @@ This document tracks the current compatibility posture of `scalagent` against th
 | `TaskProgress.summary` | Exact mirror | AI-generated progress summary text on task_progress events. |
 | `ModelInfo.supportsAutoMode` | Exact mirror | Whether a model supports auto mode. |
 | `gcpAuthRefresh` | Exact mirror | GCP authentication refresh command. |
+| `Options.title` (SDK 0.2.113) | Exact mirror | Top-level session title option; `AgentOptions.withTitle(...)`. |
+| `SDKUserMessage.shouldQuery` (SDK 0.2.110) | Exact mirror | `QueryStream.streamUserMessage(..., shouldQuery = Some(false))` appends without triggering a turn. |
+| `SDKStatus.requesting` (SDK 0.2.108) | Exact mirror | New `SdkStatus.Requesting` variant on status system events. |
+| `system/memory_recall` (SDK 0.2.105) | Exact mirror | `SystemEvent.MemoryRecall(mode, memories)` with `MemoryRecallMode` and `MemoryScope` enums. |
+| `system/mirror_error` (SDK 0.2.113) | Exact mirror | `AgentMessage.MirrorError(error, projectKey, mirroredSessionId, subpath, ...)`. |
+| `McpServerToolPolicy` on remote configs (SDK 0.2.111) | Exact mirror | `McpServerConfig.{HTTP,SSE}.tools` carries per-tool `McpToolPolicy`. |
+| `Model.Opus4_7` / `EffortLevel.xhigh` (SDK 0.2.111) | Exact mirror | `Model.Opus4_7` + `Effort.XHigh`; `Model.opus` alias updated. |
 | Top-level `Options.skills` | Scala-only compatibility shim | The installed SDK typings do not expose top-level `skills`; `AgentOptions.withSkills(...)` prefers a synthesized or augmented main agent, then falls back to prompt injection when needed. |
 | `AgentDefinition.skills` | Exact mirror | Passed through natively and used as the preferred compatibility path for preloaded skills. |
 | `Query` lifecycle | Adapted mirror | Wrapped by `QueryStream`, which preserves SDK control methods and adds cleanup-aware `ZStream` semantics plus idempotent `close()`. |
@@ -88,13 +95,24 @@ The following checks currently guard compatibility-sensitive behavior:
 - `test/src/com/tjclp/scalagent/QueryCollectionSpec.scala`
 - `test/src/com/tjclp/scalagent/config/AgentOptionsSpec.scala`
 
+## Breaking Changes in the SDK Baseline
+
+The `options.env` semantic changed between SDK 0.2.111 and 0.2.113. As of the current baseline,
+**passing a non-empty `env` map replaces `process.env` for the Claude Code subprocess** (it does
+not overlay). Callers that need to retain inherited variables must spread them explicitly, e.g.
+`sys.env ++ Map("MY_VAR" -> "x")`. The same semantic applies to `CodexClientOptions.env` in the
+Codex SDK.
+
 ## Deferred Fields
 
-The following SDK fields are not yet exposed in the Scala facades due to complex type requirements:
+The following SDK fields are not yet exposed in the Scala facades:
 
 | Field | Reason |
 |-------|--------|
 | `onElicitation` | Requires `ElicitationRequest`/`ElicitationResult` facade types and async Promise bridging with AbortSignal |
 | `spawnClaudeCodeProcess` | Requires `SpawnOptions`/`SpawnedProcess` facades with Node.js stream types (Readable, Writable) |
+| `sessionStore` / `SessionStore` / `InMemorySessionStore` / `importSessionToStore()` / `deleteSession()` (SDK 0.2.113) | Requires a ZIO-friendly `SessionStore[F]` abstraction and reference in-memory port — tracked as a follow-up PR, not a version-bump item. |
+| OpenTelemetry trace context propagation (SDK 0.2.113) | Requires a zio-telemetry vs raw `@opentelemetry/api` integration decision — follow-up PR. |
+| `startup()` + `WarmQuery` (SDK 0.2.111) | Additive pre-warm; existing lazy `ClaudeAgent` construction already covers the need. |
 
 When bumping the SDK baseline, update this document alongside the relevant tests.

@@ -93,9 +93,13 @@ class ModelSpec extends FunSuite:
   // ============================================
 
   test("convenience aliases point to current generation models"):
-    assertEquals(Model.opus, Model.Opus4_6)
+    assertEquals(Model.opus, Model.Opus4_7)
     assertEquals(Model.sonnet, Model.Sonnet4_6)
     assertEquals(Model.haiku, Model.Haiku4_5)
+
+  test("Opus 4.7 maps to claude-opus-4-7 (SDK 0.2.111+)"):
+    assertEquals(Model.Opus4_7.id, "claude-opus-4-7")
+    assertEquals(Model.fromId("claude-opus-4-7"), Model.Opus4_7)
 
   test("default model is Sonnet4_6"):
     assertEquals(Model.default, Model.Sonnet4_6)

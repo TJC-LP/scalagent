@@ -434,3 +434,88 @@ class MessageConverterSpec extends FunSuite:
         assertEquals(tp.summary, Some("Reviewing authentication module for security issues"))
       case other =>
         fail(s"Expected TaskProgress, got: $other")
+
+  test("parses system/status with 'requesting' (SDK 0.2.108+)"):
+    val raw = js.Dynamic.literal(
+      `type` = "system",
+      subtype = "status",
+      status = "requesting",
+      uuid = "msg-req",
+      session_id = "session-1"
+    )
+
+    MessageConverter.fromRaw(raw) match
+      case AgentMessage.System(SystemEvent.Status(status, _), _, _) =>
+        assertEquals(status, Some(SdkStatus.Requesting))
+      case other =>
+        fail(s"Expected Status event, got: $other")
+
+  test("parses system/memory_recall 'select' event (SDK 0.2.105+)"):
+    val raw = js.Dynamic.literal(
+      `type` = "system",
+      subtype = "memory_recall",
+      mode = "select",
+      memories = js.Array(
+        js.Dynamic.literal(path = "/home/user/.claude/memory/a.md", scope = "personal"),
+        js.Dynamic.literal(path = "/team/memory/b.md", scope = "team")
+      ),
+      uuid = "msg-mem",
+      session_id = "session-1"
+    )
+
+    MessageConverter.fromRaw(raw) match
+      case AgentMessage.System(SystemEvent.MemoryRecall(mode, memories), _, _) =>
+        assertEquals(mode, MemoryRecallMode.Select)
+        assertEquals(memories.size, 2)
+        assertEquals(memories.head.path, "/home/user/.claude/memory/a.md")
+        assertEquals(memories.head.scope, MemoryScope.Personal)
+        assertEquals(memories(1).scope, MemoryScope.Team)
+        assertEquals(memories.head.content, None)
+      case other =>
+        fail(s"Expected MemoryRecall event, got: $other")
+
+  test("parses system/memory_recall 'synthesize' event with content"):
+    val raw = js.Dynamic.literal(
+      `type` = "system",
+      subtype = "memory_recall",
+      mode = "synthesize",
+      memories = js.Array(
+        js.Dynamic.literal(
+          path = "<synthesis:/memory>",
+          scope = "personal",
+          content = "Distilled memory paragraph."
+        )
+      ),
+      uuid = "msg-mem-syn",
+      session_id = "session-1"
+    )
+
+    MessageConverter.fromRaw(raw) match
+      case AgentMessage.System(SystemEvent.MemoryRecall(mode, memories), _, _) =>
+        assertEquals(mode, MemoryRecallMode.Synthesize)
+        assertEquals(memories.head.content, Some("Distilled memory paragraph."))
+      case other =>
+        fail(s"Expected MemoryRecall synthesize event, got: $other")
+
+  test("parses system/mirror_error (SDK 0.2.113+)"):
+    val raw = js.Dynamic.literal(
+      `type` = "system",
+      subtype = "mirror_error",
+      error = "append timed out",
+      key = js.Dynamic.literal(
+        projectKey = "proj-1",
+        sessionId = "mirrored-session-1",
+        subpath = "transcripts/2026-04"
+      ),
+      uuid = "msg-mirror",
+      session_id = "session-1"
+    )
+
+    MessageConverter.fromRaw(raw) match
+      case me: AgentMessage.MirrorError =>
+        assertEquals(me.error, "append timed out")
+        assertEquals(me.projectKey, "proj-1")
+        assertEquals(me.mirroredSessionId.value, "mirrored-session-1")
+        assertEquals(me.subpath, Some("transcripts/2026-04"))
+      case other =>
+        fail(s"Expected MirrorError, got: $other")

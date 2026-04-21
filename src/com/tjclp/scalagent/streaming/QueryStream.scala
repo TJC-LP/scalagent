@@ -235,8 +235,15 @@ final class QueryStream private (rawQuery: RawQuery):
     *   The user message to add
     * @param priority
     *   Message priority: "now", "next", or "later" (optional)
+    * @param shouldQuery
+    *   When `Some(false)`, appends the message to the transcript without triggering an assistant turn;
+    *   it merges into the next querying user message. Requires SDK 0.2.110+.
     */
-  def streamUserMessage(message: String, priority: Option[MessagePriority] = None): Task[Unit] =
+  def streamUserMessage(
+      message: String,
+      priority: Option[MessagePriority] = None,
+      shouldQuery: Option[Boolean] = None
+  ): Task[Unit] =
     val userMsg = js.Dynamic.literal(
       `type` = "user",
       message = js.Dynamic.literal(
@@ -247,6 +254,7 @@ final class QueryStream private (rawQuery: RawQuery):
       session_id = ""
     )
     priority.foreach(p => userMsg.priority = p.toRaw)
+    shouldQuery.foreach(b => userMsg.shouldQuery = b)
     ZIO.fromPromiseJS(rawQuery.streamInput(singleMessageStream(userMsg)))
 
   private def singleMessageStream(userMsg: js.Dynamic): js.Any =
