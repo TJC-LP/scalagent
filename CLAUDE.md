@@ -258,7 +258,7 @@ mill-bun-plugin v0.2.0, which validates package specifiers at compile time:
 import mill.bun.bun
 
 def bunDeps = Task { Seq(
-  bun"@anthropic-ai/claude-agent-sdk@^0.2.90",
+  bun"@anthropic-ai/claude-agent-sdk@^0.2.116",
   bun"zod@^4.0.0"
 )}
 ```
