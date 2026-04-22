@@ -17,6 +17,9 @@ enum Effort:
   /** Deep reasoning (default) */
   case High
 
+  /** Deeper than high (Opus 4.7 only; falls back to High on other models). SDK 0.2.111+. */
+  case XHigh
+
   /** Maximum effort (Opus 4.6 only) */
   case Max
 
@@ -28,6 +31,7 @@ enum Effort:
     case Low       => "low"
     case Medium    => "medium"
     case High      => "high"
+    case XHigh     => "xhigh"
     case Max       => "max"
     case Custom(v) => v
 
@@ -39,5 +43,6 @@ object Effort:
     case "low"    => Low
     case "medium" => Medium
     case "high"   => High
+    case "xhigh"  => XHigh
     case "max"    => Max
     case other    => Custom(other)

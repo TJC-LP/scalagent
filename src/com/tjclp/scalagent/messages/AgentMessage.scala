@@ -182,6 +182,20 @@ enum AgentMessage:
       sessionId: SessionId
   )
 
+  /** SessionStore mirror-error event (SDK 0.2.113).
+    * Emitted when a transcript-mirror batch write to `SessionStore.append()`
+    * fails or times out. The batch is dropped (at-most-once delivery); this
+    * message surfaces the failure so consumers aren't silent on data loss.
+    */
+  case MirrorError(
+      error: String,
+      projectKey: String,
+      mirroredSessionId: SessionId,
+      subpath: Option[String],
+      uuid: MessageUuid,
+      sessionId: SessionId
+  )
+
   /** Forward-compatible fallback for unknown top-level SDK messages */
   case Unknown(
       envelope: UnknownEnvelope

@@ -2,6 +2,8 @@ package com.tjclp.scalagent.config
 
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
+import com.tjclp.scalagent.json.StringEnumJsonCodec
+import com.tjclp.scalagent.tools.ToolName
 import zio.json.*
 
 /** MCP (Model Context Protocol) server configuration.
@@ -19,13 +21,15 @@ enum McpServerConfig:
   /** Server-Sent Events transport */
   case SSE(
       url: String,
-      headers: Map[String, String] = Map.empty
+      headers: Map[String, String] = Map.empty,
+      tools: List[McpServerToolPolicy] = Nil
   )
 
   /** HTTP transport */
   case HTTP(
       url: String,
-      headers: Map[String, String] = Map.empty
+      headers: Map[String, String] = Map.empty,
+      tools: List[McpServerToolPolicy] = Nil
   )
 
   /** In-process SDK MCP server (created via McpServer.create) */
@@ -61,14 +65,16 @@ enum McpServerConfig:
       if env.nonEmpty then obj.env = js.Dictionary(env.toSeq*)
       obj.asInstanceOf[js.Object]
 
-    case SSE(url, headers) =>
+    case SSE(url, headers, tools) =>
       val obj = js.Dynamic.literal(`type` = "sse", url = url)
       if headers.nonEmpty then obj.headers = js.Dictionary(headers.toSeq*)
+      if tools.nonEmpty then obj.tools = tools.map(_.toRaw).toJSArray
       obj.asInstanceOf[js.Object]
 
-    case HTTP(url, headers) =>
+    case HTTP(url, headers, tools) =>
       val obj = js.Dynamic.literal(`type` = "http", url = url)
       if headers.nonEmpty then obj.headers = js.Dictionary(headers.toSeq*)
+      if tools.nonEmpty then obj.tools = tools.map(_.toRaw).toJSArray
       obj.asInstanceOf[js.Object]
 
     case Sdk(_, _, rawConfig) =>
@@ -124,3 +130,44 @@ object McpServerConfig:
   /** Create a Claude AI Proxy MCP server config (SDK 0.2.31) */
   def claudeAIProxy(url: String, id: String): McpServerConfig =
     ClaudeAIProxy(url, id)
+
+/** Per-tool permission policy for remote MCP servers (SDK 0.2.111).
+  *
+  * Carried on `mcp_set_servers` for HTTP and SSE server configs. Specifies
+  * whether a given tool is always allowed, always prompts, or always denied.
+  */
+final case class McpServerToolPolicy(
+    name: ToolName,
+    policy: McpToolPolicy
+):
+  def toRaw: js.Object =
+    js.Dynamic
+      .literal(name = name.raw, permission_policy = policy.toRaw)
+      .asInstanceOf[js.Object]
+
+object McpServerToolPolicy:
+  given JsonDecoder[McpServerToolPolicy] = DeriveJsonDecoder.gen[McpServerToolPolicy]
+  given JsonEncoder[McpServerToolPolicy] = DeriveJsonEncoder.gen[McpServerToolPolicy]
+
+/** Allowed values for a per-tool MCP permission policy (SDK 0.2.111). */
+enum McpToolPolicy:
+  case AlwaysAllow
+  case AlwaysAsk
+  case AlwaysDeny
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case AlwaysAllow  => "always_allow"
+    case AlwaysAsk    => "always_ask"
+    case AlwaysDeny   => "always_deny"
+    case Custom(v)    => v
+
+object McpToolPolicy:
+  given JsonEncoder[McpToolPolicy] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[McpToolPolicy] = StringEnumJsonCodec.decoder(fromString)
+
+  def fromString(s: String): McpToolPolicy = s match
+    case "always_allow" => AlwaysAllow
+    case "always_ask"   => AlwaysAsk
+    case "always_deny"  => AlwaysDeny
+    case other          => Custom(other)

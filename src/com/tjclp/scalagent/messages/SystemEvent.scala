@@ -77,6 +77,14 @@ enum SystemEvent:
       state: SdkSessionState
   )
 
+  /** Memory recall event (SDK 0.2.105).
+    * Emitted when the memory recall supervisor surfaces relevant memories into the turn.
+    */
+  case MemoryRecall(
+      mode: MemoryRecallMode,
+      memories: List[RecalledMemory]
+  )
+
   /** Forward-compatible fallback for unknown system events */
   case Unknown(
       envelope: UnknownEnvelope
@@ -132,10 +140,12 @@ object CompactTrigger:
 /** SDK status values */
 enum SdkStatus:
   case Compacting
+  case Requesting
   case Custom(value: String)
 
   def toRaw: String = this match
     case Compacting => "compacting"
+    case Requesting => "requesting"
     case Custom(v)  => v
 
 object SdkStatus:
@@ -144,6 +154,7 @@ object SdkStatus:
 
   def fromString(s: String): SdkStatus = s match
     case "compacting" => Compacting
+    case "requesting" => Requesting
     case other        => Custom(other)
 
 /** Source of API key */
@@ -283,6 +294,59 @@ object HookOutcome:
     case "error"     => Error
     case "cancelled" => Cancelled
     case other       => Custom(other)
+
+/** Memory recall mode (SDK 0.2.105).
+  * 'select' returns full file bodies; 'synthesize' returns a Sonnet-authored paragraph.
+  */
+enum MemoryRecallMode:
+  case Select
+  case Synthesize
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Select     => "select"
+    case Synthesize => "synthesize"
+    case Custom(v)  => v
+
+object MemoryRecallMode:
+  given JsonEncoder[MemoryRecallMode] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[MemoryRecallMode] = StringEnumJsonCodec.decoder(fromString)
+
+  def fromString(s: String): MemoryRecallMode = s match
+    case "select"     => Select
+    case "synthesize" => Synthesize
+    case other        => Custom(other)
+
+/** Memory scope (SDK 0.2.105). */
+enum MemoryScope:
+  case Personal
+  case Team
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Personal  => "personal"
+    case Team      => "team"
+    case Custom(v) => v
+
+object MemoryScope:
+  given JsonEncoder[MemoryScope] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[MemoryScope] = StringEnumJsonCodec.decoder(fromString)
+
+  def fromString(s: String): MemoryScope = s match
+    case "personal" => Personal
+    case "team"     => Team
+    case other      => Custom(other)
+
+/** A memory recalled by the supervisor (SDK 0.2.105). */
+final case class RecalledMemory(
+    path: String,
+    scope: MemoryScope,
+    content: Option[String] = None
+)
+
+object RecalledMemory:
+  given JsonDecoder[RecalledMemory] = DeriveJsonDecoder.gen[RecalledMemory]
+  given JsonEncoder[RecalledMemory] = DeriveJsonEncoder.gen[RecalledMemory]
 
 /** Successfully persisted file info (SDK 0.2.31) */
 final case class PersistedFile(

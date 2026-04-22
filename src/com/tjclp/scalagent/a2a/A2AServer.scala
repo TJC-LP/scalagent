@@ -222,7 +222,8 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         else None
       case AgentMessage.System(SystemEvent.Status(status, _), _, _) =>
         status.map {
-          case SdkStatus.Compacting   => "Compacting context"
+          case SdkStatus.Compacting    => "Compacting context"
+          case SdkStatus.Requesting    => "Requesting from model"
           case SdkStatus.Custom(value) => value
         }.flatMap(nonEmpty)
       case _ =>

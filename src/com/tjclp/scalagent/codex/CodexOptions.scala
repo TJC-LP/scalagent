@@ -84,7 +84,12 @@ object CodexConfigValue:
   given Conversion[Float, CodexConfigValue] = value => num(value.toDouble)
   given Conversion[Boolean, CodexConfigValue] = bool(_)
 
-/** Options for creating a CodexClient (maps to `new Codex(options)`). */
+/** Options for creating a CodexClient (maps to `new Codex(options)`).
+  *
+  * @param env Environment variables forwarded to the Codex CLI subprocess. When non-empty,
+  *            the SDK will **not** inherit variables from `process.env` — callers must
+  *            spread `sys.env` explicitly if they need inherited variables retained.
+  */
 final case class CodexClientOptions(
     apiKey: Option[String] = None,
     baseUrl: Option[String] = None,

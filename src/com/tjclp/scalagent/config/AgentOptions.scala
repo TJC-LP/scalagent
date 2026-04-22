@@ -56,7 +56,19 @@ final case class AgentOptions(
 
     // Advanced
     additionalDirectories: List[String] = Nil,
+    /** Environment variables for the Claude Code subprocess.
+      *
+      * As of SDK 0.2.113, passing a non-empty `env` map **replaces** the subprocess's
+      * inherited `process.env` — to retain inherited variables, spread them explicitly
+      * via `sys.env ++ Map("MY_VAR" -> "x")`.
+      */
     env: Map[String, String] = Map.empty,
+
+    /** Custom session title. When provided, the session uses this title and skips
+      * automatic title generation. Has no effect on the persisted title when resuming
+      * an existing session. Requires SDK 0.2.113+.
+      */
+    title: Option[String] = None,
 
     // Beta features (e.g., "context-1m-2025-08-07")
     betaFeatures: List[String] = Nil,
@@ -234,6 +246,8 @@ final case class AgentOptions(
 
     if env.nonEmpty then
       obj.env = js.Dictionary(env.toSeq*)
+
+    title.foreach(t => obj.title = t)
 
     if betaFeatures.nonEmpty then
       obj.betas = betaFeatures.toJSArray
@@ -521,6 +535,9 @@ object AgentOptions:
     /** Set disallowed tools using type-safe ToolName enum */
     def withDisallowedTools(tools: ToolName*): AgentOptions =
       opts.copy(disallowedTools = Some(tools.toList))
+
+    /** Set a custom session title (SDK 0.2.113+). */
+    def withTitle(t: String): AgentOptions = opts.copy(title = Some(t))
 
     def withEnv(env: Map[String, String]): AgentOptions =
       opts.copy(env = env)
