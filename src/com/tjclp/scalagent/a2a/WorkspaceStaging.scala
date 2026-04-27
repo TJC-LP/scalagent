@@ -1,10 +1,11 @@
 package com.tjclp.scalagent.a2a
 
+import com.tjclp.scalagent.config.AgentOptions
+import com.tjclp.scalagent.core.{AgentWorkspace, WorkspaceInput}
 import zio.*
 import scala.scalajs.js
 import scala.scalajs.js.annotation.JSImport
 import scala.scalajs.js.typedarray.Uint8Array
-import com.tjclp.scalagent.core.{AgentWorkspace, WorkspaceInput}
 
 /**
  * A2A → [[AgentWorkspace]] bridge.
@@ -80,6 +81,7 @@ object WorkspaceStaging:
     def toInvocationContext: InvocationContext =
       InvocationContext(
         prompt = defaultPrompt,
+        optionsModifier = addWorkspaceRootToOptions(workspace),
         workspace = Some(workspace),
         artifactsAfter = collectArtifacts,
         cleanup = cleanup,
@@ -128,9 +130,15 @@ object WorkspaceStaging:
       case b: FileContent.Bytes => Right(b)
     }
 
+    val usedNames = scala.collection.mutable.Set.empty[String]
     val staged = byteParts.zipWithIndex.map {
       case (bytes, idx) =>
-        val safeName = sanitizeName(bytes.name.getOrElse(s"upload-$idx"), idx)
+        val safeName =
+          uniqueName(
+            sanitizeName(bytes.name.getOrElse(s"upload-$idx"), idx),
+            idx,
+            usedNames,
+          )
         val target   = Path.join(taskRoot, safeName)
         writeBase64(target, bytes.bytes)
         WorkspaceInput(
@@ -176,6 +184,34 @@ object WorkspaceStaging:
         trimmed.exists(ch => ch == '/' || ch == '\\' || ch == 0)
     if isPathLike then s"upload-$idx" else trimmed
 
+  private def uniqueName(
+    name: String,
+    idx: Int,
+    usedNames: scala.collection.mutable.Set[String],
+  ): String =
+    if !usedNames.contains(name) then
+      usedNames += name
+      name
+    else
+      var attempt   = 0
+      var candidate = disambiguateName(name, idx.toString)
+      while usedNames.contains(candidate) do
+        attempt += 1
+        candidate = disambiguateName(name, s"$idx-$attempt")
+      usedNames += candidate
+      candidate
+
+  private def disambiguateName(name: String, suffix: String): String =
+    val dot = name.lastIndexOf('.')
+    if dot > 0 then s"${name.substring(0, dot)}-$suffix${name.substring(dot)}"
+    else s"$name-$suffix"
+
+  private def addWorkspaceRootToOptions(workspace: AgentWorkspace)(options: AgentOptions): AgentOptions =
+    if options.cwd.contains(workspace.rootDir) ||
+      options.additionalDirectories.contains(workspace.rootDir)
+    then options
+    else options.copy(additionalDirectories = options.additionalDirectories :+ workspace.rootDir)
+
   private def writeBase64(target: String, b64: String): Unit =
     val buffer = js.Dynamic.global.Buffer.from(b64, "base64")
     Fs.writeFileSync(target, buffer.asInstanceOf[Uint8Array])
@@ -195,12 +231,13 @@ object WorkspaceStaging:
    * `outputDir` flows back to the requester.
    */
   private def collectArtifacts(outputDir: String): List[Artifact] =
-    listAllFiles(outputDir).map { path =>
-      val name  = basename(path)
-      val mime  = guessMimeType(name)
-      val bytes = readFileBase64(path)
+    listAllFiles(outputDir).sortBy(path => relativePath(outputDir, path)).map { path =>
+      val relative = relativePath(outputDir, path)
+      val name     = basename(path)
+      val mime     = guessMimeType(name)
+      val bytes    = readFileBase64(path)
       Artifact(
-        artifactId = s"$outputDir-$name",
+        artifactId = relative,
         parts = List(
           Part.File(
             FileContent.Bytes(
@@ -234,6 +271,9 @@ object WorkspaceStaging:
   private def basename(path: String): String =
     val sep = path.lastIndexOf('/')
     if sep < 0 then path else path.substring(sep + 1)
+
+  private def relativePath(from: String, to: String): String =
+    Path.relative(from, to).replace('\\', '/')
 
   private def guessMimeType(name: String): Option[String] =
     val lower = name.toLowerCase
@@ -270,4 +310,5 @@ object WorkspaceStaging:
   @JSImport("node:path", JSImport.Namespace)
   private object Path extends js.Object:
     def join(a: String, b: String): String = js.native
+    def relative(from: String, to: String): String = js.native
 end WorkspaceStaging
