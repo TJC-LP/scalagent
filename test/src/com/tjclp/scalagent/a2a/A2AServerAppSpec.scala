@@ -24,4 +24,11 @@ class A2AServerAppSpec extends FunSuite:
     assertEquals(config.agentOptions.maxTurns, Some(1))
     assertEquals(config.skills.map(_.id), List("test"))
     assertEquals(config.url, "http://127.0.0.1:3999")
+
+  test("A2AServerApp supports effectful agent options"):
+    val config = zio.Unsafe.unsafe { implicit unsafe =>
+      zio.Runtime.default.unsafe.run(TestServer.configZIO).getOrThrowFiberFailure()
+    }
+
+    assertEquals(config.agentOptions.maxTurns, Some(1))
 end A2AServerAppSpec
