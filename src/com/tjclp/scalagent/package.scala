@@ -305,6 +305,7 @@ package object scalagent {
 
   type A2AServer = a2a.A2AServer
   val A2AServer = a2a.A2AServer
+  type A2AServerApp[Self <: Singleton] = a2a.A2AServerApp[Self]
 
   // These are objects only (no types)
   val A2ATool = a2a.A2ATool
