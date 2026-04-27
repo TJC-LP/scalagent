@@ -106,7 +106,11 @@ object A2AServer:
     // optional `AgentOptions` modifier, post-result artifacts to
     // attach, and a cleanup hook (run via `.ensuring`). Defaults to
     // None for full back-compat with existing 0.6.1 callers.
-    invocationPreparer: Option[(A2AMessage, TaskId) => Task[InvocationContext]] = None):
+    invocationPreparer: Option[(A2AMessage, TaskId) => Task[InvocationContext]] = None,
+    // Optional low-level executor override. Servers that need a different
+    // execution substrate can still reuse scalagent's A2A transport,
+    // task store, and request handling while supplying their own executor.
+    executorFactory: Option[(JsTaskStore, Runtime[Any]) => JsAgentExecutor] = None):
     def url: String = s"http://$host:$port"
 
     def toAgentCard: AgentCard =
@@ -187,8 +191,10 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
       // features can inspect the latest task snapshot.
       val taskStore = new JsInMemoryTaskStore()
 
-      // Create executor that bridges to ClaudeAgent
-      val executor = createExecutor(taskStore)
+      // Create executor that bridges to ClaudeAgent unless the server
+      // supplied a lower-level execution substrate.
+      val executor =
+        config.executorFactory.fold(createExecutor(taskStore))(factory => factory(taskStore, runtime))
 
       // Create request handler
       val requestHandler = new JsDefaultRequestHandler(card, taskStore, executor)
