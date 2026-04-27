@@ -281,6 +281,20 @@ session.close()
 
 The low-level API supports all `AgentOptions` configuration (model selection, permission mode, tool definitions, system prompts, structured output) and all collection policies. See `docs/COMPATIBILITY.md` for the full SDK surface coverage.
 
+## A2A Execution
+
+`A2AServer` defaults to async `message/send`: if a raw JSON-RPC caller omits
+`configuration.blocking`, the server returns a `working` task immediately and
+continues execution in the background. Poll `tasks/get` or subscribe via
+`message/stream`/`tasks/resubscribe` for updates. Set
+`executionMode = ExecutionMode.Synchronous` on `A2AServer.Config` or
+`A2AServerApp` to keep the server-side default blocking behavior.
+
+Scalagent clients preserve the older convenience behavior for `send`: they set
+`blocking = true` unless you pass an explicit value. Use `submit` for an
+immediate task, or `sendAndPoll` to submit non-blocking and poll until the task
+reaches a terminal state.
+
 ## Project Structure
 
 ```text

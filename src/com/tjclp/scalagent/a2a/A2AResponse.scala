@@ -33,30 +33,32 @@ object A2AResponse:
   enum StreamEvent:
     case TaskSnapshot(task: A2ATask)
     case TaskStatusUpdate(
-        id: TaskId,
-        contextId: ContextId,
-        status: TaskStatus,
-        `final`: Boolean = false
-    )
+      id: TaskId,
+      contextId: ContextId,
+      status: TaskStatus,
+      `final`: Boolean = false)
     case TaskArtifactUpdate(
-        id: TaskId,
-        contextId: ContextId,
-        artifact: Artifact,
-        append: Boolean = false,
-        lastChunk: Boolean = true
-    )
-    case TaskMessage(id: TaskId, contextId: ContextId, message: A2AMessage)
+      id: TaskId,
+      contextId: ContextId,
+      artifact: Artifact,
+      append: Boolean = false,
+      lastChunk: Boolean = true)
+    case TaskMessage(
+      id: TaskId,
+      contextId: ContextId,
+      message: A2AMessage)
 
     def taskId: TaskId = this match
-      case TaskSnapshot(task)               => task.id
-      case TaskStatusUpdate(id, _, _, _)       => id
-      case TaskArtifactUpdate(id, _, _, _, _)  => id
-      case TaskMessage(id, _, _)               => id
+      case TaskSnapshot(task)                 => task.id
+      case TaskStatusUpdate(id, _, _, _)      => id
+      case TaskArtifactUpdate(id, _, _, _, _) => id
+      case TaskMessage(id, _, _)              => id
 
     def isFinal: Boolean = this match
       case TaskSnapshot(task)           => task.isTerminal
       case TaskStatusUpdate(_, _, _, f) => f
       case _                            => false
+  end StreamEvent
 
   object StreamEvent:
     private def artifactJsonWithFallbackId(taskId: TaskId, artifactJson: Json): Either[String, Json] =
@@ -78,7 +80,7 @@ object A2AResponse:
           "taskId"    -> Json.Str(id.value),
           "contextId" -> Json.Str(contextId.value),
           "status"    -> status.toJsonAST.toOption.get,
-          "final"     -> Json.Bool(isFinal)
+          "final"     -> Json.Bool(isFinal),
         )
       case TaskArtifactUpdate(id, contextId, artifact, append, lastChunk) =>
         Json.Obj(
@@ -87,20 +89,21 @@ object A2AResponse:
           "contextId" -> Json.Str(contextId.value),
           "artifact"  -> artifact.toJsonAST.toOption.get,
           "append"    -> Json.Bool(append),
-          "lastChunk" -> Json.Bool(lastChunk)
+          "lastChunk" -> Json.Bool(lastChunk),
         )
       case TaskMessage(id, contextId, message) =>
         Json.Obj(
           "kind"      -> Json.Str("message"),
           "taskId"    -> Json.Str(id.value),
           "contextId" -> Json.Str(contextId.value),
-          "message"   -> message.toJsonAST.toOption.get
+          "message"   -> message.toJsonAST.toOption.get,
         )
     }
 
     given JsonDecoder[StreamEvent] = JsonDecoder[Json].mapOrFail { json =>
       val fields = json.asObject.map(_.toMap).getOrElse(Map.empty)
-      def taskId = fields.get("taskId").orElse(fields.get("id")).flatMap(_.asString).map(TaskId(_)).toRight("Missing taskId")
+      def taskId =
+        fields.get("taskId").orElse(fields.get("id")).flatMap(_.asString).map(TaskId(_)).toRight("Missing taskId")
       fields.get("kind").flatMap(_.asString).toRight("Missing 'kind' field").flatMap {
         case "task" =>
           json.as[A2ATask].map(TaskSnapshot(_))
@@ -108,7 +111,7 @@ object A2AResponse:
           for
             id     <- taskId
             status <- fields.get("status").toRight("Missing status").flatMap(_.as[TaskStatus])
-            isFinal = fields.get("final").flatMap(_.asBoolean).getOrElse(false)
+            isFinal   = fields.get("final").flatMap(_.asBoolean).getOrElse(false)
             contextId = fields.get("contextId").flatMap(_.asString).map(ContextId(_)).getOrElse(ContextId(id.value))
           yield TaskStatusUpdate(id, contextId, status, isFinal)
         case "artifact-update" | "artifact" =>
@@ -116,20 +119,38 @@ object A2AResponse:
             id           <- taskId
             artifactJson <- fields.get("artifact").toRight("Missing artifact")
             artifact     <- artifactJsonWithFallbackId(id, artifactJson).flatMap(_.as[Artifact])
-            append = fields.get("append").flatMap(_.asBoolean).orElse(nestedBooleanField(artifactJson, "append")).getOrElse(false)
+            append = fields
+              .get("append")
+              .flatMap(_.asBoolean)
+              .orElse(nestedBooleanField(artifactJson, "append"))
+              .getOrElse(false)
             lastChunk =
-              fields.get("lastChunk").flatMap(_.asBoolean).orElse(nestedBooleanField(artifactJson, "lastChunk")).getOrElse(true)
+              fields
+                .get("lastChunk")
+                .flatMap(_.asBoolean)
+                .orElse(nestedBooleanField(artifactJson, "lastChunk"))
+                .getOrElse(true)
             contextId = fields.get("contextId").flatMap(_.asString).map(ContextId(_)).getOrElse(ContextId(id.value))
           yield TaskArtifactUpdate(id, contextId, artifact, append, lastChunk)
         case "message" =>
           for
             message <- fields.get("message").toRight("Missing message").flatMap(_.as[A2AMessage])
-            id = fields.get("taskId").orElse(fields.get("id")).flatMap(_.asString).map(TaskId(_)).getOrElse(A2AEventIds.taskIdFor(message))
-            contextId = fields.get("contextId").flatMap(_.asString).map(ContextId(_)).getOrElse(A2AEventIds.contextIdFor(message))
+            id = fields
+              .get("taskId")
+              .orElse(fields.get("id"))
+              .flatMap(_.asString)
+              .map(TaskId(_))
+              .getOrElse(A2AEventIds.taskIdFor(message))
+            contextId = fields
+              .get("contextId")
+              .flatMap(_.asString)
+              .map(ContextId(_))
+              .getOrElse(A2AEventIds.contextIdFor(message))
           yield TaskMessage(id, contextId, message)
         case other => Left(s"Unknown stream event kind: $other")
       }
     }
+  end StreamEvent
 
   /** Result for tasks/get */
   type TasksGetResult = A2ATask
@@ -145,21 +166,21 @@ object A2AResponse:
 
   /** Result for agent/getAuthenticatedExtendedCard */
   type GetAuthenticatedExtendedCardResult = AgentCard
+end A2AResponse
 
 /** Server-Sent Event wrapper for SSE streaming */
 final case class SseEvent(
-    event: Option[String] = None,
-    data: String,
-    id: Option[String] = None,
-    retry: Option[Int] = None
-):
+  event: Option[String] = None,
+  data: String,
+  id: Option[String] = None,
+  retry: Option[Int] = None):
   /** Format as SSE wire format */
   def toWire: String =
     val parts = List(
       event.map(e => s"event: $e"),
       Some(s"data: $data"),
       id.map(i => s"id: $i"),
-      retry.map(r => s"retry: $r")
+      retry.map(r => s"retry: $r"),
     ).flatten
     parts.mkString("\n") + "\n\n"
 
@@ -167,7 +188,7 @@ object SseEvent:
   /** Create an SSE event from a stream event */
   def fromStreamEvent(event: A2AResponse.StreamEvent): SseEvent =
     val eventType = event match
-      case _: A2AResponse.StreamEvent.TaskSnapshot      => "task"
+      case _: A2AResponse.StreamEvent.TaskSnapshot       => "task"
       case _: A2AResponse.StreamEvent.TaskStatusUpdate   => "status-update"
       case _: A2AResponse.StreamEvent.TaskArtifactUpdate => "artifact-update"
       case _: A2AResponse.StreamEvent.TaskMessage        => "message"
@@ -186,9 +207,9 @@ object SseEvent:
     if lines.isEmpty then None
     else
       var event: Option[String] = None
-      var data: List[String] = Nil
-      var id: Option[String] = None
-      var retry: Option[Int] = None
+      var data: List[String]    = Nil
+      var id: Option[String]    = None
+      var retry: Option[Int]    = None
 
       lines.foreach { line =>
         if line.startsWith("event:") then event = Some(line.drop(6).trim)
@@ -199,3 +220,4 @@ object SseEvent:
 
       if data.nonEmpty then Some(SseEvent(event, data.mkString("\n"), id, retry))
       else None
+end SseEvent

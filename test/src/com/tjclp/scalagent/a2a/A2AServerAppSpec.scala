@@ -2,6 +2,7 @@ package com.tjclp.scalagent.a2a
 
 import com.tjclp.scalagent.config.AgentOptions
 import munit.FunSuite
+import zio.*
 
 class A2AServerAppSpec extends FunSuite:
 
@@ -11,6 +12,10 @@ class A2AServerAppSpec extends FunSuite:
     override def port: Int           = 3999
     override def agentOptions: AgentOptions =
       AgentOptions.default.withMaxTurns(1)
+    override def executionMode: ExecutionMode = ExecutionMode.Synchronous
+    override def taskTimeout: Option[Duration] = Some(30.seconds)
+    override def capabilities: AgentCapabilities =
+      AgentCapabilities.default.copy(pushNotifications = true)
     override def skills: List[AgentSkill] =
       List(AgentSkill(id = "test", name = "Test skill", description = "Test skill"))
 
@@ -22,6 +27,9 @@ class A2AServerAppSpec extends FunSuite:
     assertEquals(config.host, "127.0.0.1")
     assertEquals(config.port, 3999)
     assertEquals(config.agentOptions.maxTurns, Some(1))
+    assertEquals(config.executionMode, ExecutionMode.Synchronous)
+    assertEquals(config.taskTimeout, Some(30.seconds))
+    assertEquals(config.capabilities.pushNotifications, true)
     assertEquals(config.skills.map(_.id), List("test"))
     assertEquals(config.url, "http://127.0.0.1:3999")
 

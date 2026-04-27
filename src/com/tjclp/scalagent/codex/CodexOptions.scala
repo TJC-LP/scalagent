@@ -16,20 +16,20 @@ trait AbortSignal extends js.Object
 @JSGlobal
 class AbortController() extends js.Object:
   val signal: AbortSignal = js.native
-  def abort(): Unit = js.native
+  def abort(): Unit       = js.native
 
 object AbortController:
   def create(): AbortController = new AbortController()
 
 /** Codex sandbox mode — controls what the agent can do on the filesystem. */
 enum SandboxMode(val raw: String):
-  case ReadOnly extends SandboxMode("read-only")
+  case ReadOnly       extends SandboxMode("read-only")
   case WorkspaceWrite extends SandboxMode("workspace-write")
-  case FullAccess extends SandboxMode("danger-full-access")
+  case FullAccess     extends SandboxMode("danger-full-access")
 
 /** Codex approval policy — when the agent pauses for human approval. */
 enum ApprovalMode(val raw: String):
-  case Never extends ApprovalMode("never")
+  case Never     extends ApprovalMode("never")
   case OnRequest extends ApprovalMode("on-request")
   case OnFailure extends ApprovalMode("on-failure")
   case Untrusted extends ApprovalMode("untrusted")
@@ -37,16 +37,16 @@ enum ApprovalMode(val raw: String):
 /** Controls Codex model reasoning effort. */
 enum ModelReasoningEffort(val raw: String):
   case Minimal extends ModelReasoningEffort("minimal")
-  case Low extends ModelReasoningEffort("low")
-  case Medium extends ModelReasoningEffort("medium")
-  case High extends ModelReasoningEffort("high")
-  case XHigh extends ModelReasoningEffort("xhigh")
+  case Low     extends ModelReasoningEffort("low")
+  case Medium  extends ModelReasoningEffort("medium")
+  case High    extends ModelReasoningEffort("high")
+  case XHigh   extends ModelReasoningEffort("xhigh")
 
 /** Controls Codex web search behavior. */
 enum WebSearchMode(val raw: String):
   case Disabled extends WebSearchMode("disabled")
-  case Cached extends WebSearchMode("cached")
-  case Live extends WebSearchMode("live")
+  case Cached   extends WebSearchMode("cached")
+  case Live     extends WebSearchMode("live")
 
 /** Recursive config value for Codex `--config` overrides. Mirrors the TypeScript SDK shape. */
 enum CodexConfigValue:
@@ -69,34 +69,35 @@ enum CodexConfigValue:
       val obj = js.Dynamic.literal()
       fields.foreach { (key, value) => obj.updateDynamic(key)(value.toRaw) }
       obj
+end CodexConfigValue
 
 object CodexConfigValue:
-  def str(value: String): CodexConfigValue = CodexConfigValue.Str(value)
-  def num(value: Double): CodexConfigValue = CodexConfigValue.Num(value)
-  def bool(value: Boolean): CodexConfigValue = CodexConfigValue.Bool(value)
-  def arr(values: CodexConfigValue*): CodexConfigValue = CodexConfigValue.Arr(values.toList)
+  def str(value: String): CodexConfigValue                       = CodexConfigValue.Str(value)
+  def num(value: Double): CodexConfigValue                       = CodexConfigValue.Num(value)
+  def bool(value: Boolean): CodexConfigValue                     = CodexConfigValue.Bool(value)
+  def arr(values: CodexConfigValue*): CodexConfigValue           = CodexConfigValue.Arr(values.toList)
   def obj(fields: (String, CodexConfigValue)*): CodexConfigValue = CodexConfigValue.Obj(fields.toMap)
 
-  given Conversion[String, CodexConfigValue] = str(_)
-  given Conversion[Int, CodexConfigValue] = value => num(value.toDouble)
-  given Conversion[Long, CodexConfigValue] = value => num(value.toDouble)
-  given Conversion[Double, CodexConfigValue] = num(_)
-  given Conversion[Float, CodexConfigValue] = value => num(value.toDouble)
+  given Conversion[String, CodexConfigValue]  = str(_)
+  given Conversion[Int, CodexConfigValue]     = value => num(value.toDouble)
+  given Conversion[Long, CodexConfigValue]    = value => num(value.toDouble)
+  given Conversion[Double, CodexConfigValue]  = num(_)
+  given Conversion[Float, CodexConfigValue]   = value => num(value.toDouble)
   given Conversion[Boolean, CodexConfigValue] = bool(_)
 
-/** Options for creating a CodexClient (maps to `new Codex(options)`).
-  *
-  * @param env Environment variables forwarded to the Codex CLI subprocess. When non-empty,
-  *            the SDK will **not** inherit variables from `process.env` — callers must
-  *            spread `sys.env` explicitly if they need inherited variables retained.
-  */
+/**
+ * Options for creating a CodexClient (maps to `new Codex(options)`).
+ *
+ * @param env Environment variables forwarded to the Codex CLI subprocess. When non-empty,
+ *            the SDK will **not** inherit variables from `process.env` — callers must
+ *            spread `sys.env` explicitly if they need inherited variables retained.
+ */
 final case class CodexClientOptions(
-    apiKey: Option[String] = None,
-    baseUrl: Option[String] = None,
-    codexPathOverride: Option[String] = None,
-    config: Map[String, CodexConfigValue] = Map.empty,
-    env: Map[String, String] = Map.empty
-):
+  apiKey: Option[String] = None,
+  baseUrl: Option[String] = None,
+  codexPathOverride: Option[String] = None,
+  config: Map[String, CodexConfigValue] = Map.empty,
+  env: Map[String, String] = Map.empty):
   def toRaw: js.Dynamic =
     val obj = js.Dynamic.literal()
     apiKey.foreach(v => obj.apiKey = v)
@@ -111,6 +112,7 @@ final case class CodexClientOptions(
       env.foreach { (k, v) => envObj.updateDynamic(k)(v) }
       obj.env = envObj
     obj
+end CodexClientOptions
 
 object CodexClientOptions:
   val default: CodexClientOptions = CodexClientOptions()
@@ -127,16 +129,15 @@ enum CodexInputItem:
       js.Dynamic.literal(`type` = "local_image", path = path).asInstanceOf[js.Object]
 
 object CodexInputItem:
-  def text(text: String): CodexInputItem = CodexInputItem.Text(text)
+  def text(text: String): CodexInputItem       = CodexInputItem.Text(text)
   def localImage(path: String): CodexInputItem = CodexInputItem.LocalImage(path)
 
 type CodexInput = String | Seq[CodexInputItem]
 
 /** Turn-specific options for Codex runs. */
 final case class CodexTurnOptions(
-    outputSchema: Option[Json] = None,
-    signal: Option[AbortSignal] = None
-):
+  outputSchema: Option[Json] = None,
+  signal: Option[AbortSignal] = None):
   def toRaw: js.UndefOr[js.Dynamic] =
     if outputSchema.isEmpty && signal.isEmpty then js.undefined
     else
@@ -150,17 +151,16 @@ object CodexTurnOptions:
 
 /** Options for creating or configuring a thread (maps to `ThreadOptions`). */
 final case class CodexThreadOptions(
-    model: Option[String] = None,
-    sandboxMode: Option[SandboxMode] = None,
-    workingDirectory: Option[String] = None,
-    approvalPolicy: Option[ApprovalMode] = None,
-    additionalDirectories: List[String] = Nil,
-    skipGitRepoCheck: Boolean = false,
-    modelReasoningEffort: Option[ModelReasoningEffort] = None,
-    networkAccessEnabled: Option[Boolean] = None,
-    webSearchMode: Option[WebSearchMode] = None,
-    webSearchEnabled: Option[Boolean] = None
-):
+  model: Option[String] = None,
+  sandboxMode: Option[SandboxMode] = None,
+  workingDirectory: Option[String] = None,
+  approvalPolicy: Option[ApprovalMode] = None,
+  additionalDirectories: List[String] = Nil,
+  skipGitRepoCheck: Boolean = false,
+  modelReasoningEffort: Option[ModelReasoningEffort] = None,
+  networkAccessEnabled: Option[Boolean] = None,
+  webSearchMode: Option[WebSearchMode] = None,
+  webSearchEnabled: Option[Boolean] = None):
   def toRaw: js.Dynamic =
     val obj = js.Dynamic.literal()
     model.foreach(v => obj.model = v)
@@ -174,6 +174,7 @@ final case class CodexThreadOptions(
     webSearchMode.foreach(v => obj.webSearchMode = v.raw)
     webSearchEnabled.foreach(v => obj.webSearchEnabled = v)
     obj
+end CodexThreadOptions
 
 object CodexThreadOptions:
   val default: CodexThreadOptions = CodexThreadOptions()

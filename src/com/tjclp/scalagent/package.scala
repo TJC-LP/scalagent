@@ -5,70 +5,71 @@ import zio.stream.*
 import com.tjclp.scalagent.errors.*
 import com.tjclp.scalagent.messages.*
 
-/** Scala.JS facade for the Claude Agent SDK.
-  *
-  * This package provides a ZIO-based interface for interacting with the Claude Agent SDK. It offers:
-  *
-  *   - Type-safe message ADT (`AgentMessage`) matching the SDK's discriminated unions
-  *   - Configuration builders (`AgentOptions`) with a fluent API
-  *   - Streaming support via ZStream for consuming agent responses
-  *   - Tool definition DSL for custom tools
-  *   - Ergonomic extension methods for messages and streams
-  *
-  * == Quick Start ==
-  *
-  * {{{
-  * import com.tjclp.scalagent.*
-  * import zio.*
-  *
-  * object MyApp extends ZIOAppDefault:
-  *   val run =
-  *     ClaudeAgent.query("Hello, Claude!")
-  *       .textOnly
-  *       .tap(text => Console.printLine(text))
-  *       .runDrain
-  *       .provide(ClaudeAgent.live)
-  * }}}
-  *
-  * == Configuration ==
-  *
-  * Use `AgentOptions` to configure queries:
-  *
-  * {{{
-  * val options = AgentOptions.default
-  *   .withModel("claude-sonnet-4-20250514")
-  *   .withMaxTurns(10)
-  *   .withPermissionMode(PermissionMode.AcceptEdits)
-  * }}}
-  *
-  * == Message Types ==
-  *
-  * The `AgentMessage` enum includes:
-  *   - `Assistant` - Claude's responses
-  *   - `User` - User messages (including synthetic tool results)
-  *   - `Result` - Final outcome (success or error)
-  *   - `System` - System events (init, status, etc.)
-  *   - `StreamEvent` - Partial streaming events
-  *   - `ToolProgress` - Tool execution progress
-  *
-  * == Stream Combinators ==
-  *
-  * Extension methods on ZStream for ergonomic message processing:
-  * {{{
-  * stream.textOnly          // Extract only text content
-  * stream.toolCallsOnly     // Extract only tool use requests
-  * stream.untilResult       // Take messages until Result
-  * stream.collectResult     // Collect all and return QueryResult
-  * }}}
-  *
-  * @see
-  *   [[ClaudeAgent]] for the main API
-  * @see
-  *   [[config.AgentOptions]] for configuration
-  * @see
-  *   [[messages.AgentMessage]] for message types
-  */
-package object scalagent {
+/**
+ * Scala.JS facade for the Claude Agent SDK.
+ *
+ * This package provides a ZIO-based interface for interacting with the Claude Agent SDK. It offers:
+ *
+ *   - Type-safe message ADT (`AgentMessage`) matching the SDK's discriminated unions
+ *   - Configuration builders (`AgentOptions`) with a fluent API
+ *   - Streaming support via ZStream for consuming agent responses
+ *   - Tool definition DSL for custom tools
+ *   - Ergonomic extension methods for messages and streams
+ *
+ * == Quick Start ==
+ *
+ * {{{
+ * import com.tjclp.scalagent.*
+ * import zio.*
+ *
+ * object MyApp extends ZIOAppDefault:
+ *   val run =
+ *     ClaudeAgent.query("Hello, Claude!")
+ *       .textOnly
+ *       .tap(text => Console.printLine(text))
+ *       .runDrain
+ *       .provide(ClaudeAgent.live)
+ * }}}
+ *
+ * == Configuration ==
+ *
+ * Use `AgentOptions` to configure queries:
+ *
+ * {{{
+ * val options = AgentOptions.default
+ *   .withModel("claude-sonnet-4-20250514")
+ *   .withMaxTurns(10)
+ *   .withPermissionMode(PermissionMode.AcceptEdits)
+ * }}}
+ *
+ * == Message Types ==
+ *
+ * The `AgentMessage` enum includes:
+ *   - `Assistant` - Claude's responses
+ *   - `User` - User messages (including synthetic tool results)
+ *   - `Result` - Final outcome (success or error)
+ *   - `System` - System events (init, status, etc.)
+ *   - `StreamEvent` - Partial streaming events
+ *   - `ToolProgress` - Tool execution progress
+ *
+ * == Stream Combinators ==
+ *
+ * Extension methods on ZStream for ergonomic message processing:
+ * {{{
+ * stream.textOnly          // Extract only text content
+ * stream.toolCallsOnly     // Extract only tool use requests
+ * stream.untilResult       // Take messages until Result
+ * stream.collectResult     // Collect all and return QueryResult
+ * }}}
+ *
+ * @see
+ *   [[ClaudeAgent]] for the main API
+ * @see
+ *   [[config.AgentOptions]] for configuration
+ * @see
+ *   [[messages.AgentMessage]] for message types
+ */
+package object scalagent:
 
   // The Agent SDK spawns a Claude Code subprocess. If _we_ are already running
   // inside Claude Code (e.g. an example invoked from a Claude session), the
@@ -77,8 +78,7 @@ package object scalagent {
   // Clearing it here lets the SDK spawn freely.
   locally {
     val env = scala.scalajs.js.Dynamic.global.process.env
-    if !scala.scalajs.js.isUndefined(env.CLAUDECODE) then
-      scala.scalajs.js.special.delete(env, "CLAUDECODE")
+    if !scala.scalajs.js.isUndefined(env.CLAUDECODE) then scala.scalajs.js.special.delete(env, "CLAUDECODE")
   }
 
   /** Convenience type alias for the main service */
@@ -198,8 +198,8 @@ package object scalagent {
 
   // SessionState is a sealed trait without a companion val
   type SessionState = session.SessionState
-  type Open = session.Open
-  type Closed = session.Closed
+  type Open         = session.Open
+  type Closed       = session.Closed
 
   // --- tools package ---
   type ToolContent = tools.ToolContent
@@ -294,7 +294,7 @@ package object scalagent {
   // --- mcp package ---
   // McpServer and McpTool are objects only (no types)
   val McpServer = mcp.McpServer
-  val McpTool = mcp.McpTool
+  val McpTool   = mcp.McpTool
 
   type McpToolName = mcp.McpToolName
   val McpToolName = mcp.McpToolName
@@ -307,13 +307,16 @@ package object scalagent {
   val A2AServer = a2a.A2AServer
   type A2AServerApp[Self <: Singleton] = a2a.A2AServerApp[Self]
 
+  type ExecutionMode = a2a.ExecutionMode
+  val ExecutionMode = a2a.ExecutionMode
+
   // These are objects only (no types)
-  val A2ATool = a2a.A2ATool
-  val A2ARequest = a2a.A2ARequest
+  val A2ATool     = a2a.A2ATool
+  val A2ARequest  = a2a.A2ARequest
   val A2AResponse = a2a.A2AResponse
 
   // Re-export A2AClient extension methods for convenience
-  export a2a.{sendText, streamText}
+  export a2a.{askText, sendAndPollText, sendText, streamText, submitText}
 
   type A2AError = a2a.A2AError
   val A2AError = a2a.A2AError
@@ -365,8 +368,8 @@ package object scalagent {
   val MessageSendConfiguration = a2a.MessageSendConfiguration
 
   // --- macros package ---
-  type Tool = macros.Tool
-  type Param = macros.Param
+  type Tool        = macros.Tool
+  type Param       = macros.Param
   type description = macros.description
 
   val ToolMacros = macros.ToolMacros
@@ -422,11 +425,11 @@ package object scalagent {
   val Reviewer = core.Reviewer
 
   // --- core DSL: classified review ---
-  type Visibility = core.Visibility
-  type Public = core.Public
-  type Internal = core.Internal
-  type Secret = core.Secret
-  type TopSecret = core.TopSecret
+  type Visibility                           = core.Visibility
+  type Public                               = core.Public
+  type Internal                             = core.Internal
+  type Secret                               = core.Secret
+  type TopSecret                            = core.TopSecret
   type Classified[+A, L <: core.Visibility] = core.Classified[A, L]
   val Classified = core.Classified
   type CanSee[Viewer <: core.Visibility, Data <: core.Visibility] = core.CanSee[Viewer, Data]
@@ -439,35 +442,35 @@ package object scalagent {
   val TraceLogger = core.TraceLogger
 
   // --- core DSL: capability types ---
-  type Depth = core.Depth
-  type Z = core.Z
+  type Depth              = core.Depth
+  type Z                  = core.Z
   type S[N <: core.Depth] = core.S[N]
-  type Depth0 = core.Depth0
-  type Depth1 = core.Depth1
-  type Depth2 = core.Depth2
-  type Depth3 = core.Depth3
+  type Depth0             = core.Depth0
+  type Depth1             = core.Depth1
+  type Depth2             = core.Depth2
+  type Depth3             = core.Depth3
 
-  type Capability = core.Capability
+  type Capability                     = core.Capability
   type CanUseTools[T <: core.ToolSet] = core.CanUseTools[T]
-  type CanSpawn[D <: core.Depth] = core.CanSpawn[D]
-  type CanReadMemory = core.CanReadMemory
-  type CanWriteMemory = core.CanWriteMemory
-  type CanEscalateHuman = core.CanEscalateHuman
-  type HasBudget = core.HasBudget
-  type HasDirectoryScope = core.HasDirectoryScope
+  type CanSpawn[D <: core.Depth]      = core.CanSpawn[D]
+  type CanReadMemory                  = core.CanReadMemory
+  type CanWriteMemory                 = core.CanWriteMemory
+  type CanEscalateHuman               = core.CanEscalateHuman
+  type HasBudget                      = core.HasBudget
+  type HasDirectoryScope              = core.HasDirectoryScope
 
   type DirectoryScope = core.DirectoryScope
   val DirectoryScope = core.DirectoryScope
   type BuilderConfig = core.BuilderConfig
   val BuilderConfig = core.BuilderConfig
 
-  type ToolSet = core.ToolSet
-  type AllTools = core.AllTools
+  type ToolSet       = core.ToolSet
+  type AllTools      = core.AllTools
   type ReadOnlyTools = core.ReadOnlyTools
-  type CustomTools = core.CustomTools
+  type CustomTools   = core.CustomTools
 
-  type ReadOnlyCaps = core.ReadOnlyCaps
-  type FullCaps = core.FullCaps
+  type ReadOnlyCaps                    = core.ReadOnlyCaps
+  type FullCaps                        = core.FullCaps
   type SupervisorCaps[D <: core.Depth] = core.SupervisorCaps[D]
 
   type ToolSurface = core.ToolSurface
@@ -477,7 +480,7 @@ package object scalagent {
   val DelegationPolicy = core.DelegationPolicy
 
   // TypedAgent and AgentBuilder take type parameters — export companions
-  val TypedAgent = core.TypedAgent
+  val TypedAgent   = core.TypedAgent
   val AgentBuilder = core.AgentBuilder
 
   // Type class evidence
@@ -492,8 +495,8 @@ package object scalagent {
 
   // --- core DSL: A2A types ---
   type A2ARemoteAgent[-P, -I, +O] = core.a2a.A2ARemoteAgent[P, I, O]
-  type A2AEndpoint = core.a2a.A2AEndpoint
-  type CanDelegateA2A = core.a2a.CanDelegateA2A
+  type A2AEndpoint                = core.a2a.A2AEndpoint
+  type CanDelegateA2A             = core.a2a.CanDelegateA2A
 
   // --- core DSL: MCP types ---
   type McpToolSurface = core.mcp.McpToolSurface
@@ -506,28 +509,28 @@ package object scalagent {
   val McpPrompt = core.mcp.McpPrompt
   type McpPromptArgument = core.mcp.McpPromptArgument
   val McpPromptArgument = core.mcp.McpPromptArgument
-  type HasMcpTools = core.mcp.HasMcpTools
+  type HasMcpTools     = core.mcp.HasMcpTools
   type HasMcpResources = core.mcp.HasMcpResources
-  type HasMcpPrompts = core.mcp.HasMcpPrompts
-  type FullMcpCaps = core.mcp.FullMcpCaps
+  type HasMcpPrompts   = core.mcp.HasMcpPrompts
+  type FullMcpCaps     = core.mcp.FullMcpCaps
 
   // --- interop package ---
   val ClaudeInterpreter = interop.claude.ClaudeInterpreter
-  val A2AInterpreter = interop.a2a.A2AInterpreter
-  val A2AServerAdapter = interop.a2a.A2AServerAdapter
-  val McpToolLoader = interop.mcp.McpToolLoader
-  val CodexInterpreter = interop.codex.CodexInterpreter
-  val CodexEventMapper = interop.codex.CodexEventMapper
+  val A2AInterpreter    = interop.a2a.A2AInterpreter
+  val A2AServerAdapter  = interop.a2a.A2AServerAdapter
+  val McpToolLoader     = interop.mcp.McpToolLoader
+  val CodexInterpreter  = interop.codex.CodexInterpreter
+  val CodexEventMapper  = interop.codex.CodexEventMapper
 
   // --- Codex types ---
   type CodexClient = codex.CodexClient
   val CodexClient = codex.CodexClient
-  type CodexThread = codex.CodexThread
+  type CodexThread        = codex.CodexThread
   type CodexClientOptions = codex.CodexClientOptions
   val CodexClientOptions = codex.CodexClientOptions
   type CodexConfigValue = codex.CodexConfigValue
   val CodexConfigValue = codex.CodexConfigValue
-  type CodexInput = codex.CodexInput
+  type CodexInput         = codex.CodexInput
   type CodexThreadOptions = codex.CodexThreadOptions
   val CodexThreadOptions = codex.CodexThreadOptions
   type CodexTurnOptions = codex.CodexTurnOptions
@@ -538,9 +541,9 @@ package object scalagent {
   val CodexEvent = codex.CodexEvent
   type CodexItem = codex.CodexItem
   val CodexItem = codex.CodexItem
-  type CodexTurn = codex.CodexTurn
-  type CodexUsage = codex.CodexUsage
-  type AbortSignal = codex.AbortSignal
+  type CodexTurn       = codex.CodexTurn
+  type CodexUsage      = codex.CodexUsage
+  type AbortSignal     = codex.AbortSignal
   type AbortController = codex.AbortController
   val AbortController = codex.AbortController
   type SandboxMode = codex.SandboxMode
@@ -568,104 +571,115 @@ package object scalagent {
   // ZStream Extension Methods for AgentMessage Streams
   // ============================================================================
 
-  /** Extension methods for AgentMessage streams providing ergonomic message processing.
-    *
-    * These extensions work with any environment type R (not just Any), making them
-    * compatible with service-based streams like ClaudeAgent.query().
-    */
+  /**
+   * Extension methods for AgentMessage streams providing ergonomic message processing.
+   *
+   * These extensions work with any environment type R (not just Any), making them
+   * compatible with service-based streams like ClaudeAgent.query().
+   */
   extension [R](stream: ZStream[R, AgentError, AgentMessage])
 
-    /** Extract only text content from messages.
-      *
-      * Filters to messages containing text and extracts the text content.
-      *
-      * Example:
-      * {{{
-      * ClaudeAgent.query("Hello")
-      *   .textOnly
-      *   .tap(text => Console.printLine(text))
-      *   .runDrain
-      * }}}
-      */
+    /**
+     * Extract only text content from messages.
+     *
+     * Filters to messages containing text and extracts the text content.
+     *
+     * Example:
+     * {{{
+     * ClaudeAgent.query("Hello")
+     *   .textOnly
+     *   .tap(text => Console.printLine(text))
+     *   .runDrain
+     * }}}
+     */
     def textOnly: ZStream[R, AgentError, String] =
       stream.collect { case msg if msg.text.isDefined => msg.text.get }
 
-    /** Extract only tool use requests from messages.
-      *
-      * Filters to assistant messages and extracts tool call requests.
-      *
-      * Example:
-      * {{{
-      * ClaudeAgent.query("Read the file")
-      *   .toolCallsOnly
-      *   .tap(tool => Console.printLine(s"Tool: ${tool.name}"))
-      *   .runDrain
-      * }}}
-      */
+    /**
+     * Extract only tool use requests from messages.
+     *
+     * Filters to assistant messages and extracts tool call requests.
+     *
+     * Example:
+     * {{{
+     * ClaudeAgent.query("Read the file")
+     *   .toolCallsOnly
+     *   .tap(tool => Console.printLine(s"Tool: ${tool.name}"))
+     *   .runDrain
+     * }}}
+     */
     def toolCallsOnly: ZStream[R, AgentError, ContentBlock.ToolUse] =
       stream.flatMap(msg => ZStream.fromIterable(msg.toolCalls))
 
-    /** Take messages until a Result message is received (inclusive).
-      *
-      * This is useful for multi-turn conversations where you want to process
-      * one complete exchange before continuing.
-      *
-      * Example:
-      * {{{
-      * session.send("What is 2+2?")
-      *   .untilResult
-      *   .runCollect
-      * }}}
-      */
+    /**
+     * Take messages until a Result message is received (inclusive).
+     *
+     * This is useful for multi-turn conversations where you want to process
+     * one complete exchange before continuing.
+     *
+     * Example:
+     * {{{
+     * session.send("What is 2+2?")
+     *   .untilResult
+     *   .runCollect
+     * }}}
+     */
     def untilResult: ZStream[R, AgentError, AgentMessage] =
       stream.takeUntil(_.isResult)
 
-    /** Collect all messages and return a QueryResult.
-      *
-      * Runs the stream to completion and constructs a QueryResult with
-      * all messages and the final outcome.
-      *
-      * Example:
-      * {{{
-      * val result = ClaudeAgent.query("Hello")
-      *   .collectResult
-      *   .flatMap(r => Console.printLine(s"Cost: ${r.cost}"))
-      * }}}
-      */
+    /**
+     * Collect all messages and return a QueryResult.
+     *
+     * Runs the stream to completion and constructs a QueryResult with
+     * all messages and the final outcome.
+     *
+     * Example:
+     * {{{
+     * val result = ClaudeAgent.query("Hello")
+     *   .collectResult
+     *   .flatMap(r => Console.printLine(s"Cost: ${r.cost}"))
+     * }}}
+     */
     def collectResult(
-        policy: CollectionPolicy = CollectionPolicy.Full,
-        sink: QueryCollector.MessageSink = QueryCollector.noSink
+      policy: CollectionPolicy = CollectionPolicy.Full,
+      sink: QueryCollector.MessageSink = QueryCollector.noSink,
     ): ZIO[R, AgentError, QueryResult] =
       QueryCollector.collect(stream, policy, sink)
 
-    /** Extract only assistant messages from the stream.
-      *
-      * Filters to only AssistantMessage types, useful when you only
-      * care about Claude's responses.
-      */
+    /**
+     * Extract only assistant messages from the stream.
+     *
+     * Filters to only AssistantMessage types, useful when you only
+     * care about Claude's responses.
+     */
     def assistantOnly: ZStream[R, AgentError, AgentMessage.Assistant] =
       stream.collect { case a: AgentMessage.Assistant => a }
 
-    /** Extract only streaming events for real-time text display.
-      *
-      * Filters to StreamEvent messages and extracts text deltas,
-      * useful for displaying text as it arrives.
-      */
+    /**
+     * Extract only streaming events for real-time text display.
+     *
+     * Filters to StreamEvent messages and extracts text deltas,
+     * useful for displaying text as it arrives.
+     */
     def streamingText: ZStream[R, AgentError, String] =
-      stream.collect {
-        case AgentMessage.StreamEvent(event, _, _, _) =>
-          event.delta.collect { case StreamDelta.TextDelta(t) => t }
-      }.collect { case Some(text) => text }
+      stream
+        .collect {
+          case AgentMessage.StreamEvent(event, _, _, _) =>
+            event.delta.collect { case StreamDelta.TextDelta(t) => t }
+        }
+        .collect { case Some(text) => text }
 
-    /** Log all messages as they pass through (for debugging).
-      *
-      * Example:
-      * {{{
-      * ClaudeAgent.query("Hello")
-      *   .logMessages("msg")
-      *   .runDrain
-      * }}}
-      */
+    /**
+     * Log all messages as they pass through (for debugging).
+     *
+     * Example:
+     * {{{
+     * ClaudeAgent.query("Hello")
+     *   .logMessages("msg")
+     *   .runDrain
+     * }}}
+     */
     def logMessages(label: String): ZStream[R, AgentError, AgentMessage] =
       stream.tap(msg => ZIO.logInfo(s"[$label] $msg"))
-}
+  end extension
+end scalagent

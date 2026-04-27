@@ -2,22 +2,24 @@ package com.tjclp.scalagent.macros
 
 import scala.quoted.Quotes
 
-/** Shared helpers for schema derivation macros.
-  *
-  * Centralizes common reflection logic used by ToolInput and StructuredOutput
-  * derivation to keep both macro implementations aligned.
-  */
+/**
+ * Shared helpers for schema derivation macros.
+ *
+ * Centralizes common reflection logic used by ToolInput and StructuredOutput
+ * derivation to keep both macro implementations aligned.
+ */
 object SchemaMacroSupport:
-  private val OptionTypeFullName = "scala.Option"
-  private val ListTypeFullName = "scala.collection.immutable.List"
-  private val VectorTypeFullName = "scala.collection.immutable.Vector"
-  private val SetTypeFullName = "scala.collection.immutable.Set"
-  private val EitherTypeFullName = "scala.util.Either"
-  private val Tuple2TypeFullName = "scala.Tuple2"
+  private val OptionTypeFullName            = "scala.Option"
+  private val ListTypeFullName              = "scala.collection.immutable.List"
+  private val VectorTypeFullName            = "scala.collection.immutable.Vector"
+  private val SetTypeFullName               = "scala.collection.immutable.Set"
+  private val EitherTypeFullName            = "scala.util.Either"
+  private val Tuple2TypeFullName            = "scala.Tuple2"
   private val DescriptionAnnotationFullName = "com.tjclp.scalagent.macros.description"
 
-  def splitOptional(using q: Quotes)(
-      tpe: q.reflect.TypeRepr
+  def splitOptional(
+    using q: Quotes
+  )(tpe: q.reflect.TypeRepr
   ): (Boolean, q.reflect.TypeRepr) =
     import q.reflect.*
     tpe match
@@ -26,8 +28,9 @@ object SchemaMacroSupport:
       case other =>
         (false, other)
 
-  def caseClassFieldInfos(using q: Quotes)(
-      ownerType: q.reflect.TypeRepr
+  def caseClassFieldInfos(
+    using q: Quotes
+  )(ownerType: q.reflect.TypeRepr
   ): List[(String, q.reflect.TypeRepr, Boolean, Option[String])] =
     import q.reflect.*
 
@@ -40,13 +43,14 @@ object SchemaMacroSupport:
         .toMap
 
     ownerType.typeSymbol.caseFields.map { field =>
-      val fieldName = field.name
-      val fieldType = ownerType.memberType(field)
+      val fieldName               = field.name
+      val fieldType               = ownerType.memberType(field)
       val (isOptional, innerType) = splitOptional(fieldType)
-      val descriptionOpt = extractDescription(fieldName, field.annotations)
+      val descriptionOpt          = extractDescription(fieldName, field.annotations)
         .orElse(ctorAnnotations.get(fieldName).flatMap(anns => extractDescription(fieldName, anns)))
       (fieldName, innerType, isOptional, descriptionOpt)
     }
+  end caseClassFieldInfos
 
   def isListLike(using q: Quotes)(tycon: q.reflect.TypeRepr): Boolean =
     val fullName = tycon.typeSymbol.fullName
@@ -70,16 +74,18 @@ object SchemaMacroSupport:
   def enumCaseNames(using q: Quotes)(enumType: q.reflect.TypeRepr): List[String] =
     enumType.typeSymbol.children.map(_.name)
 
-  private def extractDescription(using q: Quotes)(
-      fieldName: String,
-      annotations: List[q.reflect.Term]
+  private def extractDescription(
+    using q: Quotes
+  )(fieldName: String,
+    annotations: List[q.reflect.Term],
   ): Option[String] =
     import q.reflect.*
     annotations.collectFirst {
       case ann if ann.tpe.typeSymbol.fullName == DescriptionAnnotationFullName =>
         ann match
           case Apply(_, List(Literal(StringConstant(text)))) => text
-          case _ =>
+          case _                                             =>
             report.warning(s"Could not extract description text for field $fieldName")
             ""
     }
+end SchemaMacroSupport

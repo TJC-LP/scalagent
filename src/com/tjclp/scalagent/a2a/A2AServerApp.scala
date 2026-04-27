@@ -43,6 +43,9 @@ trait A2AServerApp[Self <: Singleton] extends ZIOAppDefault:
   def agentOptionsZIO: Task[AgentOptions] = ZIO.succeed(agentOptions)
 
   def skills: List[AgentSkill]                                                    = Nil
+  def executionMode: ExecutionMode                                                = ExecutionMode.Default
+  def taskTimeout: Option[Duration]                                               = None
+  def capabilities: AgentCapabilities                                             = AgentCapabilities.default
   def sessionLogDir: Option[String]                                               = None
   def invocationPreparer: Option[(A2AMessage, TaskId) => Task[InvocationContext]] = None
 
@@ -53,6 +56,9 @@ trait A2AServerApp[Self <: Singleton] extends ZIOAppDefault:
       host = host,
       port = port,
       agentOptions = options,
+      executionMode = executionMode,
+      taskTimeout = taskTimeout,
+      capabilities = capabilities,
       skills = skills,
       sessionLogDir = sessionLogDir,
       invocationPreparer = invocationPreparer,

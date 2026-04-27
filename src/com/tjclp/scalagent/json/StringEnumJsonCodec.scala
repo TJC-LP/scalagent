@@ -2,11 +2,12 @@ package com.tjclp.scalagent.json
 
 import zio.json.{JsonDecoder, JsonEncoder}
 
-/** Shared JSON codecs for string-backed enums.
-  *
-  * This keeps enum codec declarations uniform across the codebase and avoids
-  * repeating `JsonEncoder.string.contramap` / `JsonDecoder.string.map`.
-  */
+/**
+ * Shared JSON codecs for string-backed enums.
+ *
+ * This keeps enum codec declarations uniform across the codebase and avoids
+ * repeating `JsonEncoder.string.contramap` / `JsonDecoder.string.map`.
+ */
 object StringEnumJsonCodec:
   inline def encoder[A](toRaw: A => String): JsonEncoder[A] =
     JsonEncoder.string.contramap(toRaw)

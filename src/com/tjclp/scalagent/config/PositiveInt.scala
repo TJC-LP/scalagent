@@ -3,23 +3,24 @@ package com.tjclp.scalagent.config
 import scala.language.implicitConversions
 import scala.compiletime.error
 
-/** A positive integer (> 0).
-  *
-  * Use this for configuration fields that must be positive, like maxTurns.
-  *
-  * Example:
-  * {{{
-  * // Safe construction
-  * PositiveInt(5) // Right(PositiveInt(5))
-  * PositiveInt(0) // Left("Must be positive: 0")
-  *
-  * // Unsafe construction (for trusted values)
-  * PositiveInt.unsafe(5)
-  *
-  * // In options builder
-  * options.withMaxTurns(PositiveInt.unsafe(10))
-  * }}}
-  */
+/**
+ * A positive integer (> 0).
+ *
+ * Use this for configuration fields that must be positive, like maxTurns.
+ *
+ * Example:
+ * {{{
+ * // Safe construction
+ * PositiveInt(5) // Right(PositiveInt(5))
+ * PositiveInt(0) // Left("Must be positive: 0")
+ *
+ * // Unsafe construction (for trusted values)
+ * PositiveInt.unsafe(5)
+ *
+ * // In options builder
+ * options.withMaxTurns(PositiveInt.unsafe(10))
+ * }}}
+ */
 opaque type PositiveInt = Int
 
 object PositiveInt:
@@ -32,10 +33,11 @@ object PositiveInt:
   /** Create a PositiveInt without validation (for trusted/internal values) */
   def unsafe(n: Int): PositiveInt = n
 
-  /** Create a PositiveInt from a literal at compile time.
-    *
-    * This fails compilation when the literal is not strictly positive.
-    */
+  /**
+   * Create a PositiveInt from a literal at compile time.
+   *
+   * This fails compilation when the literal is not strictly positive.
+   */
   inline def literal(inline n: Int): PositiveInt =
     inline if n > 0 then n
     else error("PositiveInt literal must be > 0")
@@ -53,3 +55,4 @@ object PositiveInt:
 
   /** Implicit conversion to Int for convenience */
   given Conversion[PositiveInt, Int] = _.value
+end PositiveInt

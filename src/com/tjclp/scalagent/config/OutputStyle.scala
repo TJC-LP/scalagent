@@ -3,10 +3,11 @@ package com.tjclp.scalagent.config
 import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
-/** Output format style for Claude Agent SDK responses.
-  *
-  * Controls how the SDK formats output during execution.
-  */
+/**
+ * Output format style for Claude Agent SDK responses.
+ *
+ * Controls how the SDK formats output during execution.
+ */
 enum OutputStyle:
   /** Default text output */
   case Text
@@ -30,6 +31,7 @@ enum OutputStyle:
     case StreamJson => "stream-json"
     case Silent     => "silent"
     case Custom(v)  => v
+end OutputStyle
 
 object OutputStyle:
   given JsonEncoder[OutputStyle] = StringEnumJsonCodec.encoder(_.toRaw)

@@ -3,27 +3,28 @@ package com.tjclp.scalagent.config
 import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
-/** Setting source for filesystem-based configuration loading.
-  *
-  * Controls which filesystem settings are loaded, including Skills, plugins, and slash commands.
-  *
-  *   - `User` - Global user settings (`~/.claude/settings.json`, `~/.claude/skills/`)
-  *   - `Project` - Project settings (`.claude/settings.json`, `.claude/skills/`)
-  *   - `Local` - Local settings (`.claude/settings.local.json`)
-  *
-  * When omitted or empty, no filesystem settings are loaded (SDK isolation mode).
-  *
-  * Example:
-  * {{{
-  * val options = AgentOptions.default
-  *   .withSettingSources(SettingSource.User, SettingSource.Project)
-  *   .withAllowedTools(ToolName.Skill, ToolName.Read)
-  * }}}
-  */
+/**
+ * Setting source for filesystem-based configuration loading.
+ *
+ * Controls which filesystem settings are loaded, including Skills, plugins, and slash commands.
+ *
+ *   - `User` - Global user settings (`~/.claude/settings.json`, `~/.claude/skills/`)
+ *   - `Project` - Project settings (`.claude/settings.json`, `.claude/skills/`)
+ *   - `Local` - Local settings (`.claude/settings.local.json`)
+ *
+ * When omitted or empty, no filesystem settings are loaded (SDK isolation mode).
+ *
+ * Example:
+ * {{{
+ * val options = AgentOptions.default
+ *   .withSettingSources(SettingSource.User, SettingSource.Project)
+ *   .withAllowedTools(ToolName.Skill, ToolName.Read)
+ * }}}
+ */
 enum SettingSource(val raw: String):
-  case User extends SettingSource("user")
-  case Project extends SettingSource("project")
-  case Local extends SettingSource("local")
+  case User                             extends SettingSource("user")
+  case Project                          extends SettingSource("project")
+  case Local                            extends SettingSource("local")
   case Custom(override val raw: String) extends SettingSource(raw)
 
 object SettingSource:

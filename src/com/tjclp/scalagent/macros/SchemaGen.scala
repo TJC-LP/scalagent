@@ -6,61 +6,64 @@ import zio.schema.Schema
 import zio.schema.StandardType
 
 // Alias to avoid conflict with zio.schema.Schema.Map
-import scala.collection.immutable.{Map => ScalaMap}
+import scala.collection.immutable.Map as ScalaMap
 
-/** Generate JSON Schema from zio-schema Schema[A].
-  *
-  * This converts ZIO schema definitions to the JSON Schema format expected by the Claude SDK.
-  */
+/**
+ * Generate JSON Schema from zio-schema Schema[A].
+ *
+ * This converts ZIO schema definitions to the JSON Schema format expected by the Claude SDK.
+ */
 object SchemaGen:
 
-  /** Generate JSON Schema object from a zio-schema Schema.
-    *
-    * @param schema
-    *   The zio-schema Schema to convert
-    * @param descriptions
-    *   Optional parameter descriptions from @Param annotations
-    * @return
-    *   JavaScript object representing JSON Schema
-    */
+  /**
+   * Generate JSON Schema object from a zio-schema Schema.
+   *
+   * @param schema
+   *   The zio-schema Schema to convert
+   * @param descriptions
+   *   Optional parameter descriptions from @Param annotations
+   * @return
+   *   JavaScript object representing JSON Schema
+   */
   def toJsonSchema[A](schema: Schema[A], descriptions: ScalaMap[String, String] = ScalaMap.empty): js.Object =
     schemaToJs(schema, descriptions)
 
-  /** Generate a JSON Schema for function parameters.
-    *
-    * Creates an object schema where each field corresponds to a function parameter.
-    *
-    * @param params
-    *   List of (name, schema, isRequired) tuples
-    * @param descriptions
-    *   Parameter descriptions from @Param annotations
-    * @return
-    *   JavaScript object representing JSON Schema
-    */
+  /**
+   * Generate a JSON Schema for function parameters.
+   *
+   * Creates an object schema where each field corresponds to a function parameter.
+   *
+   * @param params
+   *   List of (name, schema, isRequired) tuples
+   * @param descriptions
+   *   Parameter descriptions from @Param annotations
+   * @return
+   *   JavaScript object representing JSON Schema
+   */
   def paramsToJsonSchema(
-      params: List[(String, Schema[?], Boolean)],
-      descriptions: ScalaMap[String, String] = ScalaMap.empty
+    params: List[(String, Schema[?], Boolean)],
+    descriptions: ScalaMap[String, String] = ScalaMap.empty,
   ): js.Object =
     val properties = js.Dictionary[js.Any]()
-    val required = scala.collection.mutable.ListBuffer[String]()
+    val required   = scala.collection.mutable.ListBuffer[String]()
 
-    params.foreach { case (name, schema, isRequired) =>
-      val fieldSchema = schemaToJs(schema, ScalaMap.empty)
-      // Add description if available
-      descriptions.get(name).foreach { desc =>
-        fieldSchema.asInstanceOf[js.Dynamic].description = desc
-      }
-      properties(name) = fieldSchema
-      if isRequired then required += name
+    params.foreach {
+      case (name, schema, isRequired) =>
+        val fieldSchema = schemaToJs(schema, ScalaMap.empty)
+        // Add description if available
+        descriptions.get(name).foreach { desc => fieldSchema.asInstanceOf[js.Dynamic].description = desc }
+        properties(name) = fieldSchema
+        if isRequired then required += name
     }
 
     val obj = js.Dynamic.literal(
       `type` = "object",
-      properties = properties
+      properties = properties,
     )
     if required.nonEmpty then obj.required = required.toJSArray
     obj.additionalProperties = false
     obj.asInstanceOf[js.Object]
+  end paramsToJsonSchema
 
   private def schemaToJs[A](schema: Schema[A], descriptions: ScalaMap[String, String]): js.Object =
     schema match
@@ -78,7 +81,7 @@ object SchemaGen:
         js.Dynamic
           .literal(
             `type` = "array",
-            items = schemaToJs(elementSchema, ScalaMap.empty)
+            items = schemaToJs(elementSchema, ScalaMap.empty),
           )
           .asInstanceOf[js.Object]
 
@@ -95,7 +98,7 @@ object SchemaGen:
         js.Dynamic
           .literal(
             `type` = "object",
-            additionalProperties = schemaToJs(map.valueSchema.asInstanceOf[Schema[Any]], ScalaMap.empty)
+            additionalProperties = schemaToJs(map.valueSchema.asInstanceOf[Schema[Any]], ScalaMap.empty),
           )
           .asInstanceOf[js.Object]
 
@@ -142,14 +145,12 @@ object SchemaGen:
 
   private def recordToJs[A](record: Schema.Record[A], descriptions: ScalaMap[String, String]): js.Object =
     val properties = js.Dictionary[js.Any]()
-    val required = scala.collection.mutable.ListBuffer[String]()
+    val required   = scala.collection.mutable.ListBuffer[String]()
 
     record.fields.foreach { field =>
       val fieldSchema = schemaToJs(field.schema, ScalaMap.empty)
       // Add description if available
-      descriptions.get(field.name.toString).foreach { desc =>
-        fieldSchema.asInstanceOf[js.Dynamic].description = desc
-      }
+      descriptions.get(field.name.toString).foreach { desc => fieldSchema.asInstanceOf[js.Dynamic].description = desc }
       properties(field.name.toString) = fieldSchema
 
       // Check if field is required (not optional)
@@ -160,11 +161,12 @@ object SchemaGen:
 
     val obj = js.Dynamic.literal(
       `type` = "object",
-      properties = properties
+      properties = properties,
     )
     if required.nonEmpty then obj.required = required.toJSArray
     obj.additionalProperties = false
     obj.asInstanceOf[js.Object]
+  end recordToJs
 
   private def enumToJs[A](e: Schema.Enum[A]): js.Object =
     // For simple string enums, generate enum constraint
@@ -172,6 +174,7 @@ object SchemaGen:
     js.Dynamic
       .literal(
         `type` = "string",
-        `enum` = cases.toJSArray
+        `enum` = cases.toJSArray,
       )
       .asInstanceOf[js.Object]
+end SchemaGen

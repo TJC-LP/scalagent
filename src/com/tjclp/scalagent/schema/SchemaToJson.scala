@@ -3,20 +3,21 @@ package com.tjclp.scalagent.schema
 import zio.json.ast.Json
 import zio.schema.*
 
-/** Converts zio-schema Schema[A] to JSON Schema.
-  *
-  * Generates standard JSON Schema format compatible with the Claude SDK structured outputs.
-  *
-  * Example:
-  * {{{
-  * case class Result(summary: String, score: Int)
-  * object Result:
-  *   given Schema[Result] = DeriveSchema.gen[Result]
-  *
-  * val jsonSchema: Json = SchemaToJson.convert(Schema[Result])
-  * // {"type": "object", "properties": {...}, "required": [...]}
-  * }}}
-  */
+/**
+ * Converts zio-schema Schema[A] to JSON Schema.
+ *
+ * Generates standard JSON Schema format compatible with the Claude SDK structured outputs.
+ *
+ * Example:
+ * {{{
+ * case class Result(summary: String, score: Int)
+ * object Result:
+ *   given Schema[Result] = DeriveSchema.gen[Result]
+ *
+ * val jsonSchema: Json = SchemaToJson.convert(Schema[Result])
+ * // {"type": "object", "properties": {...}, "required": [...]}
+ * }}}
+ */
 object SchemaToJson:
   /** Convert a zio-schema Schema to JSON Schema */
   def convert[A](schema: Schema[A]): Json =
@@ -55,7 +56,7 @@ object SchemaToJson:
       case set: Schema.Set[?] =>
         JsonSchemaAst.array(
           items = schemaToJson(set.elementSchema),
-          uniqueItems = true
+          uniqueItems = true,
         )
 
       case either: Schema.Either[?, ?] =>
@@ -63,14 +64,14 @@ object SchemaToJson:
         JsonSchemaAst.oneOf(
           List(
             schemaToJson(either.left),
-            schemaToJson(either.right)
+            schemaToJson(either.right),
           )
         )
 
       case tuple: Schema.Tuple2[?, ?] =>
         JsonSchemaAst.tuple2(
           left = schemaToJson(tuple.left),
-          right = schemaToJson(tuple.right)
+          right = schemaToJson(tuple.right),
         )
 
       case _ =>
@@ -124,7 +125,7 @@ object SchemaToJson:
 
     JsonSchemaAst.objectSchema(
       properties = properties.toList,
-      required = required.toList
+      required = required.toList,
     )
 
   private def isOptional(schema: Schema[?]): Boolean =
@@ -137,3 +138,4 @@ object SchemaToJson:
     // For simple string enums
     val cases = enumSchema.cases.map(_.id)
     JsonSchemaAst.enumOf(cases.toList)
+end SchemaToJson

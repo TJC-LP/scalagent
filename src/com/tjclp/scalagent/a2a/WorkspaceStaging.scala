@@ -86,6 +86,7 @@ object WorkspaceStaging:
         artifactsAfter = collectArtifacts,
         cleanup = cleanup,
       )
+  end StagedWorkspace
 
   /**
    * Stage every byte-encoded file part on `message` to a fresh
@@ -102,7 +103,7 @@ object WorkspaceStaging:
     val outputDir = Path.join(taskRoot, "output")
     Fs.mkdirSync(outputDir, js.Dynamic.literal(recursive = true))
     val (staged, uriRefs) = decodeFiles(message, taskRoot)
-    val workspace = AgentWorkspace(
+    val workspace         = AgentWorkspace(
       rootDir = taskRoot,
       outputDir = outputDir,
       inputs = staged,
@@ -124,14 +125,14 @@ object WorkspaceStaging:
     message: A2AMessage,
     taskRoot: String,
   ): (List[WorkspaceInput], List[FileContent.Uri]) =
-    val fileParts = message.parts.collect { case f: Part.File => f.file }
+    val fileParts             = message.parts.collect { case f: Part.File => f.file }
     val (uriParts, byteParts) = fileParts.partitionMap {
       case u: FileContent.Uri   => Left(u)
       case b: FileContent.Bytes => Right(b)
     }
 
     val usedNames = scala.collection.mutable.Set.empty[String]
-    val staged = byteParts.zipWithIndex.map {
+    val staged    = byteParts.zipWithIndex.map {
       case (bytes, idx) =>
         val safeName =
           uniqueName(
@@ -139,7 +140,7 @@ object WorkspaceStaging:
             idx,
             usedNames,
           )
-        val target   = Path.join(taskRoot, safeName)
+        val target = Path.join(taskRoot, safeName)
         writeBase64(target, bytes.bytes)
         WorkspaceInput(
           path = target,
@@ -176,7 +177,7 @@ object WorkspaceStaging:
 
   /** Reject path-traversal-shaped names; otherwise pass through. */
   private def sanitizeName(name: String, idx: Int): String =
-    val trimmed = name.trim
+    val trimmed    = name.trim
     val isPathLike =
       trimmed.isEmpty ||
         trimmed == "." ||
@@ -309,6 +310,6 @@ object WorkspaceStaging:
   @js.native
   @JSImport("node:path", JSImport.Namespace)
   private object Path extends js.Object:
-    def join(a: String, b: String): String = js.native
+    def join(a: String, b: String): String         = js.native
     def relative(from: String, to: String): String = js.native
 end WorkspaceStaging

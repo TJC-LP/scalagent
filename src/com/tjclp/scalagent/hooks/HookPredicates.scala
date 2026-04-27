@@ -2,22 +2,23 @@ package com.tjclp.scalagent.hooks
 
 import com.tjclp.scalagent.tools.ToolName
 
-/** Common predicate helpers for hook composition.
-  *
-  * Use these with the `when` and `unless` combinators to create targeted hooks.
-  *
-  * Example:
-  * {{{
-  * import HookPredicates.*
-  *
-  * val securityHook = HookCallback.blockTools(ToolName.Bash)
-  *   .when(isPreToolUse)
-  *   .unless(forTool(ToolName.Read))
-  *
-  * val loggingHook = HookCallback.logging(println)
-  *   .when(isToolEvent)
-  * }}}
-  */
+/**
+ * Common predicate helpers for hook composition.
+ *
+ * Use these with the `when` and `unless` combinators to create targeted hooks.
+ *
+ * Example:
+ * {{{
+ * import HookPredicates.*
+ *
+ * val securityHook = HookCallback.blockTools(ToolName.Bash)
+ *   .when(isPreToolUse)
+ *   .unless(forTool(ToolName.Read))
+ *
+ * val loggingHook = HookCallback.logging(println)
+ *   .when(isToolEvent)
+ * }}}
+ */
 object HookPredicates:
 
   // ============================================================================
@@ -50,11 +51,11 @@ object HookPredicates:
 
   /** Matches any tool-related event (PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest) */
   val isToolEvent: HookInput => Boolean = {
-    case _: HookInput.PreToolUse        => true
-    case _: HookInput.PostToolUse       => true
+    case _: HookInput.PreToolUse         => true
+    case _: HookInput.PostToolUse        => true
     case _: HookInput.PostToolUseFailure => true
-    case _: HookInput.PermissionRequest => true
-    case _                              => false
+    case _: HookInput.PermissionRequest  => true
+    case _                               => false
   }
 
   /** Matches SessionStart events */
@@ -123,42 +124,34 @@ object HookPredicates:
   // Tool Name Predicates
   // ============================================================================
 
-  /** Matches events for a specific tool.
-    *
-    * Example:
-    * {{{
-    * val onlyBash = hook.when(forTool(ToolName.Bash))
-    * }}}
-    */
-  def forTool(tool: ToolName): HookInput => Boolean = { input =>
-    extractToolName(input).contains(tool)
-  }
+  /**
+   * Matches events for a specific tool.
+   *
+   * Example:
+   * {{{
+   * val onlyBash = hook.when(forTool(ToolName.Bash))
+   * }}}
+   */
+  def forTool(tool: ToolName): HookInput => Boolean = input => extractToolName(input).contains(tool)
 
-  /** Matches events for any of the specified tools.
-    *
-    * Example:
-    * {{{
-    * val fileOps = hook.when(forTools(ToolName.Read, ToolName.Write, ToolName.Edit))
-    * }}}
-    */
-  def forTools(tools: ToolName*): HookInput => Boolean = { input =>
-    extractToolName(input).exists(tools.contains)
-  }
+  /**
+   * Matches events for any of the specified tools.
+   *
+   * Example:
+   * {{{
+   * val fileOps = hook.when(forTools(ToolName.Read, ToolName.Write, ToolName.Edit))
+   * }}}
+   */
+  def forTools(tools: ToolName*): HookInput => Boolean = input => extractToolName(input).exists(tools.contains)
 
   /** Matches events for file operation tools (Read, Write, Edit, Glob, Grep) */
-  val isFileOperation: HookInput => Boolean = { input =>
-    extractToolName(input).exists(ToolName.isFileOperation)
-  }
+  val isFileOperation: HookInput => Boolean = input => extractToolName(input).exists(ToolName.isFileOperation)
 
   /** Matches events for dangerous tools (Bash, Write, Edit) */
-  val isDangerousTool: HookInput => Boolean = { input =>
-    extractToolName(input).exists(ToolName.isDangerous)
-  }
+  val isDangerousTool: HookInput => Boolean = input => extractToolName(input).exists(ToolName.isDangerous)
 
   /** Matches events for read-only tools (Read, Glob, Grep, WebFetch, WebSearch) */
-  val isReadOnlyTool: HookInput => Boolean = { input =>
-    extractToolName(input).exists(ToolName.isReadOnly)
-  }
+  val isReadOnlyTool: HookInput => Boolean = input => extractToolName(input).exists(ToolName.isReadOnly)
 
   // ============================================================================
   // Compound Predicates
@@ -205,3 +198,4 @@ object HookPredicates:
       case e: HookInput.PostToolUseFailure => Some(e.toolName)
       case e: HookInput.PermissionRequest  => Some(e.toolName)
       case _                               => None
+end HookPredicates

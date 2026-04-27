@@ -3,24 +3,25 @@ package com.tjclp.scalagent.config
 import com.tjclp.scalagent.json.OpaqueStringJsonCodec
 import zio.json.{JsonDecoder, JsonEncoder}
 
-/** Type-safe wrapper for slash command names.
-  *
-  * Command names can be built-in (like "compact", "clear") or custom. Custom commands are defined as markdown files in
-  * `.claude/commands/` directories.
-  *
-  * Example:
-  * {{{
-  * val builtin = CommandName.compact
-  * val custom = CommandName("my-custom-command")
-  *
-  * // Use with slash prefix
-  * println(custom.withSlash)  // "/my-custom-command"
-  *
-  * // Check if built-in
-  * builtin.isBuiltin  // true
-  * custom.isBuiltin   // false
-  * }}}
-  */
+/**
+ * Type-safe wrapper for slash command names.
+ *
+ * Command names can be built-in (like "compact", "clear") or custom. Custom commands are defined as markdown files in
+ * `.claude/commands/` directories.
+ *
+ * Example:
+ * {{{
+ * val builtin = CommandName.compact
+ * val custom = CommandName("my-custom-command")
+ *
+ * // Use with slash prefix
+ * println(custom.withSlash)  // "/my-custom-command"
+ *
+ * // Check if built-in
+ * builtin.isBuiltin  // true
+ * custom.isBuiltin   // false
+ * }}}
+ */
 opaque type CommandName = String
 
 object CommandName:
@@ -28,8 +29,8 @@ object CommandName:
 
   // Built-in commands
   val compact: CommandName = "compact"
-  val clear: CommandName = "clear"
-  val help: CommandName = "help"
+  val clear: CommandName   = "clear"
+  val help: CommandName    = "help"
 
   extension (cmd: CommandName)
     def value: String = cmd
@@ -44,3 +45,4 @@ object CommandName:
 
   given JsonEncoder[CommandName] = OpaqueStringJsonCodec.encoder(_.value)
   given JsonDecoder[CommandName] = OpaqueStringJsonCodec.decoder(apply)
+end CommandName

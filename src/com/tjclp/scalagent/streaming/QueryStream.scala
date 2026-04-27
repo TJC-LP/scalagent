@@ -9,15 +9,15 @@ import com.tjclp.scalagent.errors.AgentError
 import com.tjclp.scalagent.messages.AgentMessage
 
 final case class CleanupFailure(
-    operation: String,
-    message: String
-):
+  operation: String,
+  message: String):
   def description: String = s"$operation cleanup failed: $message"
 
-/** Raw Query interface from the SDK.
-  *
-  * This trait represents the SDK's Query object which extends AsyncGenerator and provides additional control methods.
-  */
+/**
+ * Raw Query interface from the SDK.
+ *
+ * This trait represents the SDK's Query object which extends AsyncGenerator and provides additional control methods.
+ */
 @js.native
 trait RawQuery extends AsyncGenerator[js.Any, Unit, Unit]:
   /** Interrupt the current query execution */
@@ -82,16 +82,18 @@ trait RawQuery extends AsyncGenerator[js.Any, Unit, Unit]:
 
   /** Reload plugins, refreshing commands, agents, and MCP server status */
   def reloadPlugins(): js.Promise[js.Dynamic] = js.native
+end RawQuery
 
-/** Wrapper for SDK Query that provides ZIO/ZStream interface.
-  *
-  * This class wraps the raw JavaScript Query object and provides:
-  *   - A ZStream of AgentMessage for consuming responses
-  *   - Control methods (interrupt, setPermissionMode, etc.) as ZIO effects
-  *
-  * @param rawQuery
-  *   The underlying JavaScript Query object
-  */
+/**
+ * Wrapper for SDK Query that provides ZIO/ZStream interface.
+ *
+ * This class wraps the raw JavaScript Query object and provides:
+ *   - A ZStream of AgentMessage for consuming responses
+ *   - Control methods (interrupt, setPermissionMode, etc.) as ZIO effects
+ *
+ * @param rawQuery
+ *   The underlying JavaScript Query object
+ */
 final class QueryStream private (rawQuery: RawQuery):
 
   private enum CleanupMode:
@@ -99,7 +101,7 @@ final class QueryStream private (rawQuery: RawQuery):
     case Interrupt
     case Close
 
-  private var cleanupStarted = false
+  private var cleanupStarted        = false
   private val cleanupFailuresBuffer = scala.collection.mutable.ListBuffer.empty[CleanupFailure]
 
   private def recordCleanupFailure(operation: String, throwable: Throwable): UIO[Unit] =
@@ -134,21 +136,23 @@ final class QueryStream private (rawQuery: RawQuery):
         AgentError.MessageParseError(parseError.message, Some(parseError.raw), parseError.cause)
       case other => AgentError.fromThrowable(other)
 
-  /** Stream of agent messages from this query.
-    *
-    * This stream will emit messages as they arrive from the SDK, converting each raw JavaScript message to the Scala
-    * ADT representation.
-    */
+  /**
+   * Stream of agent messages from this query.
+   *
+   * This stream will emit messages as they arrive from the SDK, converting each raw JavaScript message to the Scala
+   * ADT representation.
+   */
   val messages: ZStream[Any, AgentError, AgentMessage] =
     AsyncIteratorOps
       .toZStreamWithCleanup(rawQuery, runCleanup(CleanupMode.StreamTermination))
       .mapZIO(raw => ZIO.attempt(MessageConverter.fromRaw(raw)).mapError(toAgentError))
       .mapError(AgentError.fromThrowable)
 
-  /** Interrupt the current query execution.
-    *
-    * This will stop the agent and cause the stream to complete.
-    */
+  /**
+   * Interrupt the current query execution.
+   *
+   * This will stop the agent and cause the stream to complete.
+   */
   def interrupt: Task[Unit] =
     ZIO.suspend {
       if cleanupStarted then ZIO.unit
@@ -162,96 +166,104 @@ final class QueryStream private (rawQuery: RawQuery):
           }
     }
 
-  /** Change the permission mode for this session.
-    *
-    * @param mode
-    *   The new permission mode
-    */
+  /**
+   * Change the permission mode for this session.
+   *
+   * @param mode
+   *   The new permission mode
+   */
   def setPermissionMode(mode: PermissionMode): Task[Unit] =
     ZIO.fromPromiseJS(rawQuery.setPermissionMode(mode.toRaw))
 
-  /** Change the model for subsequent responses.
-    *
-    * @param model
-    *   The model to use, or None to use the default
-    */
+  /**
+   * Change the model for subsequent responses.
+   *
+   * @param model
+   *   The model to use, or None to use the default
+   */
   def setModel(model: Option[String]): Task[Unit] =
     ZIO.fromPromiseJS(rawQuery.setModel(model.orUndefined))
 
-  /** Get the list of supported slash commands.
-    *
-    * @return
-    *   List of SlashCommand info objects
-    */
+  /**
+   * Get the list of supported slash commands.
+   *
+   * @return
+   *   List of SlashCommand info objects
+   */
   def supportedCommands: Task[List[SlashCommand]] =
     ZIO
       .fromPromiseJS(rawQuery.supportedCommands())
       .map(_.toList.map(SlashCommand.fromRaw))
 
-  /** Get the list of supported models.
-    *
-    * @return
-    *   List of ModelInfo objects
-    */
+  /**
+   * Get the list of supported models.
+   *
+   * @return
+   *   List of ModelInfo objects
+   */
   def supportedModels: Task[List[ModelInfo]] =
     ZIO
       .fromPromiseJS(rawQuery.supportedModels())
       .map(_.toList.map(ModelInfo.fromRaw))
 
-  /** Set maximum thinking tokens for extended thinking.
-    *
-    * @param tokens
-    *   Maximum tokens, or None to disable limit
-    */
+  /**
+   * Set maximum thinking tokens for extended thinking.
+   *
+   * @param tokens
+   *   Maximum tokens, or None to disable limit
+   */
   def setMaxThinkingTokens(tokens: Option[Int]): Task[Unit] =
     val jsTokens: js.Any = tokens.map(_.asInstanceOf[js.Any]).getOrElse(null)
     ZIO.fromPromiseJS(rawQuery.setMaxThinkingTokens(jsTokens))
 
-  /** Get MCP server connection status.
-    *
-    * @return
-    *   List of MCP server status objects
-    */
+  /**
+   * Get MCP server connection status.
+   *
+   * @return
+   *   List of MCP server status objects
+   */
   def mcpServerStatus: Task[List[McpServerStatusInfo]] =
     ZIO
       .fromPromiseJS(rawQuery.mcpServerStatus())
       .map(_.toList.map(McpServerStatusInfo.fromRaw))
 
-  /** Get account information.
-    *
-    * @return
-    *   Account info including email, organization, etc.
-    */
+  /**
+   * Get account information.
+   *
+   * @return
+   *   Account info including email, organization, etc.
+   */
   def accountInfo: Task[AccountInfo] =
     ZIO
       .fromPromiseJS(rawQuery.accountInfo())
       .map(AccountInfo.fromRaw)
 
-  /** Stream additional user input for multi-turn conversations.
-    *
-    * This allows adding more messages to an ongoing conversation.
-    *
-    * @param message
-    *   The user message to add
-    * @param priority
-    *   Message priority: "now", "next", or "later" (optional)
-    * @param shouldQuery
-    *   When `Some(false)`, appends the message to the transcript without triggering an assistant turn;
-    *   it merges into the next querying user message. Requires SDK 0.2.110+.
-    */
+  /**
+   * Stream additional user input for multi-turn conversations.
+   *
+   * This allows adding more messages to an ongoing conversation.
+   *
+   * @param message
+   *   The user message to add
+   * @param priority
+   *   Message priority: "now", "next", or "later" (optional)
+   * @param shouldQuery
+   *   When `Some(false)`, appends the message to the transcript without triggering an assistant turn;
+   *   it merges into the next querying user message. Requires SDK 0.2.110+.
+   */
   def streamUserMessage(
-      message: String,
-      priority: Option[MessagePriority] = None,
-      shouldQuery: Option[Boolean] = None
+    message: String,
+    priority: Option[MessagePriority] = None,
+    shouldQuery: Option[Boolean] = None,
   ): Task[Unit] =
     val userMsg = js.Dynamic.literal(
       `type` = "user",
       message = js.Dynamic.literal(
         role = "user",
-        content = js.Array(js.Dynamic.literal(`type` = "text", text = message))
+        content = js.Array(js.Dynamic.literal(`type` = "text", text = message)),
       ),
       parent_tool_use_id = null,
-      session_id = ""
+      session_id = "",
     )
     priority.foreach(p => userMsg.priority = p.toRaw)
     shouldQuery.foreach(b => userMsg.shouldQuery = b)
@@ -259,28 +271,28 @@ final class QueryStream private (rawQuery: RawQuery):
 
   private def singleMessageStream(userMsg: js.Dynamic): js.Any =
     val iterator = js.Dynamic.literal()
-    var emitted = false
+    var emitted  = false
     iterator.next = () =>
       if !emitted then
         emitted = true
         js.Promise.resolve(
           js.Dynamic.literal(
             value = userMsg,
-            done = false
+            done = false,
           )
         )
-      else
-        js.Promise.resolve(js.Dynamic.literal(done = true))
+      else js.Promise.resolve(js.Dynamic.literal(done = true))
 
     val stream = js.Dynamic.literal()
     js.Dynamic.global.Reflect.set(stream, js.Symbol.asyncIterator, () => iterator)
     stream
 
-  /** Forcefully close the query and terminate the underlying process.
-    *
-    * This ends the query, cleaning up all resources including pending requests, MCP transports, and the CLI subprocess.
-    * After calling close(), no further messages will be received.
-    */
+  /**
+   * Forcefully close the query and terminate the underlying process.
+   *
+   * This ends the query, cleaning up all resources including pending requests, MCP transports, and the CLI subprocess.
+   * After calling close(), no further messages will be received.
+   */
   def close(): UIO[Unit] =
     runCleanup(CleanupMode.Close)
 
@@ -288,131 +300,144 @@ final class QueryStream private (rawQuery: RawQuery):
   def cleanupFailures: UIO[List[CleanupFailure]] =
     ZIO.succeed(cleanupFailuresBuffer.toList)
 
-  /** Reconnect an MCP server by name.
-    *
-    * @param serverName
-    *   The name of the MCP server to reconnect
-    */
+  /**
+   * Reconnect an MCP server by name.
+   *
+   * @param serverName
+   *   The name of the MCP server to reconnect
+   */
   def reconnectMcpServer(serverName: String): Task[Unit] =
     ZIO.fromPromiseJS(rawQuery.reconnectMcpServer(serverName))
 
-  /** Enable or disable an MCP server by name.
-    *
-    * @param serverName
-    *   The name of the MCP server to toggle
-    * @param enabled
-    *   Whether the server should be enabled
-    */
+  /**
+   * Enable or disable an MCP server by name.
+   *
+   * @param serverName
+   *   The name of the MCP server to toggle
+   * @param enabled
+   *   Whether the server should be enabled
+   */
   def toggleMcpServer(serverName: String, enabled: Boolean): Task[Unit] =
     ZIO.fromPromiseJS(rawQuery.toggleMcpServer(serverName, enabled))
 
-  /** Rewind tracked files to their state at a specific user message.
-    *
-    * Requires file checkpointing to be enabled via the `enableFileCheckpointing` option.
-    *
-    * @param userMessageId
-    *   UUID of the user message to rewind to
-    * @param dryRun
-    *   If true, preview changes without modifying files
-    * @return
-    *   Result containing rewind status and file change statistics
-    */
+  /**
+   * Rewind tracked files to their state at a specific user message.
+   *
+   * Requires file checkpointing to be enabled via the `enableFileCheckpointing` option.
+   *
+   * @param userMessageId
+   *   UUID of the user message to rewind to
+   * @param dryRun
+   *   If true, preview changes without modifying files
+   * @return
+   *   Result containing rewind status and file change statistics
+   */
   def rewindFiles(userMessageId: String, dryRun: Boolean = false): Task[RewindFilesResult] =
     val options = if dryRun then js.Dynamic.literal(dryRun = true) else js.undefined
     ZIO
       .fromPromiseJS(rawQuery.rewindFiles(userMessageId, options))
       .map(RewindFilesResult.fromRaw)
 
-  /** Dynamically set the MCP servers for this session.
-    *
-    * This replaces the current set of dynamically-added MCP servers. Servers that are removed will be disconnected, and
-    * new servers will be connected.
-    *
-    * Note: This only affects servers added dynamically via this method or the SDK. Servers configured via settings
-    * files are not affected.
-    *
-    * @param servers
-    *   Map of server name to configuration. Pass an empty map to remove all dynamic servers.
-    * @return
-    *   Information about which servers were added, removed, and any connection errors
-    */
+  /**
+   * Dynamically set the MCP servers for this session.
+   *
+   * This replaces the current set of dynamically-added MCP servers. Servers that are removed will be disconnected, and
+   * new servers will be connected.
+   *
+   * Note: This only affects servers added dynamically via this method or the SDK. Servers configured via settings
+   * files are not affected.
+   *
+   * @param servers
+   *   Map of server name to configuration. Pass an empty map to remove all dynamic servers.
+   * @return
+   *   Information about which servers were added, removed, and any connection errors
+   */
   def setMcpServers(servers: Map[String, js.Any]): Task[McpSetServersResult] =
     ZIO
       .fromPromiseJS(rawQuery.setMcpServers(servers.toJSDictionary))
       .map(McpSetServersResult.fromRaw)
 
-  /** Get the list of supported subagents.
-    *
-    * @return
-    *   List of AgentInfo objects
-    */
+  /**
+   * Get the list of supported subagents.
+   *
+   * @return
+   *   List of AgentInfo objects
+   */
   def supportedAgents: Task[List[AgentInfo]] =
     ZIO
       .fromPromiseJS(rawQuery.supportedAgents())
       .map(_.toList.map(AgentInfo.fromRaw))
 
-  /** Stop a running background task.
-    *
-    * @param taskId
-    *   The ID of the task to stop
-    */
+  /**
+   * Stop a running background task.
+   *
+   * @param taskId
+   *   The ID of the task to stop
+   */
   def stopTask(taskId: String): Task[Unit] =
     ZIO.fromPromiseJS(rawQuery.stopTask(taskId))
 
-  /** Get the full initialization result from the SDK.
-    *
-    * This provides access to the complete initialization response including:
-    * - Available slash commands
-    * - Output style configuration
-    * - Supported models
-    * - Account information
-    *
-    * @return
-    *   Full initialization result
-    */
+  /**
+   * Get the full initialization result from the SDK.
+   *
+   * This provides access to the complete initialization response including:
+   * - Available slash commands
+   * - Output style configuration
+   * - Supported models
+   * - Account information
+   *
+   * @return
+   *   Full initialization result
+   */
   def initializationResult: Task[InitializationResult] =
     ZIO
       .fromPromiseJS(rawQuery.initializationResult())
       .map(InitializationResult.fromRaw)
 
-  /** Apply settings mid-session, dynamically updating the active configuration.
-    *
-    * Equivalent to passing a `settings` object to `query()` but applies during an ongoing session.
-    * Only available in streaming input mode.
-    *
-    * @param settings
-    *   A raw JS settings object to merge into the flag settings layer
-    */
+  /**
+   * Apply settings mid-session, dynamically updating the active configuration.
+   *
+   * Equivalent to passing a `settings` object to `query()` but applies during an ongoing session.
+   * Only available in streaming input mode.
+   *
+   * @param settings
+   *   A raw JS settings object to merge into the flag settings layer
+   */
   def applyFlagSettings(settings: js.Dynamic): Task[Unit] =
     ZIO.fromPromiseJS(rawQuery.applyFlagSettings(settings))
 
-  /** Seed the file read state cache. Call after compaction to prevent
-    * "file not read yet" errors for files previously accessed.
-    */
+  /**
+   * Seed the file read state cache. Call after compaction to prevent
+   * "file not read yet" errors for files previously accessed.
+   */
   def seedReadState(path: String, mtime: Double): Task[Unit] =
     ZIO.fromPromiseJS(rawQuery.seedReadState(path, mtime))
 
-  /** Get detailed context window usage breakdown including token counts
-    * by category (user messages, assistant, tools, system, etc.).
-    */
+  /**
+   * Get detailed context window usage breakdown including token counts
+   * by category (user messages, assistant, tools, system, etc.).
+   */
   def getContextUsage(): Task[js.Dynamic] =
     ZIO.fromPromiseJS(rawQuery.getContextUsage())
 
-  /** Reload plugins, refreshing available commands, agents, plugins,
-    * and MCP server status.
-    */
+  /**
+   * Reload plugins, refreshing available commands, agents, plugins,
+   * and MCP server status.
+   */
   def reloadPlugins(): Task[js.Dynamic] =
     ZIO.fromPromiseJS(rawQuery.reloadPlugins())
+end QueryStream
 
 object QueryStream:
 
-  /** Create a QueryStream from a raw SDK Query object.
-    *
-    * @param rawQuery
-    *   The raw JavaScript Query object
-    * @return
-    *   A new QueryStream wrapper
-    */
+  /**
+   * Create a QueryStream from a raw SDK Query object.
+   *
+   * @param rawQuery
+   *   The raw JavaScript Query object
+   * @return
+   *   A new QueryStream wrapper
+   */
   def apply(rawQuery: RawQuery): QueryStream =
     new QueryStream(rawQuery)
 
@@ -427,31 +452,31 @@ enum MessagePriority:
 
 /** Information about a slash command */
 final case class SlashCommand(
-    name: String,
-    description: String,
-    args: Option[String]
-)
+  name: String,
+  description: String,
+  args: Option[String])
 
 object SlashCommand:
   def fromRaw(obj: js.Dynamic): SlashCommand =
     SlashCommand(
       name = obj.name.asInstanceOf[String],
       description = obj.description.asInstanceOf[String],
-      args = obj.argumentHint.asInstanceOf[js.UndefOr[String]].toOption
-        .orElse(obj.args.asInstanceOf[js.UndefOr[String]].toOption)
+      args = obj.argumentHint
+        .asInstanceOf[js.UndefOr[String]]
+        .toOption
+        .orElse(obj.args.asInstanceOf[js.UndefOr[String]].toOption),
     )
 
 /** Information about a supported model */
 final case class ModelInfo(
-    value: String,
-    displayName: String,
-    description: String,
-    supportsEffort: Option[Boolean] = None,
-    supportedEffortLevels: Option[List[String]] = None,
-    supportsAdaptiveThinking: Option[Boolean] = None,
-    supportsFastMode: Option[Boolean] = None,
-    supportsAutoMode: Option[Boolean] = None
-)
+  value: String,
+  displayName: String,
+  description: String,
+  supportsEffort: Option[Boolean] = None,
+  supportedEffortLevels: Option[List[String]] = None,
+  supportsAdaptiveThinking: Option[Boolean] = None,
+  supportsFastMode: Option[Boolean] = None,
+  supportsAutoMode: Option[Boolean] = None)
 
 object ModelInfo:
   def fromRaw(obj: js.Dynamic): ModelInfo =
@@ -460,37 +485,36 @@ object ModelInfo:
       displayName = obj.displayName.asInstanceOf[String],
       description = obj.description.asInstanceOf[js.UndefOr[String]].getOrElse(""),
       supportsEffort = obj.supportsEffort.asInstanceOf[js.UndefOr[Boolean]].toOption,
-      supportedEffortLevels = obj.supportedEffortLevels.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList),
+      supportedEffortLevels =
+        obj.supportedEffortLevels.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList),
       supportsAdaptiveThinking = obj.supportsAdaptiveThinking.asInstanceOf[js.UndefOr[Boolean]].toOption,
       supportsFastMode = obj.supportsFastMode.asInstanceOf[js.UndefOr[Boolean]].toOption,
-      supportsAutoMode = obj.supportsAutoMode.asInstanceOf[js.UndefOr[Boolean]].toOption
+      supportsAutoMode = obj.supportsAutoMode.asInstanceOf[js.UndefOr[Boolean]].toOption,
     )
 
 /** Information about a supported subagent */
 final case class AgentInfo(
-    name: String,
-    description: String,
-    model: Option[String]
-)
+  name: String,
+  description: String,
+  model: Option[String])
 
 object AgentInfo:
   def fromRaw(obj: js.Dynamic): AgentInfo =
     AgentInfo(
       name = obj.name.asInstanceOf[String],
       description = obj.description.asInstanceOf[String],
-      model = obj.model.asInstanceOf[js.UndefOr[String]].toOption
+      model = obj.model.asInstanceOf[js.UndefOr[String]].toOption,
     )
 
 /** MCP server connection status */
 final case class McpServerStatusInfo(
-    name: String,
-    status: String,
-    serverName: Option[String],
-    serverVersion: Option[String],
-    error: Option[String] = None,
-    scope: Option[String] = None,
-    tools: Option[List[McpToolStatusInfo]] = None
-)
+  name: String,
+  status: String,
+  serverName: Option[String],
+  serverVersion: Option[String],
+  error: Option[String] = None,
+  scope: Option[String] = None,
+  tools: Option[List[McpToolStatusInfo]] = None)
 
 object McpServerStatusInfo:
   def fromRaw(obj: js.Dynamic): McpServerStatusInfo =
@@ -499,25 +523,20 @@ object McpServerStatusInfo:
     McpServerStatusInfo(
       name = obj.name.asInstanceOf[String],
       status = obj.status.asInstanceOf[String],
-      serverName = serverInfo.toOption.flatMap(si =>
-        si.name.asInstanceOf[js.UndefOr[String]].toOption
-      ),
-      serverVersion = serverInfo.toOption.flatMap(si =>
-        si.version.asInstanceOf[js.UndefOr[String]].toOption
-      ),
+      serverName = serverInfo.toOption.flatMap(si => si.name.asInstanceOf[js.UndefOr[String]].toOption),
+      serverVersion = serverInfo.toOption.flatMap(si => si.version.asInstanceOf[js.UndefOr[String]].toOption),
       error = obj.error.asInstanceOf[js.UndefOr[String]].toOption,
       scope = obj.scope.asInstanceOf[js.UndefOr[String]].toOption,
-      tools = toolsArray.toOption.map(_.toList.map(McpToolStatusInfo.fromRaw))
+      tools = toolsArray.toOption.map(_.toList.map(McpToolStatusInfo.fromRaw)),
     )
 
 /** MCP tool status information */
 final case class McpToolStatusInfo(
-    name: String,
-    description: Option[String],
-    readOnly: Option[Boolean] = None,
-    destructive: Option[Boolean] = None,
-    openWorld: Option[Boolean] = None
-)
+  name: String,
+  description: Option[String],
+  readOnly: Option[Boolean] = None,
+  destructive: Option[Boolean] = None,
+  openWorld: Option[Boolean] = None)
 
 object McpToolStatusInfo:
   def fromRaw(obj: js.Dynamic): McpToolStatusInfo =
@@ -527,18 +546,17 @@ object McpToolStatusInfo:
       description = obj.description.asInstanceOf[js.UndefOr[String]].toOption,
       readOnly = annotations.toOption.flatMap(a => a.readOnly.asInstanceOf[js.UndefOr[Boolean]].toOption),
       destructive = annotations.toOption.flatMap(a => a.destructive.asInstanceOf[js.UndefOr[Boolean]].toOption),
-      openWorld = annotations.toOption.flatMap(a => a.openWorld.asInstanceOf[js.UndefOr[Boolean]].toOption)
+      openWorld = annotations.toOption.flatMap(a => a.openWorld.asInstanceOf[js.UndefOr[Boolean]].toOption),
     )
 
 /** Account information from the SDK */
 final case class AccountInfo(
-    email: Option[String],
-    organization: Option[String],
-    subscriptionType: Option[String],
-    tokenSource: Option[String],
-    apiKeySource: Option[String],
-    apiProvider: Option[String] = None
-)
+  email: Option[String],
+  organization: Option[String],
+  subscriptionType: Option[String],
+  tokenSource: Option[String],
+  apiKeySource: Option[String],
+  apiProvider: Option[String] = None)
 
 object AccountInfo:
   def fromRaw(obj: js.Dynamic): AccountInfo =
@@ -548,17 +566,16 @@ object AccountInfo:
       subscriptionType = obj.subscriptionType.asInstanceOf[js.UndefOr[String]].toOption,
       tokenSource = obj.tokenSource.asInstanceOf[js.UndefOr[String]].toOption,
       apiKeySource = obj.apiKeySource.asInstanceOf[js.UndefOr[String]].toOption,
-      apiProvider = obj.apiProvider.asInstanceOf[js.UndefOr[String]].toOption
+      apiProvider = obj.apiProvider.asInstanceOf[js.UndefOr[String]].toOption,
     )
 
 /** Result of a rewindFiles operation */
 final case class RewindFilesResult(
-    canRewind: Boolean,
-    error: Option[String],
-    filesChanged: Option[List[String]],
-    insertions: Option[Int],
-    deletions: Option[Int]
-)
+  canRewind: Boolean,
+  error: Option[String],
+  filesChanged: Option[List[String]],
+  insertions: Option[Int],
+  deletions: Option[Int])
 
 object RewindFilesResult:
   def fromRaw(obj: js.Dynamic): RewindFilesResult =
@@ -567,15 +584,14 @@ object RewindFilesResult:
       error = obj.error.asInstanceOf[js.UndefOr[String]].toOption,
       filesChanged = obj.filesChanged.asInstanceOf[js.UndefOr[js.Array[String]]].toOption.map(_.toList),
       insertions = obj.insertions.asInstanceOf[js.UndefOr[Int]].toOption,
-      deletions = obj.deletions.asInstanceOf[js.UndefOr[Int]].toOption
+      deletions = obj.deletions.asInstanceOf[js.UndefOr[Int]].toOption,
     )
 
 /** Result of a setMcpServers operation */
 final case class McpSetServersResult(
-    added: List[String],
-    removed: List[String],
-    errors: Map[String, String]
-)
+  added: List[String],
+  removed: List[String],
+  errors: Map[String, String])
 
 object McpSetServersResult:
   def fromRaw(obj: js.Dynamic): McpSetServersResult =
@@ -583,19 +599,18 @@ object McpSetServersResult:
     McpSetServersResult(
       added = obj.added.asInstanceOf[js.Array[String]].toList,
       removed = obj.removed.asInstanceOf[js.Array[String]].toList,
-      errors = errorsDict.toMap
+      errors = errorsDict.toMap,
     )
 
 /** Full initialization result from SDK control response */
 final case class InitializationResult(
-    commands: List[SlashCommand],
-    outputStyle: String,
-    availableOutputStyles: List[String],
-    models: List[ModelInfo],
-    account: AccountInfo,
-    agents: List[AgentInfo] = Nil,
-    fastModeState: Option[String] = None
-)
+  commands: List[SlashCommand],
+  outputStyle: String,
+  availableOutputStyles: List[String],
+  models: List[ModelInfo],
+  account: AccountInfo,
+  agents: List[AgentInfo] = Nil,
+  fastModeState: Option[String] = None)
 
 object InitializationResult:
   def fromRaw(obj: js.Dynamic): InitializationResult =
@@ -605,7 +620,10 @@ object InitializationResult:
       availableOutputStyles = obj.available_output_styles.asInstanceOf[js.Array[String]].toList,
       models = obj.models.asInstanceOf[js.Array[js.Dynamic]].toList.map(ModelInfo.fromRaw),
       account = AccountInfo.fromRaw(obj.account),
-      agents = obj.agents.asInstanceOf[js.UndefOr[js.Array[js.Dynamic]]].toOption
-        .map(_.toList.map(AgentInfo.fromRaw)).getOrElse(Nil),
-      fastModeState = obj.fast_mode_state.asInstanceOf[js.UndefOr[String]].toOption
+      agents = obj.agents
+        .asInstanceOf[js.UndefOr[js.Array[js.Dynamic]]]
+        .toOption
+        .map(_.toList.map(AgentInfo.fromRaw))
+        .getOrElse(Nil),
+      fastModeState = obj.fast_mode_state.asInstanceOf[js.UndefOr[String]].toOption,
     )

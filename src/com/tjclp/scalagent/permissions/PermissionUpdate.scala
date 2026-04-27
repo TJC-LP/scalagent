@@ -7,10 +7,11 @@ import zio.json.*
 import com.tjclp.scalagent.config.PermissionMode
 import com.tjclp.scalagent.hooks.PermissionBehavior
 
-/** Runtime permission updates that can be applied during execution.
-  *
-  * Mirrors the SDK PermissionUpdate union.
-  */
+/**
+ * Runtime permission updates that can be applied during execution.
+ *
+ * Mirrors the SDK PermissionUpdate union.
+ */
 sealed trait PermissionUpdate:
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object
@@ -18,92 +19,92 @@ sealed trait PermissionUpdate:
 object PermissionUpdate:
 
   final case class AddRules(
-      behavior: PermissionBehavior,
-      rules: List[PermissionRule],
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
-  ) extends PermissionUpdate:
+    behavior: PermissionBehavior,
+    rules: List[PermissionRule],
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session)
+      extends PermissionUpdate:
     def toRaw: js.Object =
       js.Dynamic
         .literal(
           `type` = "addRules",
           rules = rules.map(_.toRuleValueRaw).toJSArray,
           behavior = behavior.toRaw,
-          destination = destination.toRaw
+          destination = destination.toRaw,
         )
         .asInstanceOf[js.Object]
 
   final case class ReplaceRules(
-      behavior: PermissionBehavior,
-      rules: List[PermissionRule],
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
-  ) extends PermissionUpdate:
+    behavior: PermissionBehavior,
+    rules: List[PermissionRule],
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session)
+      extends PermissionUpdate:
     def toRaw: js.Object =
       js.Dynamic
         .literal(
           `type` = "replaceRules",
           rules = rules.map(_.toRuleValueRaw).toJSArray,
           behavior = behavior.toRaw,
-          destination = destination.toRaw
+          destination = destination.toRaw,
         )
         .asInstanceOf[js.Object]
 
   final case class RemoveRules(
-      behavior: PermissionBehavior,
-      rules: List[PermissionRule],
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
-  ) extends PermissionUpdate:
+    behavior: PermissionBehavior,
+    rules: List[PermissionRule],
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session)
+      extends PermissionUpdate:
     def toRaw: js.Object =
       js.Dynamic
         .literal(
           `type` = "removeRules",
           rules = rules.map(_.toRuleValueRaw).toJSArray,
           behavior = behavior.toRaw,
-          destination = destination.toRaw
+          destination = destination.toRaw,
         )
         .asInstanceOf[js.Object]
 
   final case class SetMode(
-      mode: PermissionMode,
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
-  ) extends PermissionUpdate:
+    mode: PermissionMode,
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session)
+      extends PermissionUpdate:
     def toRaw: js.Object =
       js.Dynamic
         .literal(
           `type` = "setMode",
           mode = mode.toRaw,
-          destination = destination.toRaw
+          destination = destination.toRaw,
         )
         .asInstanceOf[js.Object]
 
   final case class AddDirectories(
-      directories: List[String],
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
-  ) extends PermissionUpdate:
+    directories: List[String],
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session)
+      extends PermissionUpdate:
     def toRaw: js.Object =
       js.Dynamic
         .literal(
           `type` = "addDirectories",
           directories = directories.toJSArray,
-          destination = destination.toRaw
+          destination = destination.toRaw,
         )
         .asInstanceOf[js.Object]
 
   final case class RemoveDirectories(
-      directories: List[String],
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
-  ) extends PermissionUpdate:
+    directories: List[String],
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session)
+      extends PermissionUpdate:
     def toRaw: js.Object =
       js.Dynamic
         .literal(
           `type` = "removeDirectories",
           directories = directories.toJSArray,
-          destination = destination.toRaw
+          destination = destination.toRaw,
         )
         .asInstanceOf[js.Object]
 
   /** Parse SDK suggestion/update object. */
   def fromRaw(raw: js.Dynamic): Option[PermissionUpdate] =
-    val tpe = raw.`type`.asInstanceOf[js.UndefOr[String]].toOption.getOrElse("")
+    val tpe         = raw.`type`.asInstanceOf[js.UndefOr[String]].toOption.getOrElse("")
     val destination = parseDestination(raw.destination.asInstanceOf[js.UndefOr[String]].toOption)
       .getOrElse(PermissionUpdateDestination.Session)
 
@@ -113,7 +114,7 @@ object PermissionUpdate:
           AddRules(
             behavior = behavior,
             rules = parseRules(raw, behavior),
-            destination = destination
+            destination = destination,
           )
         }
       case "replaceRules" =>
@@ -121,7 +122,7 @@ object PermissionUpdate:
           ReplaceRules(
             behavior = behavior,
             rules = parseRules(raw, behavior),
-            destination = destination
+            destination = destination,
           )
         }
       case "removeRules" =>
@@ -129,70 +130,74 @@ object PermissionUpdate:
           RemoveRules(
             behavior = behavior,
             rules = parseRules(raw, behavior),
-            destination = destination
+            destination = destination,
           )
         }
       case "setMode" =>
         raw.mode.asInstanceOf[js.UndefOr[String]].toOption.map { mode =>
           SetMode(
             mode = PermissionMode.fromString(mode),
-            destination = destination
+            destination = destination,
           )
         }
       case "addDirectories" =>
         Some(
           AddDirectories(
             directories = parseStringArray(raw, "directories", "paths"),
-            destination = destination
+            destination = destination,
           )
         )
       case "removeDirectories" =>
         Some(
           RemoveDirectories(
             directories = parseStringArray(raw, "directories", "paths"),
-            destination = destination
+            destination = destination,
           )
         )
       case _ => None
+    end match
+  end fromRaw
 
   /** Add a rule to allow a tool. */
   def allowTool(
-      toolName: String,
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
+    toolName: String,
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session,
   ): PermissionUpdate =
     AddRules(PermissionBehavior.Allow, List(PermissionRule.allow(toolName)), destination)
 
   /** Add a rule to deny a tool. */
   def denyTool(
-      toolName: String,
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
+    toolName: String,
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session,
   ): PermissionUpdate =
     AddRules(PermissionBehavior.Deny, List(PermissionRule.deny(toolName)), destination)
 
   /** Add multiple rules with the same behavior. */
   def addRules(
-      behavior: PermissionBehavior,
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
-  )(rules: PermissionRule*): PermissionUpdate =
+    behavior: PermissionBehavior,
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session,
+  )(rules: PermissionRule*
+  ): PermissionUpdate =
     AddRules(behavior, rules.toList, destination)
 
   /** Legacy convenience: behavior is inferred from the first rule (or Ask if empty). */
   def addRules(rules: PermissionRule*): PermissionUpdate =
-    val behavior = rules.headOption.map(_.behavior).getOrElse(PermissionBehavior.Ask)
+    val behavior   = rules.headOption.map(_.behavior).getOrElse(PermissionBehavior.Ask)
     val normalized = rules.toList.map(_.copy(behavior = behavior))
     AddRules(behavior, normalized, PermissionUpdateDestination.Session)
 
   /** Change to a different permission mode. */
   def setMode(
-      mode: PermissionMode,
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
+    mode: PermissionMode,
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session,
   ): PermissionUpdate =
     SetMode(mode, destination)
 
   /** Allow access to additional directories. */
   def addDirs(
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
-  )(paths: String*): PermissionUpdate =
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
+  )(paths: String*
+  ): PermissionUpdate =
     AddDirectories(paths.toList, destination)
 
   /** Backwards-compatible overload targeting session destination. */
@@ -201,8 +206,9 @@ object PermissionUpdate:
 
   /** Remove access to directories. */
   def removeDirs(
-      destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
-  )(paths: String*): PermissionUpdate =
+    destination: PermissionUpdateDestination = PermissionUpdateDestination.Session
+  )(paths: String*
+  ): PermissionUpdate =
     RemoveDirectories(paths.toList, destination)
 
   /** Backwards-compatible overload targeting session destination. */
@@ -210,13 +216,16 @@ object PermissionUpdate:
     RemoveDirectories(paths.toList, PermissionUpdateDestination.Session)
 
   private def parseRules(raw: js.Dynamic, behavior: PermissionBehavior): List[PermissionRule] =
-    val parsed = raw.rules.asInstanceOf[js.UndefOr[js.Array[js.Dynamic]]].toOption.map(_.toList.map { r =>
-      PermissionRule(
-        toolName = r.toolName.asInstanceOf[String],
-        behavior = behavior,
-        prefix = r.ruleContent.asInstanceOf[js.UndefOr[String]].toOption
-      )
-    })
+    val parsed = raw.rules
+      .asInstanceOf[js.UndefOr[js.Array[js.Dynamic]]]
+      .toOption
+      .map(_.toList.map { r =>
+        PermissionRule(
+          toolName = r.toolName.asInstanceOf[String],
+          behavior = behavior,
+          prefix = r.ruleContent.asInstanceOf[js.UndefOr[String]].toOption,
+        )
+      })
 
     parsed.getOrElse(parseStringArray(raw, "toolNames").map(name => PermissionRule(name, behavior)))
 
@@ -242,13 +251,13 @@ object PermissionUpdate:
       .headOption
       .map(_.toList)
       .getOrElse(Nil)
+end PermissionUpdate
 
 /** A permission rule value used by SDK permission updates. */
 final case class PermissionRule(
-    toolName: String,
-    behavior: PermissionBehavior,
-    prefix: Option[String] = None
-):
+  toolName: String,
+  behavior: PermissionBehavior,
+  prefix: Option[String] = None):
   def toRuleValueRaw: js.Object =
     val obj = js.Dynamic.literal(toolName = toolName)
     prefix.foreach(content => obj.ruleContent = content)

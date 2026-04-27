@@ -4,10 +4,11 @@ import scala.scalajs.js
 import scala.util.Try
 import zio.json.*
 
-/** Controls Claude's thinking/reasoning behavior.
-  *
-  * When set, takes precedence over the deprecated maxThinkingTokens.
-  */
+/**
+ * Controls Claude's thinking/reasoning behavior.
+ *
+ * When set, takes precedence over the deprecated maxThinkingTokens.
+ */
 enum ThinkingConfig:
   /** Claude decides when and how much to think (Opus 4.6+). */
   case Adaptive
@@ -28,15 +29,16 @@ enum ThinkingConfig:
       obj.asInstanceOf[js.Any]
     case Disabled =>
       js.Dynamic.literal(`type` = "disabled").asInstanceOf[js.Any]
+end ThinkingConfig
 
 object ThinkingConfig:
   given JsonEncoder[ThinkingConfig] = JsonEncoder[zio.json.ast.Json].contramap { tc =>
     import zio.json.ast.Json.*
     tc match
-      case Adaptive    => Obj("type" -> Str("adaptive"))
+      case Adaptive              => Obj("type" -> Str("adaptive"))
       case Enabled(Some(budget)) => Obj("type" -> Str("enabled"), "budgetTokens" -> Num(budget))
-      case Enabled(None) => Obj("type" -> Str("enabled"))
-      case Disabled    => Obj("type" -> Str("disabled"))
+      case Enabled(None)         => Obj("type" -> Str("enabled"))
+      case Disabled              => Obj("type" -> Str("disabled"))
   }
   given JsonDecoder[ThinkingConfig] = JsonDecoder[zio.json.ast.Json].mapOrFail {
     case zio.json.ast.Json.Obj(fields) =>
@@ -76,3 +78,4 @@ object ThinkingConfig:
 
   /** Disabled */
   val disabled: ThinkingConfig = Disabled
+end ThinkingConfig

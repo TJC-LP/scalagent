@@ -2,11 +2,12 @@ package com.tjclp.scalagent.tools
 
 import com.tjclp.scalagent.macros.ToolInputMacros
 
-/** Type class describing tool input schemas.
-  *
-  * Provides a JSON Schema for validating tool inputs. Use ToolInput.derive for
-  * case classes to keep schemas and inputs in sync.
-  */
+/**
+ * Type class describing tool input schemas.
+ *
+ * Provides a JSON Schema for validating tool inputs. Use ToolInput.derive for
+ * case classes to keep schemas and inputs in sync.
+ */
 trait ToolInput[A]:
   def jsonSchema: JsonSchema
 
@@ -31,3 +32,4 @@ object ToolInput:
 
   /** Summon a ToolInput instance. */
   def apply[A](using ti: ToolInput[A]): ToolInput[A] = ti
+end ToolInput

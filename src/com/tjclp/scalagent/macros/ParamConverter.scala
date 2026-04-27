@@ -4,10 +4,11 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import zio.json.*
 
-/** Typeclass for converting JavaScript values to Scala types.
-  *
-  * Used by macro-generated handlers to convert incoming tool arguments from JS objects to typed Scala values.
-  */
+/**
+ * Typeclass for converting JavaScript values to Scala types.
+ *
+ * Used by macro-generated handlers to convert incoming tool arguments from JS objects to typed Scala values.
+ */
 trait ParamConverter[A]:
   def convert(value: js.Any): Either[String, A]
 
@@ -96,8 +97,8 @@ object ParamConverter:
 
   /** Helper to convert a JS object's properties to typed values */
   def convertParams(
-      args: js.Any,
-      converters: List[(String, ParamConverter[?])]
+    args: js.Any,
+    converters: List[(String, ParamConverter[?])],
   ): Either[String, List[Any]] =
     val obj = args.asInstanceOf[js.Dynamic]
     converters.foldLeft[Either[String, List[Any]]](Right(Nil)) {
@@ -108,3 +109,4 @@ object ParamConverter:
           case Left(err) => Left(s"Parameter '$name': $err")
       case (left, _) => left
     }
+end ParamConverter

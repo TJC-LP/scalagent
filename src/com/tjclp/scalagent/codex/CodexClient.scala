@@ -13,17 +13,15 @@ import com.tjclp.scalagent.streaming.AsyncIteratorOps
 
 /** Token usage for a completed turn. */
 final case class CodexUsage(
-    inputTokens: Int,
-    cachedInputTokens: Int,
-    outputTokens: Int
-)
+  inputTokens: Int,
+  cachedInputTokens: Int,
+  outputTokens: Int)
 
 /** A completed turn result. */
 final case class CodexTurn(
-    items: List[CodexItem],
-    finalResponse: String,
-    usage: Option[CodexUsage]
-)
+  items: List[CodexItem],
+  finalResponse: String,
+  usage: Option[CodexUsage])
 
 /** File change entry. */
 final case class FileUpdate(path: String, kind: String)
@@ -35,12 +33,28 @@ final case class TodoEntry(text: String, completed: Boolean)
 enum CodexItem:
   case AgentMessage(id: String, text: String)
   case Reasoning(id: String, text: String)
-  case CommandExecution(id: String, command: String, output: String, exitCode: Option[Int], status: String)
-  case FileChange(id: String, changes: List[FileUpdate], status: String)
-  case McpToolCall(id: String, server: String, tool: String, args: Json, result: Option[Json], error: Option[String], status: String)
+  case CommandExecution(
+    id: String,
+    command: String,
+    output: String,
+    exitCode: Option[Int],
+    status: String)
+  case FileChange(
+    id: String,
+    changes: List[FileUpdate],
+    status: String)
+  case McpToolCall(
+    id: String,
+    server: String,
+    tool: String,
+    args: Json,
+    result: Option[Json],
+    error: Option[String],
+    status: String)
   case WebSearch(id: String, query: String)
   case TodoList(id: String, items: List[TodoEntry])
   case ItemError(id: String, message: String)
+end CodexItem
 
 /** Normalized Codex thread event. */
 enum CodexEvent:
@@ -72,12 +86,12 @@ trait CodexThread:
 
   def runStreamed(input: CodexInput, options: CodexTurnOptions): ZStream[Any, Throwable, CodexEvent] =
     input match
-      case text: String => runStreamed(text, options)
+      case text: String  => runStreamed(text, options)
       case items: Seq[?] => runStreamed(items.asInstanceOf[Seq[CodexInputItem]], options)
 
   def run(input: CodexInput, options: CodexTurnOptions): Task[CodexTurn] =
     input match
-      case text: String => run(text, options)
+      case text: String  => run(text, options)
       case items: Seq[?] => run(items.asInstanceOf[Seq[CodexInputItem]], options)
 
   def runStreamed(input: String): ZStream[Any, Throwable, CodexEvent] =
@@ -97,6 +111,7 @@ trait CodexThread:
 
   def run(input: CodexInput): Task[CodexTurn] =
     run(input, CodexTurnOptions.default)
+end CodexThread
 
 object CodexClient:
   /** Create a CodexClient from options. */
@@ -186,23 +201,23 @@ private final class CodexThreadLive(jsThread: JsThread) extends CodexThread:
           item.command,
           item.aggregated_output,
           item.exit_code.toOption.map(_.toInt), // POSIX exit codes are 0-255; Double.toInt is safe
-          item.status
+          item.status,
         )
       case "file_change" =>
-        val item = raw.asInstanceOf[JsFileChangeItem]
+        val item    = raw.asInstanceOf[JsFileChangeItem]
         val changes = item.changes.toList.map(c => FileUpdate(c.path, c.kind))
         CodexItem.FileChange(item.id, changes, item.status)
       case "mcp_tool_call" =>
-        val item = raw.asInstanceOf[JsMcpToolCallItem]
-        val args = jsToJson(item.arguments)
+        val item   = raw.asInstanceOf[JsMcpToolCallItem]
+        val args   = jsToJson(item.arguments)
         val result = item.result.toOption.map(r => jsToJson(r.asInstanceOf[js.Any]))
-        val error = item.error.toOption.map(_.message)
+        val error  = item.error.toOption.map(_.message)
         CodexItem.McpToolCall(item.id, item.server, item.tool, args, result, error, item.status)
       case "web_search" =>
         val item = raw.asInstanceOf[JsWebSearchItem]
         CodexItem.WebSearch(item.id, item.query)
       case "todo_list" =>
-        val item = raw.asInstanceOf[JsTodoListItem]
+        val item    = raw.asInstanceOf[JsTodoListItem]
         val entries = item.items.toList.map(t => TodoEntry(t.text, t.completed))
         CodexItem.TodoList(item.id, entries)
       case "error" =>
@@ -215,7 +230,7 @@ private final class CodexThreadLive(jsThread: JsThread) extends CodexThread:
     CodexUsage(
       inputTokens = raw.input_tokens.toInt,
       cachedInputTokens = raw.cached_input_tokens.toInt,
-      outputTokens = raw.output_tokens.toInt
+      outputTokens = raw.output_tokens.toInt,
     )
 
   private def parseTurn(raw: JsTurn): CodexTurn =
@@ -230,6 +245,8 @@ private final class CodexThreadLive(jsThread: JsThread) extends CodexThread:
         val str = js.JSON.stringify(value)
         if str == null then Json.Null
         else zio.json.ast.Json.decoder.decodeJson(str).getOrElse(Json.Str(str))
-      catch case e: Throwable =>
-        scala.Console.err.println(s"[CodexClient] jsToJson failed: ${e.getMessage}")
-        Json.Null
+      catch
+        case e: Throwable =>
+          scala.Console.err.println(s"[CodexClient] jsToJson failed: ${e.getMessage}")
+          Json.Null
+end CodexThreadLive

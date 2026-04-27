@@ -8,105 +8,113 @@ import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.mcp.McpToolName
 import com.tjclp.scalagent.hooks.{HookCallback, HookConfig, HookEvent}
 
-/** MCP server specification for subagents.
-  *
-  * Matches SDK `AgentMcpServerSpec = string | Record<string, McpServerConfigForProcessTransport>`.
-  */
+/**
+ * MCP server specification for subagents.
+ *
+ * Matches SDK `AgentMcpServerSpec = string | Record<string, McpServerConfigForProcessTransport>`.
+ */
 enum AgentMcpServerSpec:
   /** Reference an MCP server by name (must be defined in parent AgentOptions.mcpServers) */
   case ByName(name: String)
 
-  /** Inline MCP server configuration keyed by server name.
-    * Note: ByConfig does not survive JSON round-trips (contains non-serializable configs).
-    * Only ByName variants are preserved through JSON serialization.
-    */
+  /**
+   * Inline MCP server configuration keyed by server name.
+   * Note: ByConfig does not survive JSON round-trips (contains non-serializable configs).
+   * Only ByName variants are preserved through JSON serialization.
+   */
   case ByConfig(servers: Map[String, McpServerConfig])
 
   def toRaw: js.Any = this match
-    case ByName(name) => name.asInstanceOf[js.Any]
+    case ByName(name)      => name.asInstanceOf[js.Any]
     case ByConfig(servers) =>
       js.Dictionary(servers.view.mapValues(_.toRaw).toSeq*).asInstanceOf[js.Any]
 
-/** Subagent definition for specialized AI assistants.
-  *
-  * Subagents provide context isolation, parallelization, and specialized expertise. They can have restricted tool
-  * access and use different models than the main agent.
-  *
-  * **Converting to JavaScript objects:**
-  *   - Use `toRaw` for agents without hooks (simpler, no Runtime needed)
-  *   - Use `toRawWithHooks(runtime)` for agents with hooks configured
-  *   - `toRaw` intentionally omits hooks to avoid requiring a Runtime parameter
-  *
-  * Example:
-  * {{{
-  * val reviewer = AgentDefinition(
-  *   description = "Expert code reviewer for security and quality",
-  *   prompt = "You are a code review specialist...",
-  *   tools = Some(List(ToolName.Read, ToolName.Grep, ToolName.Glob)),
-  *   model = Some(AgentModel.Sonnet)
-  * )
-  *
-  * AgentOptions.default.withAgent("code-reviewer", reviewer)
-  * }}}
-  */
+/**
+ * Subagent definition for specialized AI assistants.
+ *
+ * Subagents provide context isolation, parallelization, and specialized expertise. They can have restricted tool
+ * access and use different models than the main agent.
+ *
+ * **Converting to JavaScript objects:**
+ *   - Use `toRaw` for agents without hooks (simpler, no Runtime needed)
+ *   - Use `toRawWithHooks(runtime)` for agents with hooks configured
+ *   - `toRaw` intentionally omits hooks to avoid requiring a Runtime parameter
+ *
+ * Example:
+ * {{{
+ * val reviewer = AgentDefinition(
+ *   description = "Expert code reviewer for security and quality",
+ *   prompt = "You are a code review specialist...",
+ *   tools = Some(List(ToolName.Read, ToolName.Grep, ToolName.Glob)),
+ *   model = Some(AgentModel.Sonnet)
+ * )
+ *
+ * AgentOptions.default.withAgent("code-reviewer", reviewer)
+ * }}}
+ */
 final case class AgentDefinition(
-    /** Natural language description of when to use this agent */
-    description: String,
-    /** The agent's system prompt defining its role and behavior */
-    prompt: String,
-    /** Allowed tools (inherits all if None) */
-    tools: Option[List[ToolName]] = None,
-    /** Explicitly disallowed tools */
-    disallowedTools: Option[List[ToolName]] = None,
-    /** Model override for this agent */
-    model: Option[AgentModel] = None,
-    /** Inherit MCP tools from parent's mcpServers config.
-      * If true (default), agent can use MCP tools defined at AgentOptions level. If false, agent only has access to
-      * tools explicitly listed.
-      */
-    inheritMcpTools: Boolean = true,
-    /** Permission mode override for this agent.
-      * Controls how this agent handles tool permission requests.
-      * If None, inherits from parent AgentOptions.
-      */
-    permissionMode: Option[PermissionMode] = None,
-    /** Hooks for this agent's lifecycle events.
-      * Allows customizing agent behavior at specific points like PreToolUse, PostToolUse, etc.
-      * Supports both shell command hooks (serializable) and callback hooks (runtime-only).
-      * Added in Claude Code 2.1.0.
-      */
-    hooks: Map[HookEvent, List[HookConfig]] = Map.empty,
-    /** MCP server specifications for this agent.
-      * Each entry is either a server name (referencing parent config) or an inline config.
-      */
-    mcpServers: List[AgentMcpServerSpec] = Nil,
-    /** Skill names to preload into the agent context.
-      * Added in SDK 0.2.31.
-      */
-    skills: List[String] = Nil,
-    /** Maximum number of turns this agent is allowed to take. */
-    maxTurns: Option[Int] = None,
-    /** Experimental: Critical reminder added to system prompt. */
-    criticalSystemReminder: Option[String] = None,
-    /** Initial prompt to send when the agent starts */
-    initialPrompt: Option[String] = None,
-    /** Whether this agent runs in the background */
-    background: Boolean = false,
-    /** Memory scope for the agent */
-    memory: Option[String] = None,
-    /** Effort level for the agent's responses */
-    effort: Option[Effort] = None
-):
-  /** Convert to raw JavaScript object for SDK.
-    *
-    * **Important**: This method intentionally omits hooks to avoid requiring a Runtime.
-    * If this agent has hooks configured (`hasHooks == true`), use `toRawWithHooks(runtime)`
-    * instead to include them in the output.
-    */
+  /** Natural language description of when to use this agent */
+  description: String,
+  /** The agent's system prompt defining its role and behavior */
+  prompt: String,
+  /** Allowed tools (inherits all if None) */
+  tools: Option[List[ToolName]] = None,
+  /** Explicitly disallowed tools */
+  disallowedTools: Option[List[ToolName]] = None,
+  /** Model override for this agent */
+  model: Option[AgentModel] = None,
+  /**
+   * Inherit MCP tools from parent's mcpServers config.
+   * If true (default), agent can use MCP tools defined at AgentOptions level. If false, agent only has access to
+   * tools explicitly listed.
+   */
+  inheritMcpTools: Boolean = true,
+  /**
+   * Permission mode override for this agent.
+   * Controls how this agent handles tool permission requests.
+   * If None, inherits from parent AgentOptions.
+   */
+  permissionMode: Option[PermissionMode] = None,
+  /**
+   * Hooks for this agent's lifecycle events.
+   * Allows customizing agent behavior at specific points like PreToolUse, PostToolUse, etc.
+   * Supports both shell command hooks (serializable) and callback hooks (runtime-only).
+   * Added in Claude Code 2.1.0.
+   */
+  hooks: Map[HookEvent, List[HookConfig]] = Map.empty,
+  /**
+   * MCP server specifications for this agent.
+   * Each entry is either a server name (referencing parent config) or an inline config.
+   */
+  mcpServers: List[AgentMcpServerSpec] = Nil,
+  /**
+   * Skill names to preload into the agent context.
+   * Added in SDK 0.2.31.
+   */
+  skills: List[String] = Nil,
+  /** Maximum number of turns this agent is allowed to take. */
+  maxTurns: Option[Int] = None,
+  /** Experimental: Critical reminder added to system prompt. */
+  criticalSystemReminder: Option[String] = None,
+  /** Initial prompt to send when the agent starts */
+  initialPrompt: Option[String] = None,
+  /** Whether this agent runs in the background */
+  background: Boolean = false,
+  /** Memory scope for the agent */
+  memory: Option[String] = None,
+  /** Effort level for the agent's responses */
+  effort: Option[Effort] = None):
+  /**
+   * Convert to raw JavaScript object for SDK.
+   *
+   * **Important**: This method intentionally omits hooks to avoid requiring a Runtime.
+   * If this agent has hooks configured (`hasHooks == true`), use `toRawWithHooks(runtime)`
+   * instead to include them in the output.
+   */
   def toRaw: js.Object =
     val obj = js.Dynamic.literal(
       description = description,
-      prompt = prompt
+      prompt = prompt,
     )
     tools.foreach(t => obj.tools = t.map(_.raw).toJSArray)
     disallowedTools.foreach(dt => obj.disallowedTools = dt.map(_.raw).toJSArray)
@@ -124,82 +132,91 @@ final case class AgentDefinition(
     memory.foreach(m => obj.memory = m)
     effort.foreach(e => obj.effort = e.toRaw)
     obj.asInstanceOf[js.Object]
+  end toRaw
 
-  /** Convert to raw JavaScript object with hooks.
-    *
-    * This requires a Runtime to bridge ZIO callbacks to JS functions.
-    */
+  /**
+   * Convert to raw JavaScript object with hooks.
+   *
+   * This requires a Runtime to bridge ZIO callbacks to JS functions.
+   */
   def toRawWithHooks(runtime: zio.Runtime[Any]): js.Object =
     val obj = toRaw.asInstanceOf[js.Dynamic]
     if hooks.nonEmpty then
       obj.hooks = js.Dictionary(
-        hooks.toSeq.map { case (event, configs) =>
-          event.toRaw -> configs.map(_.toRaw(runtime)).toJSArray
+        hooks.toSeq.map {
+          case (event, configs) =>
+            event.toRaw -> configs.map(_.toRaw(runtime)).toJSArray
         }*
       )
     obj.asInstanceOf[js.Object]
 
   /** Check if this agent has hooks configured */
   def hasHooks: Boolean = hooks.nonEmpty
+end AgentDefinition
 
 object AgentDefinition:
   /** Create a read-only analysis agent (Read, Grep, Glob only) */
   def readOnly(
-      description: String,
-      prompt: String,
-      model: Option[AgentModel] = None
+    description: String,
+    prompt: String,
+    model: Option[AgentModel] = None,
   ): AgentDefinition =
     AgentDefinition(
       description = description,
       prompt = prompt,
       tools = Some(List(ToolName.Read, ToolName.Grep, ToolName.Glob)),
-      model = model
+      model = model,
     )
 
   /** Create an agent with full tool access (inherits all) */
   def fullAccess(
-      description: String,
-      prompt: String,
-      model: Option[AgentModel] = None
+    description: String,
+    prompt: String,
+    model: Option[AgentModel] = None,
   ): AgentDefinition =
     AgentDefinition(
       description = description,
       prompt = prompt,
       tools = None, // Inherits all
-      model = model
+      model = model,
     )
 
-  /** Create an agent with specific MCP tools allowed.
-    *
-    * Example:
-    * {{{
-    * val agent = AgentDefinition.withMcpTools(
-    *   description = "Weather specialist",
-    *   prompt = "You provide weather info..."
-    * )(WeatherTools.getWeather, WeatherTools.getForecast)(ToolName.Read)
-    * }}}
-    */
-  def withMcpTools(description: String, prompt: String, model: Option[AgentModel] = None)(
-      mcpTools: McpToolName*
-  )(builtinTools: ToolName*): AgentDefinition =
+  /**
+   * Create an agent with specific MCP tools allowed.
+   *
+   * Example:
+   * {{{
+   * val agent = AgentDefinition.withMcpTools(
+   *   description = "Weather specialist",
+   *   prompt = "You provide weather info..."
+   * )(WeatherTools.getWeather, WeatherTools.getForecast)(ToolName.Read)
+   * }}}
+   */
+  def withMcpTools(
+    description: String,
+    prompt: String,
+    model: Option[AgentModel] = None,
+  )(mcpTools: McpToolName*
+  )(builtinTools: ToolName*
+  ): AgentDefinition =
     AgentDefinition(
       description = description,
       prompt = prompt,
       tools = Some(builtinTools.toList ++ mcpTools.map(_.toToolName).toList),
-      model = model
+      model = model,
     )
 
   /** Create an agent that cannot use any MCP tools (only explicit builtin tools) */
   def noMcpTools(
-      description: String,
-      prompt: String,
-      tools: ToolName*
+    description: String,
+    prompt: String,
+    tools: ToolName*
   ): AgentDefinition =
     AgentDefinition(
       description = description,
       prompt = prompt,
       tools = Some(tools.toList),
-      inheritMcpTools = false
+      inheritMcpTools = false,
     )
 
   // Note: Callback hooks contain functions that cannot be JSON serialized.
@@ -207,24 +224,26 @@ object AgentDefinition:
   given JsonEncoder[AgentDefinition] = JsonEncoder[zio.json.ast.Json].contramap { agent =>
     import zio.json.ast.Json
     val baseFields = List(
-      "description" -> Json.Str(agent.description),
-      "prompt" -> Json.Str(agent.prompt),
-      "inheritMcpTools" -> Json.Bool(agent.inheritMcpTools)
+      "description"     -> Json.Str(agent.description),
+      "prompt"          -> Json.Str(agent.prompt),
+      "inheritMcpTools" -> Json.Bool(agent.inheritMcpTools),
     )
-    val toolsField = agent.tools.map(t => "tools" -> Json.Arr(t.map(tn => Json.Str(tn.raw))*))
-    val disallowedField = agent.disallowedTools.map(dt => "disallowedTools" -> Json.Arr(dt.map(tn => Json.Str(tn.raw))*))
-    val modelField = agent.model.map(m => "model" -> Json.Str(m.raw))
+    val toolsField      = agent.tools.map(t => "tools" -> Json.Arr(t.map(tn => Json.Str(tn.raw))*))
+    val disallowedField =
+      agent.disallowedTools.map(dt => "disallowedTools" -> Json.Arr(dt.map(tn => Json.Str(tn.raw))*))
+    val modelField      = agent.model.map(m => "model" -> Json.Str(m.raw))
     val permissionField = agent.permissionMode.map(pm => "permissionMode" -> Json.Str(pm.toRaw))
     // Serialize hooks (shell hooks are fully serializable, callbacks get markers)
     val hooksField = Option.when(agent.hooks.nonEmpty) {
-      val hooksJson = agent.hooks.map { case (event, configs) =>
-        event.toRaw -> Json.Arr(configs.flatMap(_.toJson.fromJson[Json].toOption)*)
+      val hooksJson = agent.hooks.map {
+        case (event, configs) =>
+          event.toRaw -> Json.Arr(configs.flatMap(_.toJson.fromJson[Json].toOption)*)
       }
       "hooks" -> Json.Obj(zio.Chunk.fromIterable(hooksJson.toSeq)*)
     }
     val mcpServersField = Option.when(agent.mcpServers.nonEmpty) {
       "mcpServers" -> Json.Arr(agent.mcpServers.map {
-        case AgentMcpServerSpec.ByName(name) => Json.Str(name)
+        case AgentMcpServerSpec.ByName(name)      => Json.Str(name)
         case AgentMcpServerSpec.ByConfig(servers) =>
           Json.Obj(zio.Chunk.fromIterable(servers.map { case (k, _) => k -> Json.Str("<config>") }.toSeq)*)
       }*)
@@ -232,9 +251,10 @@ object AgentDefinition:
     val skillsField = Option.when(agent.skills.nonEmpty) {
       "skills" -> Json.Arr(agent.skills.map(Json.Str(_))*)
     }
-    val maxTurnsField = agent.maxTurns.map(mt => "maxTurns" -> Json.Num(mt))
+    val maxTurnsField         = agent.maxTurns.map(mt => "maxTurns" -> Json.Num(mt))
     val criticalReminderField = agent.criticalSystemReminder.map(r => "criticalSystemReminder" -> Json.Str(r))
-    val fields = baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField ++ mcpServersField ++ skillsField ++ maxTurnsField ++ criticalReminderField
+    val fields                =
+      baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField ++ mcpServersField ++ skillsField ++ maxTurnsField ++ criticalReminderField
     Json.Obj(zio.Chunk.fromIterable(fields)*)
   }
 
@@ -243,25 +263,30 @@ object AgentDefinition:
       val fields = json.fields.toMap
       for
         description <- fields.get("description").flatMap(_.asString).toRight("Missing description")
-        prompt <- fields.get("prompt").flatMap(_.asString).toRight("Missing prompt")
+        prompt      <- fields.get("prompt").flatMap(_.asString).toRight("Missing prompt")
       yield
         // Parse hooks from JSON (only shell hooks can be restored)
         val hooksMap: Map[HookEvent, List[HookConfig]] = fields.get("hooks").flatMap(_.asObject) match
           case Some(hooksObj) =>
-            hooksObj.fields.toMap.flatMap { case (eventRaw, configsJson) =>
-              val event = HookEvent.fromString(eventRaw)
-              val configs = configsJson.asArray.toList.flatten.flatMap { configJson =>
-                configJson.as[HookConfig].toOption
-              }
-              if configs.nonEmpty then Some(event -> configs) else None
+            hooksObj.fields.toMap.flatMap {
+              case (eventRaw, configsJson) =>
+                val event   = HookEvent.fromString(eventRaw)
+                val configs = configsJson.asArray.toList.flatten.flatMap { configJson =>
+                  configJson.as[HookConfig].toOption
+                }
+                if configs.nonEmpty then Some(event -> configs) else None
             }
           case None => Map.empty
 
-        val mcpServersList = fields.get("mcpServers").flatMap(_.asArray).map(_.flatMap { json =>
-          json.asString.map(AgentMcpServerSpec.ByName(_))
-          // ByConfig can't round-trip through JSON (contains non-serializable configs)
-        }.toList).getOrElse(Nil)
-        val skillsList = fields.get("skills").flatMap(_.asArray).map(_.flatMap(_.asString).toList).getOrElse(Nil)
+        val mcpServersList = fields
+          .get("mcpServers")
+          .flatMap(_.asArray)
+          .map(_.flatMap { json =>
+            json.asString.map(AgentMcpServerSpec.ByName(_))
+            // ByConfig can't round-trip through JSON (contains non-serializable configs)
+          }.toList)
+          .getOrElse(Nil)
+        val skillsList  = fields.get("skills").flatMap(_.asArray).map(_.flatMap(_.asString).toList).getOrElse(Nil)
         val maxTurnsOpt = fields.get("maxTurns").flatMap(_.asNumber).flatMap { n =>
           val bd = BigDecimal(n.value)
           if bd.isValidInt then Some(bd.toInt) else None
@@ -281,8 +306,9 @@ object AgentDefinition:
           mcpServers = mcpServersList,
           skills = skillsList,
           maxTurns = maxTurnsOpt,
-          criticalSystemReminder = criticalReminderOpt
+          criticalSystemReminder = criticalReminderOpt,
         )
+      end for
     case _ => Left("Expected JSON object")
   }
 
@@ -298,7 +324,11 @@ object AgentDefinition:
       agent.copy(hooks = agent.hooks + (event -> (existing ++ configs.toList)))
 
     /** Add a shell command hook */
-    def withShellHook(event: HookEvent, matcher: String, command: String): AgentDefinition =
+    def withShellHook(
+      event: HookEvent,
+      matcher: String,
+      command: String,
+    ): AgentDefinition =
       withHooks(event, HookConfig.shell(matcher, command))
 
     /** Add a callback hook */
@@ -306,19 +336,24 @@ object AgentDefinition:
       withHooks(event, HookConfig.callback(callback))
 
     /** Add a callback hook with matcher */
-    def withCallbackHook(event: HookEvent, matcher: String, callback: HookCallback): AgentDefinition =
+    def withCallbackHook(
+      event: HookEvent,
+      matcher: String,
+      callback: HookCallback,
+    ): AgentDefinition =
       withHooks(event, HookConfig.callback(matcher, callback))
 
-    /** Add skills to preload into the agent context.
-      *
-      * Skills are loaded at agent startup and made available during execution.
-      * Added in SDK 0.2.31.
-      *
-      * Example:
-      * {{{
-      * agent.withSkills("code-review", "testing")
-      * }}}
-      */
+    /**
+     * Add skills to preload into the agent context.
+     *
+     * Skills are loaded at agent startup and made available during execution.
+     * Added in SDK 0.2.31.
+     *
+     * Example:
+     * {{{
+     * agent.withSkills("code-review", "testing")
+     * }}}
+     */
     def withSkills(skillNames: String*): AgentDefinition =
       agent.copy(skills = skillNames.toList)
 
@@ -334,9 +369,10 @@ object AgentDefinition:
     def withCriticalSystemReminder(reminder: String): AgentDefinition =
       agent.copy(criticalSystemReminder = Some(reminder))
 
-    /** Set maximum turns for this agent.
-      * @throws IllegalArgumentException if n <= 0
-      */
+    /**
+     * Set maximum turns for this agent.
+     * @throws IllegalArgumentException if n <= 0
+     */
     def withMaxTurns(n: Int): AgentDefinition =
       require(n > 0, s"maxTurns must be positive, got: $n")
       agent.copy(maxTurns = Some(n))
@@ -345,3 +381,5 @@ object AgentDefinition:
     @targetName("withMaxTurnsPositive")
     def withMaxTurns(n: PositiveInt): AgentDefinition =
       agent.copy(maxTurns = Some(n.value))
+  end extension
+end AgentDefinition

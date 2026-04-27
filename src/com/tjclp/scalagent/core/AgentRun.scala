@@ -4,19 +4,19 @@ import zio.*
 import zio.stream.*
 import com.tjclp.scalagent.errors.AgentError
 
-/** The result of invoking `Agent.run`: a stream of events and a final typed result.
-  *
-  * `events` and `result` share a single underlying execution for the lifetime of this
-  * `AgentRun` instance. Callers can stream events and then await the final result without
-  * triggering a second provider run.
-  *
-  * @tparam R environment requirements
-  * @tparam O the typed output
-  */
+/**
+ * The result of invoking `Agent.run`: a stream of events and a final typed result.
+ *
+ * `events` and `result` share a single underlying execution for the lifetime of this
+ * `AgentRun` instance. Callers can stream events and then await the final result without
+ * triggering a second provider run.
+ *
+ * @tparam R environment requirements
+ * @tparam O the typed output
+ */
 final case class AgentRun[-R, +O](
-    events: ZStream[R & Scope, AgentError, AgentEvent],
-    result: ZIO[R & Scope, AgentError, O]
-):
+  events: ZStream[R & Scope, AgentError, AgentEvent],
+  result: ZIO[R & Scope, AgentError, O]):
   /** Map the output type. */
   def map[O2](f: O => O2): AgentRun[R, O2] =
     AgentRun(events, result.map(f))
@@ -43,3 +43,4 @@ final case class AgentRun[-R, +O](
   /** Access native (provider-specific) events only. */
   def nativeEvents: ZStream[R & Scope, AgentError, AgentEvent.Native] =
     events.collect { case n: AgentEvent.Native => n }
+end AgentRun

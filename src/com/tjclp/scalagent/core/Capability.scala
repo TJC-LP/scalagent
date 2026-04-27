@@ -6,17 +6,18 @@ import scala.annotation.implicitNotFound
 // Capability marker traits — phantom types for intersection-based composition
 // ============================================================================
 
-/** Base trait for agent capabilities. Used as phantom types in intersections.
-  *
-  * Open for extension by protocol packages (MCP, A2A) that add
-  * protocol-specific capability markers.
-  *
-  * Example:
-  * {{{
-  * type Analyst = CanUseTools[ReadOnlyTools] & HasBudget
-  * type Supervisor = FullCaps & CanSpawn[Depth2]
-  * }}}
-  */
+/**
+ * Base trait for agent capabilities. Used as phantom types in intersections.
+ *
+ * Open for extension by protocol packages (MCP, A2A) that add
+ * protocol-specific capability markers.
+ *
+ * Example:
+ * {{{
+ * type Analyst = CanUseTools[ReadOnlyTools] & HasBudget
+ * type Supervisor = FullCaps & CanSpawn[Depth2]
+ * }}}
+ */
 trait Capability
 
 /** Agent can use tools from a tool surface classified as T. */
@@ -73,13 +74,14 @@ type SupervisorCaps[D <: Depth] = FullCaps & CanSpawn[D]
 // Type class evidence for extracting capabilities from intersection types
 // ============================================================================
 
-/** Evidence that capability set C includes spawn ability.
-  *
-  * Resolves from intersection types:
-  * - `CanSpawn[D]` directly
-  * - `CanSpawn[D] & R` (left position)
-  * - `L & R` where R contains CanSpawn (recursive right)
-  */
+/**
+ * Evidence that capability set C includes spawn ability.
+ *
+ * Resolves from intersection types:
+ * - `CanSpawn[D]` directly
+ * - `CanSpawn[D] & R` (left position)
+ * - `L & R` where R contains CanSpawn (recursive right)
+ */
 @implicitNotFound(
   "This agent does not have CanSpawn capability — delegation is forbidden by the type system"
 )

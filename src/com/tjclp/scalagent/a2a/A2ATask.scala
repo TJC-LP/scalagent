@@ -4,32 +4,32 @@ import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 import zio.json.ast.Json
 
-/** A2A Task - represents a long-running operation.
-  *
-  * Tasks track the lifecycle of an agent operation from submission through completion. They
-  * maintain history, artifacts, and status information.
-  *
-  * @param id
-  *   Unique task identifier (server-generated)
-  * @param contextId
-  *   Context/conversation identifier
-  * @param status
-  *   Current task status
-  * @param artifacts
-  *   Output artifacts produced by the agent
-  * @param history
-  *   Message history for this task
-  * @param metadata
-  *   Extension-specific metadata
-  */
+/**
+ * A2A Task - represents a long-running operation.
+ *
+ * Tasks track the lifecycle of an agent operation from submission through completion. They
+ * maintain history, artifacts, and status information.
+ *
+ * @param id
+ *   Unique task identifier (server-generated)
+ * @param contextId
+ *   Context/conversation identifier
+ * @param status
+ *   Current task status
+ * @param artifacts
+ *   Output artifacts produced by the agent
+ * @param history
+ *   Message history for this task
+ * @param metadata
+ *   Extension-specific metadata
+ */
 final case class A2ATask(
-    id: TaskId,
-    contextId: ContextId,
-    status: TaskStatus,
-    artifacts: List[Artifact] = Nil,
-    history: List[A2AMessage] = Nil,
-    metadata: Option[Json] = None
-):
+  id: TaskId,
+  contextId: ContextId,
+  status: TaskStatus,
+  artifacts: List[Artifact] = Nil,
+  history: List[A2AMessage] = Nil,
+  metadata: Option[Json] = None):
   /** Check if task is in a terminal state */
   def isTerminal: Boolean = status.state.isTerminal
 
@@ -48,18 +48,18 @@ object A2ATask:
     A2ATask(
       id = TaskId.generate,
       contextId = contextId,
-      status = TaskStatus.submitted
+      status = TaskStatus.submitted,
     )
 
-/** Task status with state, optional message, and timestamp.
-  *
-  * SDK 0.3.12 no longer includes `stateTransitionHistory` on `TaskStatus`.
-  */
+/**
+ * Task status with state, optional message, and timestamp.
+ *
+ * SDK 0.3.12 no longer includes `stateTransitionHistory` on `TaskStatus`.
+ */
 final case class TaskStatus(
-    state: TaskState,
-    message: Option[A2AMessage] = None,
-    timestamp: Option[String] = None
-)
+  state: TaskState,
+  message: Option[A2AMessage] = None,
+  timestamp: Option[String] = None)
 object TaskStatus:
   given JsonEncoder[TaskStatus] = DeriveJsonEncoder.gen[TaskStatus]
   given JsonDecoder[TaskStatus] = DeriveJsonDecoder.gen[TaskStatus]
@@ -89,6 +89,7 @@ object TaskStatus:
 
   def authRequired(message: A2AMessage): TaskStatus =
     TaskStatus(state = TaskState.AuthRequired, message = Some(message), timestamp = Some(now))
+end TaskStatus
 
 /** Task state enumeration (A2A spec) */
 enum TaskState:
@@ -132,37 +133,36 @@ object TaskState:
     case "unknown"        => Right(Unknown)
     case other            => Left(s"Unknown task state: $other")
   }
+end TaskState
 
-/** State transition record retained for callers that persist transition history separately.
-  *
-  * The A2A 0.3.12 SDK does not emit these on `TaskStatus`, but keeping the model avoids an
-  * unnecessary source break for downstream code that still stores transition history.
-  */
+/**
+ * State transition record retained for callers that persist transition history separately.
+ *
+ * The A2A 0.3.12 SDK does not emit these on `TaskStatus`, but keeping the model avoids an
+ * unnecessary source break for downstream code that still stores transition history.
+ */
 final case class StateTransition(
-    state: TaskState,
-    timestamp: String,
-    message: Option[A2AMessage] = None
-)
+  state: TaskState,
+  timestamp: String,
+  message: Option[A2AMessage] = None)
 object StateTransition:
   given JsonEncoder[StateTransition] = DeriveJsonEncoder.gen[StateTransition]
   given JsonDecoder[StateTransition] = DeriveJsonDecoder.gen[StateTransition]
 
 /** Push notification configuration for task updates */
 final case class PushNotificationConfig(
-    url: String,
-    id: Option[String] = None,
-    token: Option[String] = None,
-    authentication: Option[PushNotificationAuth] = None
-)
+  url: String,
+  id: Option[String] = None,
+  token: Option[String] = None,
+  authentication: Option[PushNotificationAuth] = None)
 object PushNotificationConfig:
   given JsonEncoder[PushNotificationConfig] = DeriveJsonEncoder.gen[PushNotificationConfig]
   given JsonDecoder[PushNotificationConfig] = DeriveJsonDecoder.gen[PushNotificationConfig]
 
 /** Authentication for push notifications */
 final case class PushNotificationAuth(
-    schemes: List[String],
-    credentials: Option[String] = None
-)
+  schemes: List[String],
+  credentials: Option[String] = None)
 object PushNotificationAuth:
   given JsonEncoder[PushNotificationAuth] = DeriveJsonEncoder.gen[PushNotificationAuth]
   given JsonDecoder[PushNotificationAuth] = DeriveJsonDecoder.gen[PushNotificationAuth]

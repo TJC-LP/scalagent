@@ -3,11 +3,12 @@ package com.tjclp.scalagent.core
 import zio.json.ast.Json
 import com.tjclp.scalagent.config.StructuredOutput
 
-/** Type class for decoding agent output into type O.
-  *
-  * For `O = String`, this is a trivial passthrough from the result text.
-  * For structured types, it delegates to `StructuredOutput[A]`.
-  */
+/**
+ * Type class for decoding agent output into type O.
+ *
+ * For `O = String`, this is a trivial passthrough from the result text.
+ * For structured types, it delegates to `StructuredOutput[A]`.
+ */
 trait OutputCodec[O]:
   /** Extract the typed output from a successful result. */
   def decode(resultText: String, structuredOutput: Option[Json]): Either[String, O]

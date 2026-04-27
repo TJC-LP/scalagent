@@ -1,36 +1,36 @@
 package com.tjclp.scalagent.core
 
-/** Rich trace data from an agent run, foldable from an `AgentEvent` stream.
-  *
-  * Captures what happened during a run without provider-specific details.
-  * Used by `Utility` for scoring and `Complexity` for graph metrics.
-  */
+/**
+ * Rich trace data from an agent run, foldable from an `AgentEvent` stream.
+ *
+ * Captures what happened during a run without provider-specific details.
+ * Used by `Utility` for scoring and `Complexity` for graph metrics.
+ */
 final case class TraceSummary(
-    durationMs: Long,
-    numTurns: Int,
-    numToolCalls: Int,
-    numToolResults: Int,
-    numDelegations: Int,
-    toolNames: Set[String],
-    delegationIds: Set[String],
-    costUsd: Double,
-    isSuccess: Boolean,
-    resultText: Option[String],
-    stopReason: Option[String],
-    totalEvents: Int,
-    nativeEventCount: Int
-)
+  durationMs: Long,
+  numTurns: Int,
+  numToolCalls: Int,
+  numToolResults: Int,
+  numDelegations: Int,
+  toolNames: Set[String],
+  delegationIds: Set[String],
+  costUsd: Double,
+  isSuccess: Boolean,
+  resultText: Option[String],
+  stopReason: Option[String],
+  totalEvents: Int,
+  nativeEventCount: Int)
 
 object TraceSummary:
 
   /** Fold a list of AgentEvents into a TraceSummary. */
   def fromEvents(events: List[AgentEvent]): TraceSummary =
-    var numToolCalls = 0
-    var numToolResults = 0
-    var numDelegations = 0
-    var toolNames = Set.empty[String]
-    var delegationIds = Set.empty[String]
-    var nativeCount = 0
+    var numToolCalls                  = 0
+    var numToolResults                = 0
+    var numDelegations                = 0
+    var toolNames                     = Set.empty[String]
+    var delegationIds                 = Set.empty[String]
+    var nativeCount                   = 0
     var completed: Option[RunSummary] = None
 
     events.foreach {
@@ -67,8 +67,9 @@ object TraceSummary:
       resultText = summary.resultText,
       stopReason = summary.stopReason,
       totalEvents = events.size,
-      nativeEventCount = nativeCount
+      nativeEventCount = nativeCount,
     )
+  end fromEvents
 
   /** Create from RunSummary alone (less detail). */
   def fromRunSummary(summary: RunSummary): TraceSummary =
@@ -85,5 +86,6 @@ object TraceSummary:
       resultText = summary.resultText,
       stopReason = summary.stopReason,
       totalEvents = 0,
-      nativeEventCount = 0
+      nativeEventCount = 0,
     )
+end TraceSummary

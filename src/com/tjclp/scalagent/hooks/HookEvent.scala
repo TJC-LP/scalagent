@@ -3,10 +3,11 @@ package com.tjclp.scalagent.hooks
 import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
-/** Hook event types supported by the Claude Agent SDK.
-  *
-  * These events allow intercepting and customizing agent behavior at various points during execution.
-  */
+/**
+ * Hook event types supported by the Claude Agent SDK.
+ *
+ * These events allow intercepting and customizing agent behavior at various points during execution.
+ */
 enum HookEvent:
   /** Before a tool is executed - can modify input or block execution */
   case PreToolUse
@@ -112,72 +113,74 @@ enum HookEvent:
     case ElicitationResult  => "ElicitationResult"
     case ConfigChange       => "ConfigChange"
     case WorktreeCreate     => "WorktreeCreate"
-    case WorktreeRemove       => "WorktreeRemove"
-    case InstructionsLoaded   => "InstructionsLoaded"
-    case PermissionDenied     => "PermissionDenied"
-    case TaskCreated          => "TaskCreated"
-    case CwdChanged           => "CwdChanged"
-    case FileChanged          => "FileChanged"
+    case WorktreeRemove     => "WorktreeRemove"
+    case InstructionsLoaded => "InstructionsLoaded"
+    case PermissionDenied   => "PermissionDenied"
+    case TaskCreated        => "TaskCreated"
+    case CwdChanged         => "CwdChanged"
+    case FileChanged        => "FileChanged"
+end HookEvent
 
 object HookEvent:
   given JsonEncoder[HookEvent] = StringEnumJsonCodec.encoder(_.toRaw)
   given JsonDecoder[HookEvent] = StringEnumJsonCodec.decoderOrFail {
-    case "PreToolUse"        => Right(PreToolUse)
-    case "PostToolUse"       => Right(PostToolUse)
+    case "PreToolUse"         => Right(PreToolUse)
+    case "PostToolUse"        => Right(PostToolUse)
     case "PostToolUseFailure" => Right(PostToolUseFailure)
-    case "PermissionRequest" => Right(PermissionRequest)
-    case "Notification"      => Right(Notification)
-    case "UserPromptSubmit"  => Right(UserPromptSubmit)
-    case "SessionStart"      => Right(SessionStart)
-    case "SessionEnd"        => Right(SessionEnd)
-    case "Stop"              => Right(Stop)
-    case "StopFailure"       => Right(StopFailure)
-    case "SubagentStart"     => Right(SubagentStart)
-    case "SubagentStop"      => Right(SubagentStop)
-    case "PreCompact"        => Right(PreCompact)
-    case "PostCompact"       => Right(PostCompact)
-    case "Setup"             => Right(Setup)
-    case "TeammateIdle"      => Right(TeammateIdle)
-    case "TaskCompleted"     => Right(TaskCompleted)
-    case "Elicitation"       => Right(Elicitation)
-    case "ElicitationResult" => Right(ElicitationResult)
-    case "ConfigChange"      => Right(ConfigChange)
-    case "WorktreeCreate"    => Right(WorktreeCreate)
-    case "WorktreeRemove"      => Right(WorktreeRemove)
-    case "InstructionsLoaded"  => Right(InstructionsLoaded)
-    case "PermissionDenied"    => Right(PermissionDenied)
-    case "TaskCreated"         => Right(TaskCreated)
-    case "CwdChanged"          => Right(CwdChanged)
-    case "FileChanged"         => Right(FileChanged)
-    case other                 => Left(s"Unknown hook event: $other")
+    case "PermissionRequest"  => Right(PermissionRequest)
+    case "Notification"       => Right(Notification)
+    case "UserPromptSubmit"   => Right(UserPromptSubmit)
+    case "SessionStart"       => Right(SessionStart)
+    case "SessionEnd"         => Right(SessionEnd)
+    case "Stop"               => Right(Stop)
+    case "StopFailure"        => Right(StopFailure)
+    case "SubagentStart"      => Right(SubagentStart)
+    case "SubagentStop"       => Right(SubagentStop)
+    case "PreCompact"         => Right(PreCompact)
+    case "PostCompact"        => Right(PostCompact)
+    case "Setup"              => Right(Setup)
+    case "TeammateIdle"       => Right(TeammateIdle)
+    case "TaskCompleted"      => Right(TaskCompleted)
+    case "Elicitation"        => Right(Elicitation)
+    case "ElicitationResult"  => Right(ElicitationResult)
+    case "ConfigChange"       => Right(ConfigChange)
+    case "WorktreeCreate"     => Right(WorktreeCreate)
+    case "WorktreeRemove"     => Right(WorktreeRemove)
+    case "InstructionsLoaded" => Right(InstructionsLoaded)
+    case "PermissionDenied"   => Right(PermissionDenied)
+    case "TaskCreated"        => Right(TaskCreated)
+    case "CwdChanged"         => Right(CwdChanged)
+    case "FileChanged"        => Right(FileChanged)
+    case other                => Left(s"Unknown hook event: $other")
   }
 
   def fromString(s: String): HookEvent = s match
-    case "PreToolUse"        => PreToolUse
-    case "PostToolUse"       => PostToolUse
+    case "PreToolUse"         => PreToolUse
+    case "PostToolUse"        => PostToolUse
     case "PostToolUseFailure" => PostToolUseFailure
-    case "PermissionRequest" => PermissionRequest
-    case "Notification"      => Notification
-    case "UserPromptSubmit"  => UserPromptSubmit
-    case "SessionStart"      => SessionStart
-    case "SessionEnd"        => SessionEnd
-    case "Stop"              => Stop
-    case "StopFailure"       => StopFailure
-    case "SubagentStart"     => SubagentStart
-    case "SubagentStop"      => SubagentStop
-    case "PreCompact"        => PreCompact
-    case "PostCompact"       => PostCompact
-    case "Setup"             => Setup
-    case "TeammateIdle"      => TeammateIdle
-    case "TaskCompleted"     => TaskCompleted
-    case "Elicitation"       => Elicitation
-    case "ElicitationResult" => ElicitationResult
-    case "ConfigChange"      => ConfigChange
-    case "WorktreeCreate"    => WorktreeCreate
-    case "WorktreeRemove"      => WorktreeRemove
-    case "InstructionsLoaded"  => InstructionsLoaded
-    case "PermissionDenied"    => PermissionDenied
-    case "TaskCreated"         => TaskCreated
-    case "CwdChanged"          => CwdChanged
-    case "FileChanged"         => FileChanged
-    case other => throw new IllegalArgumentException(s"Unknown hook event: $other")
+    case "PermissionRequest"  => PermissionRequest
+    case "Notification"       => Notification
+    case "UserPromptSubmit"   => UserPromptSubmit
+    case "SessionStart"       => SessionStart
+    case "SessionEnd"         => SessionEnd
+    case "Stop"               => Stop
+    case "StopFailure"        => StopFailure
+    case "SubagentStart"      => SubagentStart
+    case "SubagentStop"       => SubagentStop
+    case "PreCompact"         => PreCompact
+    case "PostCompact"        => PostCompact
+    case "Setup"              => Setup
+    case "TeammateIdle"       => TeammateIdle
+    case "TaskCompleted"      => TaskCompleted
+    case "Elicitation"        => Elicitation
+    case "ElicitationResult"  => ElicitationResult
+    case "ConfigChange"       => ConfigChange
+    case "WorktreeCreate"     => WorktreeCreate
+    case "WorktreeRemove"     => WorktreeRemove
+    case "InstructionsLoaded" => InstructionsLoaded
+    case "PermissionDenied"   => PermissionDenied
+    case "TaskCreated"        => TaskCreated
+    case "CwdChanged"         => CwdChanged
+    case "FileChanged"        => FileChanged
+    case other                => throw new IllegalArgumentException(s"Unknown hook event: $other")
+end HookEvent

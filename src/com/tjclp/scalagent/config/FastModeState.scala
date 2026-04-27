@@ -11,10 +11,10 @@ enum FastModeState:
   case Custom(value: String)
 
   def toRaw: String = this match
-    case Off        => "off"
-    case Cooldown   => "cooldown"
-    case On         => "on"
-    case Custom(v)  => v
+    case Off       => "off"
+    case Cooldown  => "cooldown"
+    case On        => "on"
+    case Custom(v) => v
 
 object FastModeState:
   given JsonEncoder[FastModeState] = StringEnumJsonCodec.encoder(_.toRaw)
