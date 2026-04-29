@@ -47,7 +47,7 @@ object agent extends BunScalaJSModule with BunPublishModule with PublishModule w
   // Publishing configuration - read from PUBLISH_VERSION env var (set by CI)
   // Task.Input ensures env var is re-evaluated each run (not cached)
   override def publishVersion = Task.Input {
-    Task.env.get("PUBLISH_VERSION").getOrElse("0.6.2")
+    Task.env.get("PUBLISH_VERSION").getOrElse("0.6.3-SNAPSHOT")
   }
 
   // Skip scaladoc generation - Scala.js facades cause doc errors
