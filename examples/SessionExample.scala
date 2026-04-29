@@ -4,26 +4,27 @@ import zio.*
 import zio.stream.*
 import com.tjclp.scalagent.*
 
-/** Example demonstrating the V2 Session API for multi-turn conversations.
-  *
-  * The Session API provides explicit send/receive semantics which is more ergonomic for multi-turn conversations
-  * compared to the V1 generator-based approach.
-  *
-  * Key features:
-  *   - Create sessions with `ClaudeSession.create()`
-  *   - Resume sessions with `ClaudeSession.resume(sessionId)`
-  *   - Send messages and receive streaming responses with `session.send(message)`
-  *   - Simple text responses with `session.ask(message)` (no streaming)
-  *   - Proper resource cleanup with `session.close`
-  *   - Validated session UUIDs with `SessionUuid`
-  *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.SessionExample
-  *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
-  *
-  * @note
-  *   This uses the unstable V2 API from the TypeScript SDK. The API may change.
-  */
+/**
+ * Example demonstrating the V2 Session API for multi-turn conversations.
+ *
+ * The Session API provides explicit send/receive semantics which is more ergonomic for multi-turn conversations
+ * compared to the V1 generator-based approach.
+ *
+ * Key features:
+ *   - Create sessions with `ClaudeSession.create()`
+ *   - Resume sessions with `ClaudeSession.resume(sessionId)`
+ *   - Send messages and receive streaming responses with `session.send(message)`
+ *   - Simple text responses with `session.ask(message)` (no streaming)
+ *   - Proper resource cleanup with `session.close`
+ *   - Validated session UUIDs with `SessionUuid`
+ *
+ * Run with: mill examples.runMain com.tjclp.scalagent.examples.SessionExample
+ *
+ * Requires ANTHROPIC_API_KEY environment variable to be set.
+ *
+ * @note
+ *   This uses the unstable V2 API from the TypeScript SDK. The API may change.
+ */
 object SessionExample extends ZIOAppDefault:
 
   val run: ZIO[Any, AgentError, Unit] =
@@ -34,7 +35,7 @@ object SessionExample extends ZIOAppDefault:
 
         // SessionUuid provides validated UUID handling for explicit session IDs
         _ <- Console.printLine("SessionUuid validation examples:").orDie
-        validUuid = SessionUuid("123e4567-e89b-12d3-a456-426614174000")
+        validUuid   = SessionUuid("123e4567-e89b-12d3-a456-426614174000")
         invalidUuid = SessionUuid("not-a-uuid")
         _ <- Console.printLine(s"  Valid UUID:   $validUuid").orDie
         _ <- Console.printLine(s"  Invalid UUID: $invalidUuid").orDie
@@ -45,25 +46,23 @@ object SessionExample extends ZIOAppDefault:
           .withModel(Model.sonnet)
           .withPermissionMode(PermissionMode.BypassPermissions)
           .withMaxTurns(5)
-        session <- ClaudeSession.create(options).withFinalizer(s =>
-          s.close.ignoreLogged
-        )
+        session <- ClaudeSession.create(options).withFinalizer(s => s.close.ignoreLogged)
 
         _ <- Console.printLine("Session created (ID available after first message)").orDie
         _ <- Console.printLine("").orDie
 
         // First turn - use ask() for simple text response
-        _ <- Console.printLine("User: What is 2 + 2?").orDie
+        _       <- Console.printLine("User: What is 2 + 2?").orDie
         answer1 <- session.ask("What is 2 + 2?")
-        _ <- Console.printLine(s"Claude: $answer1").orDie
-        _ <- Console.printLine(s"Session ID: ${session.sessionId}").orDie
-        _ <- Console.printLine("").orDie
+        _       <- Console.printLine(s"Claude: $answer1").orDie
+        _       <- Console.printLine(s"Session ID: ${session.sessionId}").orDie
+        _       <- Console.printLine("").orDie
 
         // Second turn - use ask() again (session maintains context)
-        _ <- Console.printLine("User: Now multiply that by 3").orDie
+        _       <- Console.printLine("User: Now multiply that by 3").orDie
         answer2 <- session.ask("Now multiply that by 3")
-        _ <- Console.printLine(s"Claude: $answer2").orDie
-        _ <- Console.printLine("").orDie
+        _       <- Console.printLine(s"Claude: $answer2").orDie
+        _       <- Console.printLine("").orDie
 
         // Third turn - streaming with ergonomic extension methods
         _ <- Console.printLine("User: What was my first question?").orDie
@@ -84,9 +83,7 @@ object SessionExample extends ZIOAppDefault:
       case Some(text) if msg.isAssistant =>
         Console.printLine(s"Claude (streaming): $text")
       case _ =>
-        msg.asResult.fold(ZIO.unit) { outcome =>
-          Console.printLine(s"[Cost: $$${outcome.totalCostUsd}]")
-        }
+        msg.asResult.fold(ZIO.unit) { outcome => Console.printLine(s"[Cost: $$${outcome.totalCostUsd}]") }
     effect.mapError(e => AgentError.Unknown(e.getMessage, Some(e)))
 
   // Compare: old verbose approach vs new ergonomic approach
@@ -103,3 +100,4 @@ object SessionExample extends ZIOAppDefault:
   // NEW (extension methods):
   // msg.text.fold(ZIO.unit)(text => Console.printLine(s"Claude: $text"))
   // msg.asResult.fold(ZIO.unit)(o => Console.printLine(s"Cost: ${o.totalCostUsd}"))
+end SessionExample

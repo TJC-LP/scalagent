@@ -3,18 +3,19 @@ package com.tjclp.scalagent.examples
 import zio.*
 import com.tjclp.scalagent.*
 
-/** Example demonstrating custom subagent definitions.
-  *
-  * This example shows how to:
-  * - Define custom agents with AgentDefinition
-  * - Use factory methods (readOnly, fullAccess)
-  * - Restrict agent tool access
-  * - Set agent-specific models with AgentModel
-  *
-  * Run with: EXAMPLE=subagent mill examples.run
-  *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
-  */
+/**
+ * Example demonstrating custom subagent definitions.
+ *
+ * This example shows how to:
+ * - Define custom agents with AgentDefinition
+ * - Use factory methods (readOnly, fullAccess)
+ * - Restrict agent tool access
+ * - Set agent-specific models with AgentModel
+ *
+ * Run with: EXAMPLE=subagent mill examples.run
+ *
+ * Requires ANTHROPIC_API_KEY environment variable to be set.
+ */
 object SubagentExample extends ZIOAppDefault:
 
   // Define a code reviewer agent with limited tools
@@ -29,7 +30,7 @@ object SubagentExample extends ZIOAppDefault:
       |When reviewing code, provide specific line references and
       |actionable suggestions. Be concise but thorough.""".stripMargin,
     tools = Some(List(ToolName.Read, ToolName.Grep, ToolName.Glob)),
-    model = Some(AgentModel.Haiku) // Use faster model for quick reviews
+    model = Some(AgentModel.Haiku), // Use faster model for quick reviews
   )
 
   // Define a documentation writer with full access
@@ -40,13 +41,13 @@ object SubagentExample extends ZIOAppDefault:
       |- Clear explanations for developers
       |- Code examples where helpful
       |- Proper formatting and structure""".stripMargin,
-    model = Some(AgentModel.Sonnet)
+    model = Some(AgentModel.Sonnet),
   )
 
   // Define a read-only researcher using factory method
   val researcher = AgentDefinition.readOnly(
     description = "Research assistant for exploring codebases",
-    prompt = "You research and summarize code patterns and architecture."
+    prompt = "You research and summarize code patterns and architecture.",
   )
 
   val run: ZIO[Any, Any, Unit] =
@@ -62,7 +63,7 @@ object SubagentExample extends ZIOAppDefault:
       .withReadOnlyAgent(
         "analyzer",
         "Analyzes code patterns and structure",
-        "You analyze code structure and identify patterns."
+        "You analyze code structure and identify patterns.",
       )
 
     for
@@ -70,13 +71,16 @@ object SubagentExample extends ZIOAppDefault:
       _ <- Console.printLine("\nConfigured agents:").orDie
 
       // Display configured agents
-      _ <- ZIO.foreach(options.agents.toList) { case (name, agent) =>
-        Console.printLine(s"""
+      _ <- ZIO.foreach(options.agents.toList) {
+        case (name, agent) =>
+          Console
+            .printLine(s"""
           |Agent: $name
           |  Description: ${agent.description.take(50)}...
           |  Model: ${agent.model.map(_.raw).getOrElse("inherit")}
           |  Tools: ${agent.tools.map(_.map(_.raw).mkString(", ")).getOrElse("all (inherited)")}
-          |""".stripMargin).orDie
+          |""".stripMargin)
+            .orDie
       }
 
       _ <- Console.printLine("\n--- Querying with subagent-aware prompt ---").orDie
@@ -91,18 +95,23 @@ object SubagentExample extends ZIOAppDefault:
           |  val query = s"SELECT * FROM users WHERE name = '$input'"
           |  database.execute(query)
           |```""".stripMargin,
-        options
+        options,
       )
 
       _ <- result.outcome match
         case success: ResultOutcome.Success =>
-          Console.printLine(s"""
+          Console
+            .printLine(s"""
             |Review Result:
             |${success.result}
             |
             |Turns: ${success.numTurns}
             |Cost: $$${success.totalCostUsd}
-            |""".stripMargin).orDie
+            |""".stripMargin)
+            .orDie
         case error: ResultOutcome.Error =>
           Console.printLine(s"Error: ${error.errors.mkString(", ")}").orDie
     yield ()
+    end for
+  end run
+end SubagentExample

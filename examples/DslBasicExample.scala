@@ -6,19 +6,20 @@ import com.tjclp.scalagent.*
 import com.tjclp.scalagent.core.*
 import com.tjclp.scalagent.interop.claude.ClaudeInterpreter
 
-/** DSL basic example: one-shot query and streaming with the provider-independent Agent trait.
-  *
-  * Demonstrates:
-  * - ClaudeInterpreter.string() — wraps ClaudeAgent as Agent[Any, String, String]
-  * - ExecutionPolicy — semantic constraints (budget, turns, deadline)
-  * - AgentRun — event stream + typed result from a single execution
-  * - AgentEvent — normalized event ADT with typed cases
-  * - TraceLogger — composable event logging
-  *
-  * Run with: ./mill examples.go --example dsl-basic
-  *
-  * Requires ANTHROPIC_API_KEY environment variable.
-  */
+/**
+ * DSL basic example: one-shot query and streaming with the provider-independent Agent trait.
+ *
+ * Demonstrates:
+ * - ClaudeInterpreter.string() — wraps ClaudeAgent as Agent[Any, String, String]
+ * - ExecutionPolicy — semantic constraints (budget, turns, deadline)
+ * - AgentRun — event stream + typed result from a single execution
+ * - AgentEvent — normalized event ADT with typed cases
+ * - TraceLogger — composable event logging
+ *
+ * Run with: ./mill examples.go --example dsl-basic
+ *
+ * Requires ANTHROPIC_API_KEY environment variable.
+ */
 object DslBasicExample extends ZIOAppDefault:
 
   val run: ZIO[Any, Any, Unit] =
@@ -29,7 +30,7 @@ object DslBasicExample extends ZIOAppDefault:
     val policy = ExecutionPolicy(
       budget = Budget.usd(1.00),
       maxTurns = Some(3),
-      stopStrategy = StopStrategy.FirstResponse
+      stopStrategy = StopStrategy.FirstResponse,
     )
 
     val program = for
@@ -38,7 +39,7 @@ object DslBasicExample extends ZIOAppDefault:
       agent = ClaudeInterpreter.string(claudeAgent, baseOptions)
 
       // --- One-shot query ---
-      _ <- Console.printLine("=== DSL One-Shot Query ===").orDie
+      _      <- Console.printLine("=== DSL One-Shot Query ===").orDie
       answer <- ZIO.scoped {
         agent.run("user", "What is the capital of France? Reply with just the city name.", policy).result
       }
@@ -74,14 +75,20 @@ object DslBasicExample extends ZIOAppDefault:
       utility = Utility.weighted[String, String](
         Utility.reliability      -> 0.5,
         Utility.costMinimizing   -> 0.3,
-        Utility.simplicityBiased -> 0.2
+        Utility.simplicityBiased -> 0.2,
       )
       eval = Evaluation.fromTrace("user", streamOutput, trace, utility)
       _ <- Console.printLine(s"  Score: ${eval.score}").orDie
-      _ <- Console.printLine(s"  Breakdown: ${eval.breakdown.components.map(c => s"${c.name}=${"%.3f".format(c.raw)}").mkString(", ")}").orDie
+      _ <- Console
+        .printLine(
+          s"  Breakdown: ${eval.breakdown.components.map(c => s"${c.name}=${"%.3f".format(c.raw)}").mkString(", ")}"
+        )
+        .orDie
       _ <- Console.printLine(s"  Complexity: ${eval.complexity.totalNodes} nodes").orDie
       _ <- Console.printLine(s"  Graph density: ${eval.complexity.graphDensity}").orDie
       _ <- logger.logEvaluation(eval)
     yield ()
 
     program.provide(ClaudeAgent.live)
+  end run
+end DslBasicExample

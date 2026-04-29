@@ -4,23 +4,24 @@ import zio.*
 import zio.stream.*
 import com.tjclp.scalagent.*
 
-/** Example demonstrating the hook system for tool interception.
-  *
-  * This example shows how to:
-  *   1. Log all tool calls before and after execution
-  *   2. Block specific tools (e.g., Bash commands)
-  *   3. Modify tool behavior based on custom logic
-  *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.HookExample
-  *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
-  */
+/**
+ * Example demonstrating the hook system for tool interception.
+ *
+ * This example shows how to:
+ *   1. Log all tool calls before and after execution
+ *   2. Block specific tools (e.g., Bash commands)
+ *   3. Modify tool behavior based on custom logic
+ *
+ * Run with: mill examples.runMain com.tjclp.scalagent.examples.HookExample
+ *
+ * Requires ANTHROPIC_API_KEY environment variable to be set.
+ */
 object HookExample extends ZIOAppDefault:
 
   val run: ZIO[Any, Throwable, Unit] =
     for
       runtime <- ZIO.runtime[Any]
-      _ <- runWithHooks(runtime)
+      _       <- runWithHooks(runtime)
     yield ()
 
   private def runWithHooks(runtime: Runtime[Any]): ZIO[Any, Throwable, Unit] =
@@ -78,6 +79,7 @@ object HookExample extends ZIOAppDefault:
       .runDrain
 
     program.provide(ClaudeAgent.live)
+  end runWithHooks
 
   private def handleMessage(msg: AgentMessage): Task[Unit] =
     msg match
@@ -97,3 +99,4 @@ object HookExample extends ZIOAppDefault:
 
       case _ =>
         ZIO.unit
+end HookExample

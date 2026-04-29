@@ -6,18 +6,19 @@ import com.tjclp.scalagent.*
 import com.tjclp.scalagent.core.*
 import com.tjclp.scalagent.interop.claude.ClaudeInterpreter
 
-/** DSL delegation example: typed parent/child delegation with Peano depth enforcement.
-  *
-  * Demonstrates:
-  * - AgentBuilder.withSpawnDepth — Peano-encoded delegation depth
-  * - TypedAgent.delegate — budget-sliced delegation with HasSpawn evidence
-  * - DelegationPolicy — budget fraction and child turn limits
-  * - Compile-time depth enforcement via DepthLTE
-  *
-  * Run with: ./mill examples.go --example dsl-delegation
-  *
-  * Requires ANTHROPIC_API_KEY environment variable.
-  */
+/**
+ * DSL delegation example: typed parent/child delegation with Peano depth enforcement.
+ *
+ * Demonstrates:
+ * - AgentBuilder.withSpawnDepth — Peano-encoded delegation depth
+ * - TypedAgent.delegate — budget-sliced delegation with HasSpawn evidence
+ * - DelegationPolicy — budget fraction and child turn limits
+ * - Compile-time depth enforcement via DepthLTE
+ *
+ * Run with: ./mill examples.go --example dsl-delegation
+ *
+ * Requires ANTHROPIC_API_KEY environment variable.
+ */
 object DslDelegationExample extends ZIOAppDefault:
 
   val run: ZIO[Any, Any, Unit] =
@@ -30,7 +31,8 @@ object DslDelegationExample extends ZIOAppDefault:
 
       // --- Build parent: read-only tools, depth 2, budget ---
       _ <- Console.printLine("=== Building Parent Agent (Depth2, ReadOnlyTools, HasBudget) ===").orDie
-      parent = ClaudeInterpreter.builder(claudeAgent, baseOptions)
+      parent = ClaudeInterpreter
+        .builder(claudeAgent, baseOptions)
         .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
         .withSpawnDepth[Depth2]
         .withBudget
@@ -41,7 +43,8 @@ object DslDelegationExample extends ZIOAppDefault:
 
       // --- Build child: read-only, depth 1 ---
       _ <- Console.printLine("\n=== Building Child Agent (Depth1, ReadOnlyTools) ===").orDie
-      child = ClaudeInterpreter.builder(claudeAgent, baseOptions)
+      child = ClaudeInterpreter
+        .builder(claudeAgent, baseOptions)
         .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
         .withSpawnDepth[Depth1]
         .build
@@ -53,7 +56,7 @@ object DslDelegationExample extends ZIOAppDefault:
       _ <- Console.printLine("\n=== Delegating to Child (30% budget, max 5 turns) ===").orDie
       parentPolicy = ExecutionPolicy(
         budget = Budget.usd(1.00),
-        maxTurns = Some(15)
+        maxTurns = Some(15),
       )
       delegation = DelegationPolicy(budgetFraction = 0.3, maxChildTurns = Some(5))
 
@@ -69,7 +72,7 @@ object DslDelegationExample extends ZIOAppDefault:
           "supervisor",
           "Read the file CLAUDE.md and summarize what testing tools are recommended. Be brief.",
           parentPolicy,
-          delegation
+          delegation,
         )
         childRun
           .tapEvents(logger.logEvent)
@@ -79,10 +82,14 @@ object DslDelegationExample extends ZIOAppDefault:
       _ <- Console.printLine(s"\n  Child result: $childResult").orDie
 
       // --- Evaluation of child run ---
-      _ <- Console.printLine("\n=== Direct parent run for comparison ===").orDie
+      _            <- Console.printLine("\n=== Direct parent run for comparison ===").orDie
       parentResult <- ZIO.scoped {
         parent
-          .run("supervisor", "What build tool does this project use? Check CLAUDE.md. One sentence answer.", parentPolicy)
+          .run(
+            "supervisor",
+            "What build tool does this project use? Check CLAUDE.md. One sentence answer.",
+            parentPolicy,
+          )
           .result
       }
       _ <- Console.printLine(s"  Parent result: $parentResult").orDie
@@ -97,3 +104,5 @@ object DslDelegationExample extends ZIOAppDefault:
     yield ()
 
     program.provide(ClaudeAgent.live)
+  end run
+end DslDelegationExample

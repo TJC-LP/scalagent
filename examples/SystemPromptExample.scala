@@ -3,18 +3,19 @@ package com.tjclp.scalagent.examples
 import zio.*
 import com.tjclp.scalagent.*
 
-/** Example demonstrating custom and preset system prompts.
-  *
-  * This example shows how to:
-  * - Use SystemPromptConfig.Custom for custom prompt text
-  * - Use SystemPromptConfig.Preset for named presets
-  * - Use SystemPromptConfig.claudeCode convenience value
-  * - Append instructions to presets with claudeCodeWith()
-  *
-  * Run with: EXAMPLE=prompt mill examples.run
-  *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
-  */
+/**
+ * Example demonstrating custom and preset system prompts.
+ *
+ * This example shows how to:
+ * - Use SystemPromptConfig.Custom for custom prompt text
+ * - Use SystemPromptConfig.Preset for named presets
+ * - Use SystemPromptConfig.claudeCode convenience value
+ * - Append instructions to presets with claudeCodeWith()
+ *
+ * Run with: EXAMPLE=prompt mill examples.run
+ *
+ * Requires ANTHROPIC_API_KEY environment variable to be set.
+ */
 object SystemPromptExample extends ZIOAppDefault:
 
   // Custom system prompt for a specialized assistant
@@ -62,7 +63,7 @@ object SystemPromptExample extends ZIOAppDefault:
 
       customResult <- Claude.ask(
         "What's the idiomatic way to handle optional values in Scala 3?",
-        customOptions
+        customOptions,
       )
 
       _ <- Console.printLine(s"\n   Response:\n   ${customResult.take(200)}...\n").orDie
@@ -96,7 +97,7 @@ object SystemPromptExample extends ZIOAppDefault:
 
       enhancedResult <- Claude.ask(
         "Suggest a library for HTTP client requests in Scala.",
-        enhancedOptions
+        enhancedOptions,
       )
 
       _ <- Console.printLine(s"\n   Response:\n   ${enhancedResult.take(200)}...\n").orDie
@@ -111,3 +112,4 @@ object SystemPromptExample extends ZIOAppDefault:
 
       _ <- Console.printLine("\n=== System Prompt Example Complete ===").orDie
     yield ()
+end SystemPromptExample

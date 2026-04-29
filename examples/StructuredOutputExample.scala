@@ -4,32 +4,33 @@ import zio.*
 import zio.json.*
 import com.tjclp.scalagent.*
 
-/** Example demonstrating structured outputs with compile-time schema derivation.
-  *
-  * This example shows the simplified API:
-  * - Define case classes with `derives JsonDecoder`
-  * - Use @description annotations for field documentation
-  * - Use StructuredOutput.derive[T] to generate JSON Schema
-  * - Parse typed responses with parseAs[T]
-  *
-  * Run with: EXAMPLE=structured mill examples.run
-  *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
-  */
+/**
+ * Example demonstrating structured outputs with compile-time schema derivation.
+ *
+ * This example shows the simplified API:
+ * - Define case classes with `derives JsonDecoder`
+ * - Use @description annotations for field documentation
+ * - Use StructuredOutput.derive[T] to generate JSON Schema
+ * - Parse typed responses with parseAs[T]
+ *
+ * Run with: EXAMPLE=structured mill examples.run
+ *
+ * Requires ANTHROPIC_API_KEY environment variable to be set.
+ */
 object StructuredOutputExample extends ZIOAppDefault:
 
   // Define the structured output type - much simpler now!
   // Just add `derives JsonDecoder` and optional @description annotations
   case class CodeAnalysis(
-      @description("A brief summary of the code's purpose and functionality")
-      summary: String,
-      @description("Complexity level: 'low', 'medium', or 'high'")
-      complexity: String,
-      @description("List of specific improvement suggestions")
-      suggestions: List[String],
-      @description("Quality score from 0-100")
-      score: Int
-  ) derives JsonDecoder
+    @description("A brief summary of the code's purpose and functionality")
+    summary: String,
+    @description("Complexity level: 'low', 'medium', or 'high'")
+    complexity: String,
+    @description("List of specific improvement suggestions")
+    suggestions: List[String],
+    @description("Quality score from 0-100")
+    score: Int)
+      derives JsonDecoder
 
   // Single line to derive StructuredOutput - generates JSON Schema with descriptions
   given StructuredOutput[CodeAnalysis] = StructuredOutput.derive[CodeAnalysis]
@@ -60,7 +61,7 @@ object StructuredOutputExample extends ZIOAppDefault:
            |```scala
            |$codeSnippet
            |```""".stripMargin,
-        options
+        options,
       )
 
       // Extract typed result
@@ -72,7 +73,8 @@ object StructuredOutputExample extends ZIOAppDefault:
             parsed = success.parseAs[CodeAnalysis]
             _ <- parsed match
               case Right(analysis) =>
-                Console.printLine(s"""
+                Console
+                  .printLine(s"""
                   |Parsed Analysis:
                   |  Summary: ${analysis.summary}
                   |  Complexity: ${analysis.complexity}
@@ -81,7 +83,8 @@ object StructuredOutputExample extends ZIOAppDefault:
                   |${analysis.suggestions.map(s => s"    - $s").mkString("\n")}
                   |
                   |Cost: $$${success.totalCostUsd}
-                  |""".stripMargin).orDie
+                  |""".stripMargin)
+                  .orDie
               case Left(error) =>
                 Console.printLine(s"Parse error: $error").orDie
           yield ()
@@ -89,3 +92,6 @@ object StructuredOutputExample extends ZIOAppDefault:
         case error: ResultOutcome.Error =>
           Console.printLine(s"Query failed: ${error.errors.mkString(", ")}").orDie
     yield ()
+    end for
+  end run
+end StructuredOutputExample

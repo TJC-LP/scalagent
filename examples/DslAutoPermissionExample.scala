@@ -5,24 +5,25 @@ import com.tjclp.scalagent.*
 import com.tjclp.scalagent.core.*
 import com.tjclp.scalagent.interop.claude.ClaudeInterpreter
 
-/** DSL auto permission mode: the SDK's model classifier approves tool calls.
-  *
-  * Demonstrates:
-  * - PermissionMode.Auto — no pre-listed tools needed, no human prompts
-  * - The classifier allows safe tools (Read, Grep) and denies risky ones
-  * - Compared to DontAsk (must pre-list) and BypassPermissions (allows all)
-  *
-  * Run with: ./mill examples.run dsl-auto
-  *
-  * Requires ANTHROPIC_API_KEY environment variable.
-  */
+/**
+ * DSL auto permission mode: the SDK's model classifier approves tool calls.
+ *
+ * Demonstrates:
+ * - PermissionMode.Auto — no pre-listed tools needed, no human prompts
+ * - The classifier allows safe tools (Read, Grep) and denies risky ones
+ * - Compared to DontAsk (must pre-list) and BypassPermissions (allows all)
+ *
+ * Run with: ./mill examples.run dsl-auto
+ *
+ * Requires ANTHROPIC_API_KEY environment variable.
+ */
 object DslAutoPermissionExample extends ZIOAppDefault:
 
   val run: ZIO[Any, Any, Unit] =
     val policy = ExecutionPolicy(
       budget = Budget.usd(0.50),
       maxTurns = Some(5),
-      stopStrategy = StopStrategy.Natural
+      stopStrategy = StopStrategy.Natural,
     )
 
     val program = for
@@ -36,22 +37,20 @@ object DslAutoPermissionExample extends ZIOAppDefault:
         .withModel(Model.sonnet)
         .withPermissionMode(PermissionMode.Auto)
 
-      autoAgent = ClaudeInterpreter.builder(claudeAgent, autoOptions)
-        .withAllTools
-        .withBudget
-        .build
+      autoAgent = ClaudeInterpreter.builder(claudeAgent, autoOptions).withAllTools.withBudget.build
 
       autoResult <- ZIO.scoped {
-        val agentRun = autoAgent.run("analyst",
+        val agentRun = autoAgent.run(
+          "analyst",
           "Read the file CLAUDE.md and tell me in one sentence what build tool this project uses.",
-          policy
+          policy,
         )
         for
           events <- agentRun.events.runCollect.map(_.toList)
           output <- agentRun.result
-          trace   = TraceSummary.fromEvents(events)
-          _      <- Console.printLine(s"  Tools used: ${trace.toolNames}").orDie
-          _      <- Console.printLine(s"  Turns: ${trace.numTurns}, Cost: $$${trace.costUsd}").orDie
+          trace = TraceSummary.fromEvents(events)
+          _ <- Console.printLine(s"  Tools used: ${trace.toolNames}").orDie
+          _ <- Console.printLine(s"  Turns: ${trace.numTurns}, Cost: $$${trace.costUsd}").orDie
         yield output
       }
       _ <- Console.printLine(s"  Result: $autoResult\n").orDie
@@ -62,22 +61,24 @@ object DslAutoPermissionExample extends ZIOAppDefault:
         .withModel(Model.sonnet)
         .withPermissionMode(PermissionMode.DontAsk)
 
-      dontAskAgent = ClaudeInterpreter.builder(claudeAgent, dontAskOptions)
+      dontAskAgent = ClaudeInterpreter
+        .builder(claudeAgent, dontAskOptions)
         .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
         .withBudget
         .build
 
       dontAskResult <- ZIO.scoped {
-        val agentRun = dontAskAgent.run("analyst",
+        val agentRun = dontAskAgent.run(
+          "analyst",
           "Read the file CLAUDE.md and tell me in one sentence what build tool this project uses.",
-          policy
+          policy,
         )
         for
           events <- agentRun.events.runCollect.map(_.toList)
           output <- agentRun.result
-          trace   = TraceSummary.fromEvents(events)
-          _      <- Console.printLine(s"  Tools used: ${trace.toolNames}").orDie
-          _      <- Console.printLine(s"  Turns: ${trace.numTurns}, Cost: $$${trace.costUsd}").orDie
+          trace = TraceSummary.fromEvents(events)
+          _ <- Console.printLine(s"  Tools used: ${trace.toolNames}").orDie
+          _ <- Console.printLine(s"  Turns: ${trace.numTurns}, Cost: $$${trace.costUsd}").orDie
         yield output
       }
       _ <- Console.printLine(s"  Result: $dontAskResult\n").orDie
@@ -88,3 +89,5 @@ object DslAutoPermissionExample extends ZIOAppDefault:
     yield ()
 
     program.provide(ClaudeAgent.live)
+  end run
+end DslAutoPermissionExample

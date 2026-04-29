@@ -6,17 +6,18 @@ import com.tjclp.scalagent.*
 import com.tjclp.scalagent.core.*
 import com.tjclp.scalagent.experimental.*
 
-/** Zero-trust clandestine cell system example.
-  *
-  * Goal:
-  * - a leader can issue orders to cells
-  * - cells never see the leader's identity or card
-  * - cells only know the broker/dead-drop card
-  * - cells cannot read each other's directives because routing is typed per cell
-  * - secret reports can only be reviewed by sufficiently cleared reviewers
-  *
-  * Run with: ./mill examples.run dsl-cells
-  */
+/**
+ * Zero-trust clandestine cell system example.
+ *
+ * Goal:
+ * - a leader can issue orders to cells
+ * - cells never see the leader's identity or card
+ * - cells only know the broker/dead-drop card
+ * - cells cannot read each other's directives because routing is typed per cell
+ * - secret reports can only be reviewed by sufficiently cleared reviewers
+ *
+ * Run with: ./mill examples.run dsl-cells
+ */
 object DslClandestineCellExample extends ZIOAppDefault:
 
   // ---------------------------------------------------------------------------
@@ -24,8 +25,8 @@ object DslClandestineCellExample extends ZIOAppDefault:
   // ---------------------------------------------------------------------------
 
   sealed trait Cell
-  sealed trait AlphaCell extends Cell
-  sealed trait BravoCell extends Cell
+  sealed trait AlphaCell   extends Cell
+  sealed trait BravoCell   extends Cell
   sealed trait CharlieCell extends Cell
 
   private final case class LeaderIdentity(name: String)
@@ -36,36 +37,31 @@ object DslClandestineCellExample extends ZIOAppDefault:
   final case class ReturnAlias[C <: Cell](value: String)
 
   final case class MissionDirective(
-      codename: String,
-      objective: String,
-      constraints: List[String]
-  )
+    codename: String,
+    objective: String,
+    constraints: List[String])
 
   final case class FieldReport(
-      codename: String,
-      summary: String,
-      nextNeed: String
-  )
+    codename: String,
+    summary: String,
+    nextNeed: String)
 
   final case class DirectiveEnvelope[C <: Cell](
-      authority: CommandAuthority,
-      directive: Classified[MissionDirective, Secret],
-      replyTo: ReturnAlias[C]
-  )
+    authority: CommandAuthority,
+    directive: Classified[MissionDirective, Secret],
+    replyTo: ReturnAlias[C])
 
   final case class ReportEnvelope[C <: Cell](
-      report: Classified[FieldReport, Secret]
-  )
+    report: Classified[FieldReport, Secret])
 
   // ---------------------------------------------------------------------------
   // Blind broker / dead drop
   // ---------------------------------------------------------------------------
 
   final class DeadDropBroker private (
-      directivesRef: Ref[Map[String, List[Any]]],
-      reportsRef: Ref[Map[String, List[Any]]],
-      val card: BrokerCard
-  ):
+    directivesRef: Ref[Map[String, List[Any]]],
+    reportsRef: Ref[Map[String, List[Any]]],
+    val card: BrokerCard):
     def publishDirective[C <: Cell](drop: DeadDropId[C], envelope: DirectiveEnvelope[C]): UIO[Unit] =
       directivesRef.update { state =>
         val updated = state.getOrElse(drop.value, Nil) :+ envelope
@@ -89,16 +85,17 @@ object DslClandestineCellExample extends ZIOAppDefault:
         val reports = state.getOrElse(alias.value, Nil).asInstanceOf[List[ReportEnvelope[C]]]
         (reports, state.updated(alias.value, Nil))
       }
+  end DeadDropBroker
 
   object DeadDropBroker:
     def make(cardAlias: String): UIO[DeadDropBroker] =
       for
         directives <- Ref.make(Map.empty[String, List[Any]])
-        reports <- Ref.make(Map.empty[String, List[Any]])
+        reports    <- Ref.make(Map.empty[String, List[Any]])
       yield DeadDropBroker(
         directives,
         reports,
-        BrokerCard(cardAlias, Set("store", "blind-forward"))
+        BrokerCard(cardAlias, Set("store", "blind-forward")),
       )
 
   // ---------------------------------------------------------------------------
@@ -108,17 +105,17 @@ object DslClandestineCellExample extends ZIOAppDefault:
   private def cellAgent[C <: Cell](cellName: String): Agent[Any, DirectiveEnvelope[C], ReportEnvelope[C]] =
     new Agent[Any, DirectiveEnvelope[C], ReportEnvelope[C]]:
       def run(
-          principal: Any,
-          input: DirectiveEnvelope[C],
-          policy: ExecutionPolicy
+        principal: Any,
+        input: DirectiveEnvelope[C],
+        policy: ExecutionPolicy,
       ): AgentRun[Any, ReportEnvelope[C]] =
         val directive = input.directive.value
-        val report = ReportEnvelope[C](
+        val report    = ReportEnvelope[C](
           Classified[FieldReport, Secret](
             FieldReport(
               codename = directive.codename,
               summary = s"$cellName executed objective: ${directive.objective}",
-              nextNeed = s"$cellName requests fresh dead-drop instructions"
+              nextNeed = s"$cellName requests fresh dead-drop instructions",
             )
           )
         )
@@ -134,21 +131,22 @@ object DslClandestineCellExample extends ZIOAppDefault:
                   costUsd = 0.0,
                   isSuccess = true,
                   resultText = Some(report.report.value.summary),
-                  stopReason = Some("completed")
+                  stopReason = Some("completed"),
                 )
-              )
+              ),
             )
           ),
-          result = ZIO.succeed(report)
+          result = ZIO.succeed(report),
         )
+      end run
 
   private def issueDirective[C <: Cell](
-      leader: LeaderIdentity,
-      authority: CommandAuthority,
-      codename: String,
-      objective: String,
-      constraints: List[String],
-      replyTo: ReturnAlias[C]
+    leader: LeaderIdentity,
+    authority: CommandAuthority,
+    codename: String,
+    objective: String,
+    constraints: List[String],
+    replyTo: ReturnAlias[C],
   ): DirectiveEnvelope[C] =
     // Note: leader identity is intentionally discarded here.
     DirectiveEnvelope(
@@ -156,16 +154,16 @@ object DslClandestineCellExample extends ZIOAppDefault:
       directive = Classified[MissionDirective, Secret](
         MissionDirective(codename, objective, constraints)
       ),
-      replyTo = replyTo
+      replyTo = replyTo,
     )
 
   val run: ZIO[Any, Any, Unit] =
-    val policy = ExecutionPolicy(maxTurns = Some(1))
+    val policy    = ExecutionPolicy(maxTurns = Some(1))
     val authority = CommandAuthority("northern-directorate")
-    val leader = LeaderIdentity("orchestrator-13")
+    val leader    = LeaderIdentity("orchestrator-13")
 
-    val alphaDrop = DeadDropId[AlphaCell]("drop-alpha")
-    val bravoDrop = DeadDropId[BravoCell]("drop-bravo")
+    val alphaDrop   = DeadDropId[AlphaCell]("drop-alpha")
+    val bravoDrop   = DeadDropId[BravoCell]("drop-bravo")
     val alphaReturn = ReturnAlias[AlphaCell]("return-alpha")
     val bravoReturn = ReturnAlias[BravoCell]("return-bravo")
 
@@ -173,18 +171,22 @@ object DslClandestineCellExample extends ZIOAppDefault:
     val bravoAgent = cellAgent[BravoCell]("bravo-cell")
 
     val topSecretReviewer =
-      Reviewer.from[String, Classified[FieldReport, Secret]] { (principal, report, trace) =>
-        val passed = trace.isSuccess && report.value.summary.nonEmpty
-        ZIO.succeed(
-          ReviewScore(
-            score = if passed then 0.95 else 0.10,
-            rationale = s"$principal verified a secret field report without learning leader identity",
-            strengths = List("compartmentalized routing", "single-cell scope"),
-            issues = if passed then Nil else List("empty field summary"),
-            confidence = Some(0.8),
-            passed = Some(passed)
+      Reviewer.from[String, Classified[FieldReport, Secret]] {
+        (principal,
+          report,
+          trace,
+        ) =>
+          val passed = trace.isSuccess && report.value.summary.nonEmpty
+          ZIO.succeed(
+            ReviewScore(
+              score = if passed then 0.95 else 0.10,
+              rationale = s"$principal verified a secret field report without learning leader identity",
+              strengths = List("compartmentalized routing", "single-cell scope"),
+              issues = if passed then Nil else List("empty field summary"),
+              confidence = Some(0.8),
+              passed = Some(passed),
+            )
           )
-        )
       }
 
     for
@@ -203,8 +205,8 @@ object DslClandestineCellExample extends ZIOAppDefault:
           codename = "EMBER",
           objective = "Observe the train station and count supply convoys",
           constraints = List("no direct contact", "reply via blind return route"),
-          replyTo = alphaReturn
-        )
+          replyTo = alphaReturn,
+        ),
       )
       _ <- broker.publishDirective(
         bravoDrop,
@@ -214,16 +216,24 @@ object DslClandestineCellExample extends ZIOAppDefault:
           codename = "FROST",
           objective = "Inspect the river crossing and note patrol timing",
           constraints = List("no direct contact", "reply via blind return route"),
-          replyTo = bravoReturn
-        )
+          replyTo = bravoReturn,
+        ),
       )
 
       alphaOrders <- broker.collectDirectives(alphaDrop)
       bravoOrders <- broker.collectDirectives(bravoDrop)
 
-      _ <- Console.printLine(s"\nAlpha sees ${alphaOrders.size} directive(s) from authority ${alphaOrders.head.authority.channel}.").orDie
-      _ <- Console.printLine(s"Bravo sees ${bravoOrders.size} directive(s) from authority ${bravoOrders.head.authority.channel}.").orDie
-      _ <- Console.printLine("Neither sees LeaderIdentity; both only know the broker card and command channel alias.").orDie
+      _ <- Console
+        .printLine(
+          s"\nAlpha sees ${alphaOrders.size} directive(s) from authority ${alphaOrders.head.authority.channel}."
+        )
+        .orDie
+      _ <- Console
+        .printLine(s"Bravo sees ${bravoOrders.size} directive(s) from authority ${bravoOrders.head.authority.channel}.")
+        .orDie
+      _ <- Console
+        .printLine("Neither sees LeaderIdentity; both only know the broker card and command channel alias.")
+        .orDie
 
       alphaRunData <- ZIO.scoped {
         val run = alphaAgent.run("relay-7", alphaOrders.head, policy)
@@ -248,20 +258,26 @@ object DslClandestineCellExample extends ZIOAppDefault:
       collectedAlpha <- broker.collectReports(alphaReturn)
       collectedBravo <- broker.collectReports(bravoReturn)
 
-      _ <- Console.printLine(s"\nLeader receives ${collectedAlpha.size + collectedBravo.size} report(s) through blind return aliases.").orDie
+      _ <- Console
+        .printLine(
+          s"\nLeader receives ${collectedAlpha.size + collectedBravo.size} report(s) through blind return aliases."
+        )
+        .orDie
       _ <- Console.printLine(s"Alpha report summary: ${collectedAlpha.head.report.value.summary}").orDie
       _ <- Console.printLine(s"Bravo report summary: ${collectedBravo.head.report.value.summary}").orDie
 
-      alphaEval = Evaluation.evaluate("directorate", alphaReport.report, alphaEvents, Utility.reliability)
+      alphaEval     = Evaluation.evaluate("directorate", alphaReport.report, alphaEvents, Utility.reliability)
       reviewedAlpha = SandboxedRun.withReviewPermit("secret-cell-review", maxReviews = 1) { permit =>
         Unsafe.unsafe { implicit u =>
-          Runtime.default.unsafe.run(
-            AgenticReview.enrichClassified[String, FieldReport, TopSecret, Secret](
-              permit,
-              alphaEval,
-              topSecretReviewer
+          Runtime.default.unsafe
+            .run(
+              AgenticReview.enrichClassified[String, FieldReport, TopSecret, Secret](
+                permit,
+                alphaEval,
+                topSecretReviewer,
+              )
             )
-          ).getOrThrowFiberFailure()
+            .getOrThrowFiberFailure()
         }
       }
 
@@ -271,7 +287,18 @@ object DslClandestineCellExample extends ZIOAppDefault:
       _ <- Console.printLine(s"Review rationale: ${reviewedAlpha.review.map(_.rationale).getOrElse("<missing>")}").orDie
 
       _ <- Console.printLine("\n=== Compile-Time Guarantees (see commented examples) ===").orDie
-      _ <- Console.printLine("  // broker.collectDirectives(bravoDrop) cannot be used where DeadDropId[AlphaCell] is expected").orDie
-      _ <- Console.printLine("  // AgenticReview.enrichClassified[..., Internal, Secret](...) does not compile: insufficient clearance").orDie
-      _ <- Console.printLine("  // Cells only ever see BrokerCard(alias=relay-7); they never see LeaderIdentity(orchestrator-13)").orDie
+      _ <- Console
+        .printLine("  // broker.collectDirectives(bravoDrop) cannot be used where DeadDropId[AlphaCell] is expected")
+        .orDie
+      _ <- Console
+        .printLine(
+          "  // AgenticReview.enrichClassified[..., Internal, Secret](...) does not compile: insufficient clearance"
+        )
+        .orDie
+      _ <- Console
+        .printLine("  // Cells only ever see BrokerCard(alias=relay-7); they never see LeaderIdentity(orchestrator-13)")
+        .orDie
     yield ()
+    end for
+  end run
+end DslClandestineCellExample

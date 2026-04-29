@@ -2,16 +2,17 @@ package com.tjclp.scalagent.examples
 
 import scala.scalajs.js
 
-/** Runtime dispatcher for examples.
-  *
-  * All examples are linked into a single JS module. This dispatcher
-  * selects the example to run from CLI args or EXAMPLE env var.
-  *
-  * Usage:
-  *   ./mill examples.run dsl-basic
-  *   ./mill examples.run --help
-  *   EXAMPLE=dsl-basic ./mill examples.run
-  */
+/**
+ * Runtime dispatcher for examples.
+ *
+ * All examples are linked into a single JS module. This dispatcher
+ * selects the example to run from CLI args or EXAMPLE env var.
+ *
+ * Usage:
+ *   ./mill examples.run dsl-basic
+ *   ./mill examples.run --help
+ *   EXAMPLE=dsl-basic ./mill examples.run
+ */
 object ExampleRunner:
   private val examples = Map(
     "simple"         -> "SimpleQuery",
@@ -37,7 +38,7 @@ object ExampleRunner:
     "dsl-auto"       -> "DslAutoPermissionExample",
     "dsl-codex"      -> "DslCodexExample",
     "dsl-cross"      -> "DslCrossProviderExample",
-    "capture"        -> "CaptureCheckingExample"
+    "capture"        -> "CaptureCheckingExample",
   )
 
   private val dispatchers: Map[String, Array[String] => Unit] = Map(
@@ -64,7 +65,7 @@ object ExampleRunner:
     "dsl-auto"       -> (DslAutoPermissionExample.main(_)),
     "dsl-codex"      -> (DslCodexExample.main(_)),
     "dsl-cross"      -> (DslCrossProviderExample.main(_)),
-    "capture"        -> (CaptureCheckingExample.main(_))
+    "capture"        -> (CaptureCheckingExample.main(_)),
   )
 
   def main(args: Array[String]): Unit =
@@ -76,7 +77,7 @@ object ExampleRunner:
       case Some(name) =>
         dispatchers.get(name) match
           case Some(run) => run(args.drop(1))
-          case None =>
+          case None      =>
             System.err.println(s"Unknown example: '$name'\n")
             printHelp()
       case None =>
@@ -87,9 +88,7 @@ object ExampleRunner:
     println("Usage: ./mill examples.run <example-name>")
     println()
     println("Available examples:")
-    examples.toSeq.sortBy(_._1).foreach { (name, cls) =>
-      println(f"  $name%-18s $cls")
-    }
+    examples.toSeq.sortBy(_._1).foreach { (name, cls) => println(f"  $name%-18s $cls") }
     println()
     println("Examples:")
     println("  ./mill examples.run dsl-basic        # DSL one-shot + streaming + eval")
@@ -99,7 +98,8 @@ object ExampleRunner:
     println("  ./mill examples.run macro             # Default macro tool example")
 
   private def envOrNull(key: String): String =
-    val env = js.Dynamic.global.process.env
+    val env   = js.Dynamic.global.process.env
     val value = env.selectDynamic(key)
     if js.isUndefined(value) || value == null then null
     else value.asInstanceOf[String]
+end ExampleRunner

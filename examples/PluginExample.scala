@@ -3,18 +3,19 @@ package com.tjclp.scalagent.examples
 import zio.*
 import com.tjclp.scalagent.*
 
-/** Example demonstrating plugin configuration and validation.
-  *
-  * This example shows how to:
-  * - Configure plugins with PluginConfig.local()
-  * - Validate plugin paths with localValidated()
-  * - Handle PluginError types (PathNotFound, NotADirectory, MissingManifest)
-  * - Use convenience methods like withLocalPlugins()
-  *
-  * Run with: EXAMPLE=plugin mill examples.run
-  *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
-  */
+/**
+ * Example demonstrating plugin configuration and validation.
+ *
+ * This example shows how to:
+ * - Configure plugins with PluginConfig.local()
+ * - Validate plugin paths with localValidated()
+ * - Handle PluginError types (PathNotFound, NotADirectory, MissingManifest)
+ * - Use convenience methods like withLocalPlugins()
+ *
+ * Run with: EXAMPLE=plugin mill examples.run
+ *
+ * Requires ANTHROPIC_API_KEY environment variable to be set.
+ */
 object PluginExample extends ZIOAppDefault:
 
   val run: ZIO[Any, Any, Unit] =
@@ -44,7 +45,7 @@ object PluginExample extends ZIOAppDefault:
       _ <- Console.printLine("2. Validated Plugin (effectful, fail-fast):").orDie
 
       validatedResult <- PluginConfig.localValidated("./nonexistent-plugin").either
-      _ <- validatedResult match
+      _               <- validatedResult match
         case Left(PluginError.PathNotFound(path)) =>
           Console.printLine(s"   Expected error: PathNotFound($path)").orDie
         case Left(PluginError.NotADirectory(path)) =>
@@ -59,18 +60,20 @@ object PluginExample extends ZIOAppDefault:
       // =====================================================
       _ <- Console.printLine("\n3. Validate Multiple Plugins (collect all errors):").orDie
 
-      allValidated <- PluginConfig.localsValidatedAll(
-        "./plugin-1",
-        "./plugin-2",
-        "./plugin-3"
-      ).either
+      allValidated <- PluginConfig
+        .localsValidatedAll(
+          "./plugin-1",
+          "./plugin-2",
+          "./plugin-3",
+        )
+        .either
 
       _ <- allValidated match
         case Left(errors) =>
           Console.printLine(s"   Found ${errors.size} validation errors:").orDie *>
-          ZIO.foreach(errors.toList)(e =>
-            Console.printLine(s"     - ${e.getClass.getSimpleName}: ${e.getMessage}").orDie
-          )
+            ZIO.foreach(errors.toList)(e =>
+              Console.printLine(s"     - ${e.getClass.getSimpleName}: ${e.getMessage}").orDie
+            )
         case Right(plugins) =>
           Console.printLine(s"   All ${plugins.size} plugins valid!").orDie
 
@@ -80,7 +83,7 @@ object PluginExample extends ZIOAppDefault:
       _ <- Console.printLine("\n4. Real-world Pattern (validate then query):").orDie
 
       // Demonstrate the pattern inline
-      plugin = PluginConfig.local("./demo-plugin")
+      plugin  = PluginConfig.local("./demo-plugin")
       options = AgentOptions.default
         .withModel(Model.sonnet)
         .withPermissionMode(PermissionMode.DontAsk)
@@ -102,3 +105,4 @@ object PluginExample extends ZIOAppDefault:
 
       _ <- Console.printLine("\n=== Plugin Example Complete ===").orDie
     yield ()
+end PluginExample

@@ -5,23 +5,29 @@ import zio.stream.*
 import zio.json.*
 import com.tjclp.scalagent.*
 
-/** Example demonstrating custom MCP tool creation.
-  *
-  * This example shows how to:
-  *   1. Define custom tools with type-safe input schemas
-  *   2. Create an in-process MCP server with those tools
-  *   3. Use the custom tools in a Claude agent query
-  *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.CustomToolExample
-  *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
-  */
+/**
+ * Example demonstrating custom MCP tool creation.
+ *
+ * This example shows how to:
+ *   1. Define custom tools with type-safe input schemas
+ *   2. Create an in-process MCP server with those tools
+ *   3. Use the custom tools in a Claude agent query
+ *
+ * Run with: mill examples.runMain com.tjclp.scalagent.examples.CustomToolExample
+ *
+ * Requires ANTHROPIC_API_KEY environment variable to be set.
+ */
 object CustomToolExample extends ZIOAppDefault:
 
   // Define input types for our custom tools
   case class WeatherInput(location: String, unit: Option[String]) derives JsonDecoder, ToolInput
 
-  case class CalculatorInput(operation: String, a: Double, b: Double) derives JsonDecoder, ToolInput
+  case class CalculatorInput(
+    operation: String,
+    a: Double,
+    b: Double)
+      derives JsonDecoder,
+        ToolInput
 
   case class LookupInput(query: String) derives JsonDecoder, ToolInput
 
@@ -33,15 +39,15 @@ object CustomToolExample extends ZIOAppDefault:
   val run: ZIO[Any, Throwable, Unit] =
     for
       runtime <- ZIO.runtime[Any]
-      _ <- runWithCustomTools(runtime)
+      _       <- runWithCustomTools(runtime)
     yield ()
 
   private def runWithCustomTools(runtime: Runtime[Any]): ZIO[Any, Throwable, Unit] =
     // Define a weather tool
     val weatherTool = ToolDef
       .fromInput[WeatherInput]("get_weather", "Get the current weather for a location") { input =>
-        val unit = input.unit.getOrElse("celsius")
-        val temp = if unit == "celsius" then "22" else "72"
+        val unit   = input.unit.getOrElse("celsius")
+        val temp   = if unit == "celsius" then "22" else "72"
         val symbol = if unit == "celsius" then "C" else "F"
         ZIO.succeed(
           ToolResult.Success(s"Weather in ${input.location}: Sunny, $temp°$symbol, humidity 45%")
@@ -70,9 +76,9 @@ object CustomToolExample extends ZIOAppDefault:
       .fromInput[LookupInput]("knowledge_lookup", "Look up information from a knowledge base") { input =>
         // Simulated knowledge base
         val knowledge = Map(
-          "scala" -> "Scala is a programming language that combines object-oriented and functional programming.",
-          "zio" -> "ZIO is a type-safe, composable library for async and concurrent programming in Scala.",
-          "claude" -> "Claude is an AI assistant made by Anthropic."
+          "scala"  -> "Scala is a programming language that combines object-oriented and functional programming.",
+          "zio"    -> "ZIO is a type-safe, composable library for async and concurrent programming in Scala.",
+          "claude" -> "Claude is an AI assistant made by Anthropic.",
         )
 
         val result = knowledge
@@ -93,8 +99,8 @@ object CustomToolExample extends ZIOAppDefault:
                 ToolContent.Text("Unable to render rich content."),
                 ToolContent.ResourceLink(
                   uri = "https://example.com/troubleshooting",
-                  description = Some("Troubleshooting guide")
-                )
+                  description = Some("Troubleshooting guide"),
+                ),
               )
             )
           case RichContentMode.Media =>
@@ -123,7 +129,7 @@ object CustomToolExample extends ZIOAppDefault:
     val mcpServer = McpServer.create(
       name = "custom-tools",
       tools = List(weatherTool, calculatorTool, lookupTool, richContentTool),
-      runtime = runtime
+      runtime = runtime,
     )
 
     val options = AgentOptions.default
@@ -132,7 +138,9 @@ object CustomToolExample extends ZIOAppDefault:
       .withMaxTurns(10)
       .withMcpServer("custom", mcpServer)
 
-    Console.printLine("Starting agent with custom tools: get_weather, calculator, knowledge_lookup, rich_content_demo") *>
+    Console.printLine(
+      "Starting agent with custom tools: get_weather, calculator, knowledge_lookup, rich_content_demo"
+    ) *>
       Console.printLine("---") *>
       ClaudeAgent
         .query(
@@ -143,18 +151,20 @@ object CustomToolExample extends ZIOAppDefault:
             |4. Show a rich content response using rich_content_demo (mode=Media) and summarize the image.
             |
             |Please use the tools to answer these questions.""".stripMargin,
-          options
+          options,
         )
         .tap(handleMessage)
         .runDrain
         .provide(ClaudeAgent.live)
+  end runWithCustomTools
 
   private def handleMessage(msg: AgentMessage): Task[Unit] =
     msg match
       case AgentMessage.Assistant(message, _, _, _, _) =>
-        val text = message.content.collect { case ContentBlock.Text(t) => t }.mkString
-        val toolCalls = message.content.collect { case ContentBlock.ToolUse(id, name, _) =>
-          s"[Calling $name]"
+        val text      = message.content.collect { case ContentBlock.Text(t) => t }.mkString
+        val toolCalls = message.content.collect {
+          case ContentBlock.ToolUse(id, name, _) =>
+            s"[Calling $name]"
         }
         for
           _ <- ZIO.foreach(toolCalls)(call => Console.printLine(call))
@@ -164,8 +174,9 @@ object CustomToolExample extends ZIOAppDefault:
       case AgentMessage.User(message, _, _, toolResult, _, _, _) =>
         toolResult match
           case Some(_) =>
-            val results = message.content.collect { case ContentBlock.ToolResult(_, content, isError) =>
-              if isError then s"[Tool Error] $content" else s"[Tool Result] $content"
+            val results = message.content.collect {
+              case ContentBlock.ToolResult(_, content, isError) =>
+                if isError then s"[Tool Error] $content" else s"[Tool Result] $content"
             }
             ZIO.foreach(results)(r => Console.printLine(r)).unit
           case None => ZIO.unit
@@ -180,3 +191,4 @@ object CustomToolExample extends ZIOAppDefault:
 
       case _ =>
         ZIO.unit
+end CustomToolExample

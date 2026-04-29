@@ -6,32 +6,37 @@ import zio.json.ast.Json
 import com.tjclp.scalagent.*
 import com.tjclp.scalagent.permissions.{PermissionUpdate, PermissionUpdateDestination}
 
-/** Example demonstrating the permission callback system.
-  *
-  * This example shows how to:
-  *   1. Implement custom permission logic with CanUseTool
-  *   2. Allow/deny tools based on context
-  *   3. Use permission utilities for common patterns
-  *   4. Programmatic permission updates with PermissionUpdateDestination
-  *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.PermissionExample
-  *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
-  */
+/**
+ * Example demonstrating the permission callback system.
+ *
+ * This example shows how to:
+ *   1. Implement custom permission logic with CanUseTool
+ *   2. Allow/deny tools based on context
+ *   3. Use permission utilities for common patterns
+ *   4. Programmatic permission updates with PermissionUpdateDestination
+ *
+ * Run with: mill examples.runMain com.tjclp.scalagent.examples.PermissionExample
+ *
+ * Requires ANTHROPIC_API_KEY environment variable to be set.
+ */
 object PermissionExample extends ZIOAppDefault:
 
   val run: ZIO[Any, Throwable, Unit] =
     for
       runtime <- ZIO.runtime[Any]
-      _ <- runWithPermissions(runtime)
+      _       <- runWithPermissions(runtime)
     yield ()
 
   private def runWithPermissions(runtime: Runtime[Any]): ZIO[Any, Throwable, Unit] =
     // Custom permission handler with logging
-    val customPermissionHandler: CanUseTool = (toolName, input, context) =>
+    val customPermissionHandler: CanUseTool = (
+      toolName,
+      input,
+      context,
+    ) =>
       for
-        _ <- Console.printLine(s"[Permission] Tool request: ${toolName.raw}")
-        _ <- Console.printLine(s"[Permission] Input: ${input.toString.take(100)}...")
+        _      <- Console.printLine(s"[Permission] Tool request: ${toolName.raw}")
+        _      <- Console.printLine(s"[Permission] Input: ${input.toString.take(100)}...")
         result <- toolName match
           // Always allow read operations
           case ToolName.Read | ToolName.Glob | ToolName.Grep =>
@@ -49,7 +54,7 @@ object PermissionExample extends ZIOAppDefault:
                 ZIO.succeed(
                   PermissionResult.Deny(
                     message = "Only ls, pwd, and echo commands are allowed",
-                    interrupt = false
+                    interrupt = false,
                   )
                 )
 
@@ -59,7 +64,7 @@ object PermissionExample extends ZIOAppDefault:
               ZIO.succeed(
                 PermissionResult.Deny(
                   message = "Write operations are not allowed in this session",
-                  interrupt = false
+                  interrupt = false,
                 )
               )
 
@@ -70,9 +75,9 @@ object PermissionExample extends ZIOAppDefault:
       yield result
 
     // Programmatic permission updates with destination targeting
-    val sessionAllow  = PermissionUpdate.allowTool("Bash")  // defaults to Session
-    val projectAllow  = PermissionUpdate.allowTool("Read", destination = PermissionUpdateDestination.ProjectSettings)
-    val projectDeny   = PermissionUpdate.denyTool("Write", destination = PermissionUpdateDestination.ProjectSettings)
+    val sessionAllow = PermissionUpdate.allowTool("Bash") // defaults to Session
+    val projectAllow = PermissionUpdate.allowTool("Read", destination = PermissionUpdateDestination.ProjectSettings)
+    val projectDeny  = PermissionUpdate.denyTool("Write", destination = PermissionUpdateDestination.ProjectSettings)
 
     val options = AgentOptions.default
       .withModel(Model.sonnet)
@@ -92,18 +97,20 @@ object PermissionExample extends ZIOAppDefault:
       ClaudeAgent
         .query(
           "Please list the files in the current directory, then show me the current working directory",
-          options
+          options,
         )
         .tap(handleMessage)
         .runDrain
         .provide(ClaudeAgent.live)
+  end runWithPermissions
 
   private def handleMessage(msg: AgentMessage): Task[Unit] =
     msg match
       case AgentMessage.Assistant(message, _, _, _, _) =>
-        val text = message.content.collect { case ContentBlock.Text(t) => t }.mkString
-        val toolCalls = message.content.collect { case ContentBlock.ToolUse(_, name, _) =>
-          s"[Tool Call] $name"
+        val text      = message.content.collect { case ContentBlock.Text(t) => t }.mkString
+        val toolCalls = message.content.collect {
+          case ContentBlock.ToolUse(_, name, _) =>
+            s"[Tool Call] $name"
         }
         for
           _ <- ZIO.foreach(toolCalls)(call => Console.printLine(call))
@@ -113,9 +120,10 @@ object PermissionExample extends ZIOAppDefault:
       case AgentMessage.User(message, _, _, toolResult, _, _, _) =>
         toolResult match
           case Some(_) =>
-            val results = message.content.collect { case ContentBlock.ToolResult(_, content, isError) =>
-              val preview = content.take(200) + (if content.length > 200 then "..." else "")
-              if isError then s"[Tool Error] $preview" else s"[Tool Result] $preview"
+            val results = message.content.collect {
+              case ContentBlock.ToolResult(_, content, isError) =>
+                val preview = content.take(200) + (if content.length > 200 then "..." else "")
+                if isError then s"[Tool Error] $preview" else s"[Tool Result] $preview"
             }
             ZIO.foreach(results)(r => Console.printLine(r)).unit
           case None => ZIO.unit
@@ -136,3 +144,4 @@ object PermissionExample extends ZIOAppDefault:
 
       case _ =>
         ZIO.unit
+end PermissionExample
