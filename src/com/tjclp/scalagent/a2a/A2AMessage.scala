@@ -4,37 +4,37 @@ import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 import zio.json.ast.Json
 
-/** A2A Message - represents an exchange between user and agent.
-  *
-  * Messages contain parts (text, files, structured data) and metadata for routing and context.
-  *
-  * @param role
-  *   Who sent the message (user or agent)
-  * @param parts
-  *   Content parts of the message
-  * @param messageId
-  *   Unique message identifier
-  * @param contextId
-  *   Context/conversation identifier
-  * @param taskId
-  *   Associated task identifier
-  * @param referenceTaskIds
-  *   Related task references
-  * @param metadata
-  *   Extension-specific metadata
-  * @param extensions
-  *   Active extension URIs
-  */
+/**
+ * A2A Message - represents an exchange between user and agent.
+ *
+ * Messages contain parts (text, files, structured data) and metadata for routing and context.
+ *
+ * @param role
+ *   Who sent the message (user or agent)
+ * @param parts
+ *   Content parts of the message
+ * @param messageId
+ *   Unique message identifier
+ * @param contextId
+ *   Context/conversation identifier
+ * @param taskId
+ *   Associated task identifier
+ * @param referenceTaskIds
+ *   Related task references
+ * @param metadata
+ *   Extension-specific metadata
+ * @param extensions
+ *   Active extension URIs
+ */
 final case class A2AMessage(
-    role: A2ARole,
-    parts: List[Part],
-    messageId: MessageId = MessageId.generate,
-    contextId: Option[ContextId] = None,
-    taskId: Option[TaskId] = None,
-    referenceTaskIds: List[TaskId] = Nil,
-    metadata: Option[Json] = None,
-    extensions: List[String] = Nil
-):
+  role: A2ARole,
+  parts: List[Part],
+  messageId: MessageId = MessageId.generate,
+  contextId: Option[ContextId] = None,
+  taskId: Option[TaskId] = None,
+  referenceTaskIds: List[TaskId] = Nil,
+  metadata: Option[Json] = None,
+  extensions: List[String] = Nil):
   /** Extract all text content from this message */
   def text: String = parts.collect { case Part.Text(t, _) => t }.mkString("\n")
 
@@ -50,7 +50,7 @@ object A2AMessage:
     A2AMessage(
       role = A2ARole.User,
       parts = List(Part.Text(text)),
-      contextId = contextId
+      contextId = contextId,
     )
 
   /** Create an agent message with text content */
@@ -58,15 +58,16 @@ object A2AMessage:
     A2AMessage(
       role = A2ARole.Agent,
       parts = List(Part.Text(text)),
-      contextId = contextId
+      contextId = contextId,
     )
 
   /** Create a message with multiple parts */
   def multi(role: A2ARole, parts: Part*): A2AMessage =
     A2AMessage(
       role = role,
-      parts = parts.toList
+      parts = parts.toList,
     )
+end A2AMessage
 
 /** Message sender role */
 enum A2ARole:
@@ -96,9 +97,8 @@ object Part:
     fileJson.asObject match
       case Some(fileObj) =>
         val fileFieldMap = fileObj.toMap
-        var merged = fileObj
-        if !fileFieldMap.contains("name") then
-          partFields.get("name").foreach(name => merged = merged.add("name", name))
+        var merged       = fileObj
+        if !fileFieldMap.contains("name") then partFields.get("name").foreach(name => merged = merged.add("name", name))
         if !fileFieldMap.contains("mimeType") then
           partFields.get("mimeType").foreach(mimeType => merged = merged.add("mimeType", mimeType))
         merged
@@ -123,7 +123,7 @@ object Part:
 
   given JsonDecoder[Part] = JsonDecoder[Json].mapOrFail { json =>
     json.asObject.toRight("Part must be an object").flatMap { jsonObj =>
-      val fields = jsonObj.toMap
+      val fields   = jsonObj.toMap
       val metadata = fields.get("metadata")
       fields.get("kind").flatMap(_.asString).toRight("Missing 'kind' field").flatMap {
         case "text" =>
@@ -140,13 +140,21 @@ object Part:
       }
     }
   }
+end Part
 
-/** File content - either bytes (base64) or URI reference.
-  * Name and mimeType live on the file object per A2A spec.
-  */
+/**
+ * File content - either bytes (base64) or URI reference.
+ * Name and mimeType live on the file object per A2A spec.
+ */
 enum FileContent:
-  case Bytes(bytes: String, name: Option[String] = None, mimeType: Option[String] = None)
-  case Uri(uri: String, name: Option[String] = None, mimeType: Option[String] = None)
+  case Bytes(
+    bytes: String,
+    name: Option[String] = None,
+    mimeType: Option[String] = None)
+  case Uri(
+    uri: String,
+    name: Option[String] = None,
+    mimeType: Option[String] = None)
 
 object FileContent:
   given JsonEncoder[FileContent] = JsonEncoder[Json].contramap {
@@ -164,27 +172,27 @@ object FileContent:
 
   given JsonDecoder[FileContent] = JsonDecoder[Json].mapOrFail { json =>
     json.asObject.toRight("FileContent must be an object").flatMap { jsonObj =>
-      val fields = jsonObj.toMap
-      val name = fields.get("name").flatMap(_.asString)
+      val fields   = jsonObj.toMap
+      val name     = fields.get("name").flatMap(_.asString)
       val mimeType = fields.get("mimeType").flatMap(_.asString)
       fields.get("bytes").flatMap(_.asString) match
         case Some(bytesVal) => Right(Bytes(bytesVal, name, mimeType))
-        case None =>
+        case None           =>
           fields.get("uri").flatMap(_.asString) match
             case Some(uriVal) => Right(Uri(uriVal, name, mimeType))
             case None         => Left("FileContent must have either 'bytes' or 'uri'")
     }
   }
+end FileContent
 
 /** Artifact - output produced by an agent during task execution */
 final case class Artifact(
-    artifactId: String,
-    parts: List[Part],
-    name: Option[String] = None,
-    description: Option[String] = None,
-    extensions: List[String] = Nil,
-    metadata: Option[Json] = None
-)
+  artifactId: String,
+  parts: List[Part],
+  name: Option[String] = None,
+  description: Option[String] = None,
+  extensions: List[String] = Nil,
+  metadata: Option[Json] = None)
 object Artifact:
   given JsonEncoder[Artifact] = DeriveJsonEncoder.gen[Artifact]
   given JsonDecoder[Artifact] = DeriveJsonDecoder.gen[Artifact]
@@ -194,9 +202,13 @@ object Artifact:
     Artifact(artifactId = java.util.UUID.randomUUID().toString, parts = List(Part.Text(content)), name = Some(name))
 
   /** Create a file artifact */
-  def file(name: String, uri: String, mimeType: Option[String] = None): Artifact =
+  def file(
+    name: String,
+    uri: String,
+    mimeType: Option[String] = None,
+  ): Artifact =
     Artifact(
       artifactId = java.util.UUID.randomUUID().toString,
       parts = List(Part.File(FileContent.Uri(uri, name = Some(name), mimeType = mimeType))),
-      name = Some(name)
+      name = Some(name),
     )

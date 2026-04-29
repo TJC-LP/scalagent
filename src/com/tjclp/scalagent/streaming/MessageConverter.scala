@@ -14,22 +14,21 @@ import com.tjclp.scalagent.types.{ApiMessageId, MessageUuid, SessionId, ToolUseI
 object MessageConverter:
 
   final case class MessageParseException(
-      message: String,
-      raw: Json,
-      cause: Option[Throwable] = None
-  ) extends RuntimeException(message, cause.orNull)
+    message: String,
+    raw: Json,
+    cause: Option[Throwable] = None)
+      extends RuntimeException(message, cause.orNull)
 
   private final case class EnvelopeContext(
-      uuid: Option[MessageUuid],
-      sessionId: Option[SessionId],
-      parentToolUseId: Option[ToolUseId]
-  )
+    uuid: Option[MessageUuid],
+    sessionId: Option[SessionId],
+    parentToolUseId: Option[ToolUseId])
 
   def fromRaw(raw: js.Any): AgentMessage =
-    val rawJson = jsToJson(raw)
-    val obj = asDynamicObject(raw, rawJson)
-    val rawType = requiredString(obj, "type", rawJson)
-    val context = envelopeContext(obj)
+    val rawJson    = jsToJson(raw)
+    val obj        = asDynamicObject(raw, rawJson)
+    val rawType    = requiredString(obj, "type", rawJson)
+    val context    = envelopeContext(obj)
     val rawSubtype = stringField(obj, "subtype")
 
     rawType match
@@ -95,14 +94,15 @@ object MessageConverter:
         }
       case other =>
         AgentMessage.Unknown(unknownEnvelope(rawJson, other, rawSubtype, context))
+    end match
+  end fromRaw
 
   private def guardTopLevelUnknown(
-      raw: Json,
-      rawType: String,
-      rawSubtype: Option[String],
-      context: EnvelopeContext
-  )(
-      parse: => AgentMessage
+    raw: Json,
+    rawType: String,
+    rawSubtype: Option[String],
+    context: EnvelopeContext,
+  )(parse: => AgentMessage
   ): AgentMessage =
     try parse
     catch
@@ -110,9 +110,9 @@ object MessageConverter:
         AgentMessage.Unknown(unknownEnvelope(raw, rawType, rawSubtype, context))
 
   private def parseAssistantMessage(
-      obj: js.Dynamic,
-      raw: Json,
-      context: EnvelopeContext
+    obj: js.Dynamic,
+    raw: Json,
+    context: EnvelopeContext,
   ): AgentMessage.Assistant =
     val messageObj = requiredDynamic(obj, "message", raw, "assistant.message")
     AgentMessage.Assistant(
@@ -120,24 +120,24 @@ object MessageConverter:
       parentToolUseId = context.parentToolUseId,
       error = stringField(obj, "error").map(AssistantMessageError.fromString),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
 
   private def parseUserMessage(
-      obj: js.Dynamic,
-      raw: Json,
-      context: EnvelopeContext
+    obj: js.Dynamic,
+    raw: Json,
+    context: EnvelopeContext,
   ): AgentMessage =
     val messageObj = requiredDynamic(obj, "message", raw, "user.message")
-    val message = parseApiUserMessage(messageObj, jsToJson(messageObj.asInstanceOf[js.Any]), context)
-    val isReplay = booleanField(obj, "isReplay").getOrElse(false)
+    val message    = parseApiUserMessage(messageObj, jsToJson(messageObj.asInstanceOf[js.Any]), context)
+    val isReplay   = booleanField(obj, "isReplay").getOrElse(false)
 
     if isReplay then
       AgentMessage.UserReplay(
         message = message,
         parentToolUseId = context.parentToolUseId,
         uuid = requiredUuid(obj, raw),
-        sessionId = requiredSessionId(obj, raw)
+        sessionId = requiredSessionId(obj, raw),
       )
     else
       AgentMessage.User(
@@ -147,11 +147,12 @@ object MessageConverter:
         toolUseResult = anyField(obj, "tool_use_result").map(jsToJson),
         uuid = stringField(obj, "uuid").map(MessageUuid.apply),
         sessionId = requiredSessionId(obj, raw),
-        timestamp = stringField(obj, "timestamp")
+        timestamp = stringField(obj, "timestamp"),
       )
+  end parseUserMessage
 
   private def parseResultMessage(obj: js.Dynamic, raw: Json): AgentMessage.Result =
-    val subtype = requiredString(obj, "subtype", raw)
+    val subtype    = requiredString(obj, "subtype", raw)
     val stopReason = stringField(obj, "stop_reason").map(StopReason.fromString)
 
     val outcome =
@@ -171,9 +172,9 @@ object MessageConverter:
             DeferredToolUse(
               id = stringField(dtu, "id").getOrElse(""),
               name = stringField(dtu, "name").getOrElse(""),
-              input = anyField(dtu, "input").map(jsToJson).getOrElse(Json.Null)
+              input = anyField(dtu, "input").map(jsToJson).getOrElse(Json.Null),
             )
-          }
+          },
         )
       else
         ResultOutcome.Error(
@@ -186,28 +187,29 @@ object MessageConverter:
           modelUsage = dynamicField(obj, "modelUsage").map(parseModelUsageMap).getOrElse(Map.empty),
           permissionDenials = dynamicArrayField(obj, "permission_denials").map(parsePermissionDenial),
           errors = stringArrayField(obj, "errors"),
-          stopReason = stopReason
+          stopReason = stopReason,
         )
 
     AgentMessage.Result(
       outcome = outcome,
       fastModeState = stringField(obj, "fast_mode_state").map(FastModeState.fromString),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
+  end parseResultMessage
 
   private def parseSystemEnvelope(
-      obj: js.Dynamic,
-      raw: Json,
-      context: EnvelopeContext
+    obj: js.Dynamic,
+    raw: Json,
+    context: EnvelopeContext,
   ): AgentMessage =
     stringField(obj, "subtype") match
-      case Some("task_notification") => parseTaskNotification(obj, raw)
-      case Some("task_progress")     => parseTaskProgress(obj, raw)
-      case Some("task_started")      => parseTaskStarted(obj, raw)
+      case Some("task_notification")    => parseTaskNotification(obj, raw)
+      case Some("task_progress")        => parseTaskProgress(obj, raw)
+      case Some("task_started")         => parseTaskStarted(obj, raw)
       case Some("local_command_output") => parseLocalCommandOutput(obj, raw)
       case Some("elicitation_complete") => parseElicitationComplete(obj, raw)
-      case Some("api_retry") =>
+      case Some("api_retry")            =>
         guardTopLevelUnknown(raw, "system", Some("api_retry"), context) {
           parseApiRetryMessage(obj, raw)
         }
@@ -216,7 +218,7 @@ object MessageConverter:
           AgentMessage.BridgeMetadata(
             slashCommands = stringArrayField(obj, "slash_commands"),
             uuid = requiredUuid(obj, raw),
-            sessionId = requiredSessionId(obj, raw)
+            sessionId = requiredSessionId(obj, raw),
           )
         }
       case Some("mirror_error") =>
@@ -227,52 +229,60 @@ object MessageConverter:
         AgentMessage.System(
           event = parseSystemEvent(obj, raw, other, context),
           uuid = requiredUuid(obj, raw),
-          sessionId = requiredSessionId(obj, raw)
+          sessionId = requiredSessionId(obj, raw),
         )
 
   private def parseSystemEvent(
-      obj: js.Dynamic,
-      raw: Json,
-      subtype: Option[String],
-      context: EnvelopeContext
+    obj: js.Dynamic,
+    raw: Json,
+    subtype: Option[String],
+    context: EnvelopeContext,
   ): SystemEvent =
     subtype match
-      case Some("init") => guardedSystemEvent(raw, context, subtype) {
+      case Some("init") =>
+        guardedSystemEvent(raw, context, subtype) {
           parseInitEvent(obj, raw)
         }
-      case Some("compact_boundary") => guardedSystemEvent(raw, context, subtype) {
+      case Some("compact_boundary") =>
+        guardedSystemEvent(raw, context, subtype) {
           parseCompactBoundaryEvent(obj, raw)
         }
-      case Some("status") => guardedSystemEvent(raw, context, subtype) {
+      case Some("status") =>
+        guardedSystemEvent(raw, context, subtype) {
           parseStatusEvent(obj)
         }
-      case Some("hook_response") => guardedSystemEvent(raw, context, subtype) {
+      case Some("hook_response") =>
+        guardedSystemEvent(raw, context, subtype) {
           parseHookResponseEvent(obj, raw)
         }
-      case Some("hook_started") => guardedSystemEvent(raw, context, subtype) {
+      case Some("hook_started") =>
+        guardedSystemEvent(raw, context, subtype) {
           parseHookStartedEvent(obj, raw)
         }
-      case Some("hook_progress") => guardedSystemEvent(raw, context, subtype) {
+      case Some("hook_progress") =>
+        guardedSystemEvent(raw, context, subtype) {
           parseHookProgressEvent(obj, raw)
         }
-      case Some("files_persisted") => guardedSystemEvent(raw, context, subtype) {
+      case Some("files_persisted") =>
+        guardedSystemEvent(raw, context, subtype) {
           parseFilesPersistedEvent(obj)
         }
-      case Some("session_state_changed") => guardedSystemEvent(raw, context, subtype) {
+      case Some("session_state_changed") =>
+        guardedSystemEvent(raw, context, subtype) {
           parseSessionStateChangedEvent(obj)
         }
-      case Some("memory_recall") => guardedSystemEvent(raw, context, subtype) {
+      case Some("memory_recall") =>
+        guardedSystemEvent(raw, context, subtype) {
           parseMemoryRecallEvent(obj, raw)
         }
       case other =>
         SystemEvent.Unknown(unknownEnvelope(raw, "system", other, context))
 
   private def guardedSystemEvent(
-      raw: Json,
-      context: EnvelopeContext,
-      subtype: Option[String]
-  )(
-      parse: => SystemEvent
+    raw: Json,
+    context: EnvelopeContext,
+    subtype: Option[String],
+  )(parse: => SystemEvent
   ): SystemEvent =
     try parse
     catch
@@ -280,11 +290,11 @@ object MessageConverter:
         SystemEvent.Unknown(unknownEnvelope(raw, "system", subtype, context))
 
   private def parseStreamEvent(
-      obj: js.Dynamic,
-      raw: Json,
-      context: EnvelopeContext
+    obj: js.Dynamic,
+    raw: Json,
+    context: EnvelopeContext,
   ): AgentMessage.StreamEvent =
-    val event = requiredDynamic(obj, "event", raw, "stream_event.event")
+    val event    = requiredDynamic(obj, "event", raw, "stream_event.event")
     val eventRaw = jsToJson(event.asInstanceOf[js.Any])
 
     AgentMessage.StreamEvent(
@@ -292,15 +302,15 @@ object MessageConverter:
         eventType = requiredString(event, "type", eventRaw),
         index = intField(event, "index"),
         contentBlock = anyField(event, "content_block").map(value => parseContentBlock(value, context)),
-        delta = anyField(event, "delta").map(value => parseDelta(value, context))
+        delta = anyField(event, "delta").map(value => parseDelta(value, context)),
       ),
       parentToolUseId = context.parentToolUseId,
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
 
   private def parseContentBlock(raw: js.Any, context: EnvelopeContext): ContentBlock =
-    val obj = asDynamicObject(raw, jsToJson(raw))
+    val obj     = asDynamicObject(raw, jsToJson(raw))
     val rawJson = jsToJson(raw)
 
     stringField(obj, "type") match
@@ -308,12 +318,12 @@ object MessageConverter:
         ContentBlock.Text(stringField(obj, "text").getOrElse(""))
       case Some("tool_use") =>
         (for
-          id <- stringField(obj, "id")
+          id   <- stringField(obj, "id")
           name <- stringField(obj, "name")
         yield ContentBlock.ToolUse(
           id = ToolUseId(id),
           name = ToolName.fromString(name),
-          input = anyField(obj, "input").map(jsToJson).getOrElse(Json.Null)
+          input = anyField(obj, "input").map(jsToJson).getOrElse(Json.Null),
         )).getOrElse(ContentBlock.Unknown(unknownEnvelope(rawJson, "tool_use", None, context)))
       case Some("tool_result") =>
         stringField(obj, "tool_use_id") match
@@ -321,14 +331,14 @@ object MessageConverter:
             ContentBlock.ToolResult(
               toolUseId = ToolUseId(toolUseId),
               content = parseToolResultContent(anyField(obj, "content")),
-              isError = booleanField(obj, "is_error").getOrElse(false)
+              isError = booleanField(obj, "is_error").getOrElse(false),
             )
           case None =>
             ContentBlock.Unknown(unknownEnvelope(rawJson, "tool_result", None, context))
       case Some("thinking") =>
         ContentBlock.Thinking(
           thinking = stringField(obj, "thinking").getOrElse(""),
-          signature = stringField(obj, "signature")
+          signature = stringField(obj, "signature"),
         )
       case Some("image") =>
         parseImageBlock(obj, rawJson, context)
@@ -336,9 +346,11 @@ object MessageConverter:
         ContentBlock.Unknown(unknownEnvelope(rawJson, other, None, context))
       case None =>
         ContentBlock.Unknown(unknownEnvelope(rawJson, "<missing-content-type>", None, context))
+    end match
+  end parseContentBlock
 
   private def parseDelta(raw: js.Any, context: EnvelopeContext): StreamDelta =
-    val obj = asDynamicObject(raw, jsToJson(raw))
+    val obj     = asDynamicObject(raw, jsToJson(raw))
     val rawJson = jsToJson(raw)
 
     stringField(obj, "type") match
@@ -361,7 +373,7 @@ object MessageConverter:
       elapsedTimeSeconds = doubleField(obj, "elapsed_time_seconds").getOrElse(0.0),
       taskId = stringField(obj, "task_id"),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
 
   private def parseAuthStatus(obj: js.Dynamic, raw: Json): AgentMessage.AuthStatus =
@@ -370,7 +382,7 @@ object MessageConverter:
       output = stringArrayField(obj, "output"),
       error = stringField(obj, "error"),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
 
   private def parseTaskNotification(obj: js.Dynamic, raw: Json): AgentMessage.TaskNotification =
@@ -382,7 +394,7 @@ object MessageConverter:
       toolUseId = stringField(obj, "tool_use_id").map(ToolUseId.apply),
       usage = dynamicField(obj, "usage").map(parseModelUsageFlexible),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
 
   private def parseToolUseSummary(obj: js.Dynamic, raw: Json): AgentMessage.ToolUseSummary =
@@ -390,19 +402,19 @@ object MessageConverter:
       summary = stringField(obj, "summary").getOrElse(""),
       precedingToolUseIds = stringArrayField(obj, "preceding_tool_use_ids").map(ToolUseId.apply),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
 
   private def parsePromptSuggestion(obj: js.Dynamic, raw: Json): AgentMessage.PromptSuggestion =
     AgentMessage.PromptSuggestion(
       suggestion = stringField(obj, "suggestion").getOrElse(""),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
 
   private def parseRateLimitEvent(obj: js.Dynamic, raw: Json): AgentMessage.RateLimitEvent =
     val rateLimitInfo = dynamicField(obj, "rate_limit_info")
-    val overageInfo = dynamicField(obj, "overage_info").orElse(rateLimitInfo.flatMap(dynamicField(_, "overage")))
+    val overageInfo   = dynamicField(obj, "overage_info").orElse(rateLimitInfo.flatMap(dynamicField(_, "overage")))
     AgentMessage.RateLimitEvent(
       retryAfterMs = longField(obj, "retry_after_ms"),
       model = stringField(obj, "model"),
@@ -414,16 +426,20 @@ object MessageConverter:
       sessionId = requiredSessionId(obj, raw),
       overageStatus = overageInfo.flatMap(stringField(_, "status")).orElse(stringField(obj, "overage_status")),
       overageResetsAt = overageInfo.flatMap(stringField(_, "resets_at")).orElse(stringField(obj, "overage_resets_at")),
-      overageDisabledReason = overageInfo.flatMap(stringField(_, "disabled_reason")).orElse(stringField(obj, "overage_disabled_reason")),
-      isUsingOverage = overageInfo.flatMap(booleanField(_, "is_using_overage")).orElse(booleanField(obj, "is_using_overage")),
-      surpassedThreshold = overageInfo.flatMap(booleanField(_, "surpassed_threshold")).orElse(booleanField(obj, "surpassed_threshold"))
+      overageDisabledReason =
+        overageInfo.flatMap(stringField(_, "disabled_reason")).orElse(stringField(obj, "overage_disabled_reason")),
+      isUsingOverage =
+        overageInfo.flatMap(booleanField(_, "is_using_overage")).orElse(booleanField(obj, "is_using_overage")),
+      surpassedThreshold =
+        overageInfo.flatMap(booleanField(_, "surpassed_threshold")).orElse(booleanField(obj, "surpassed_threshold")),
     )
+  end parseRateLimitEvent
 
   private def parseLocalCommandOutput(obj: js.Dynamic, raw: Json): AgentMessage.LocalCommandOutput =
     AgentMessage.LocalCommandOutput(
       output = firstString(obj, "content", "output").getOrElse(""),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
 
   private def parseElicitationComplete(obj: js.Dynamic, raw: Json): AgentMessage.ElicitationComplete =
@@ -431,7 +447,7 @@ object MessageConverter:
       mcpServerName = stringField(obj, "mcp_server_name").getOrElse(""),
       elicitationId = stringField(obj, "elicitation_id").getOrElse(""),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
 
   private def parseTaskStarted(obj: js.Dynamic, raw: Json): AgentMessage.TaskStarted =
@@ -443,7 +459,7 @@ object MessageConverter:
       toolUseId = stringField(obj, "tool_use_id"),
       taskType = stringField(obj, "task_type"),
       prompt = stringField(obj, "prompt"),
-      workflowName = firstString(obj, "workflow_name", "workflowName")
+      workflowName = firstString(obj, "workflow_name", "workflowName"),
     )
 
   private def parseApiRetryMessage(obj: js.Dynamic, raw: Json): AgentMessage.ApiRetry =
@@ -454,7 +470,7 @@ object MessageConverter:
       errorStatus = intField(obj, "error_status"),
       error = stringField(obj, "error").map(AssistantMessageError.fromString).getOrElse(AssistantMessageError.Unknown),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
 
   private def parseTaskProgress(obj: js.Dynamic, raw: Json): AgentMessage.TaskProgress =
@@ -465,13 +481,13 @@ object MessageConverter:
       sessionId = requiredSessionId(obj, raw),
       summary = stringField(obj, "summary"),
       toolUseId = firstString(obj, "tool_use_id", "toolUseId"),
-      lastToolName = firstString(obj, "last_tool_name", "lastToolName")
+      lastToolName = firstString(obj, "last_tool_name", "lastToolName"),
     )
 
   private def parseApiAssistantMessage(
-      obj: js.Dynamic,
-      raw: Json,
-      context: EnvelopeContext
+    obj: js.Dynamic,
+    raw: Json,
+    context: EnvelopeContext,
   ): ApiAssistantMessage =
     ApiAssistantMessage(
       id = ApiMessageId(requiredString(obj, "id", raw)),
@@ -480,31 +496,31 @@ object MessageConverter:
       model = stringField(obj, "model").getOrElse(""),
       stopReason = stringField(obj, "stop_reason").map(StopReason.fromString),
       stopSequence = stringField(obj, "stop_sequence"),
-      usage = dynamicField(obj, "usage").map(parseModelUsage)
+      usage = dynamicField(obj, "usage").map(parseModelUsage),
     )
 
   private def parseApiUserMessage(
-      obj: js.Dynamic,
-      raw: Json,
-      context: EnvelopeContext
+    obj: js.Dynamic,
+    raw: Json,
+    context: EnvelopeContext,
   ): ApiUserMessage =
     ApiUserMessage(
       role = Role.fromString(requiredString(obj, "role", raw)),
-      content = parseContentBlocks(obj, "content", raw, context)
+      content = parseContentBlocks(obj, "content", raw, context),
     )
 
   private def parseContentBlocks(
-      obj: js.Dynamic,
-      field: String,
-      raw: Json,
-      context: EnvelopeContext
+    obj: js.Dynamic,
+    field: String,
+    raw: Json,
+    context: EnvelopeContext,
   ): List[ContentBlock] =
     requiredArray(obj, field, raw).toList.map(rawValue => parseContentBlock(rawValue, context))
 
   private def parseImageBlock(
-      obj: js.Dynamic,
-      raw: Json,
-      context: EnvelopeContext
+    obj: js.Dynamic,
+    raw: Json,
+    context: EnvelopeContext,
   ): ContentBlock =
     dynamicField(obj, "source") match
       case Some(source) =>
@@ -515,7 +531,7 @@ object MessageConverter:
               case Some(data) =>
                 ContentBlock.Image(
                   source = ImageSource.Base64(data, mediaType),
-                  mediaType = mediaType
+                  mediaType = mediaType,
                 )
               case None =>
                 ContentBlock.Unknown(unknownEnvelope(raw, "image", Some("base64"), context))
@@ -524,7 +540,7 @@ object MessageConverter:
               case Some(url) =>
                 ContentBlock.Image(
                   source = ImageSource.Url(url),
-                  mediaType = mediaType
+                  mediaType = mediaType,
                 )
               case None =>
                 ContentBlock.Unknown(unknownEnvelope(raw, "image", Some("url"), context))
@@ -532,6 +548,7 @@ object MessageConverter:
             ContentBlock.Unknown(unknownEnvelope(raw, "image", Some(other), context))
           case None =>
             ContentBlock.Unknown(unknownEnvelope(raw, "image", None, context))
+        end match
       case None =>
         ContentBlock.Unknown(unknownEnvelope(raw, "image", None, context))
 
@@ -566,20 +583,20 @@ object MessageConverter:
       plugins = dynamicArrayField(obj, "plugins").flatMap(parsePlugin),
       agents = optionStringArray(obj, "agents"),
       betas = optionStringArray(obj, "betas"),
-      fastModeState = stringField(obj, "fast_mode_state").map(FastModeState.fromString)
+      fastModeState = stringField(obj, "fast_mode_state").map(FastModeState.fromString),
     )
 
   private def parseCompactBoundaryEvent(obj: js.Dynamic, raw: Json): SystemEvent.CompactBoundary =
     val metadata = requiredDynamic(obj, "compact_metadata", raw, "system.compact_metadata")
     SystemEvent.CompactBoundary(
       trigger = CompactTrigger.fromString(requiredString(metadata, "trigger", raw)),
-      preTokens = intField(metadata, "pre_tokens").getOrElse(0)
+      preTokens = intField(metadata, "pre_tokens").getOrElse(0),
     )
 
   private def parseStatusEvent(obj: js.Dynamic): SystemEvent.Status =
     SystemEvent.Status(
       status = stringField(obj, "status").map(SdkStatus.fromString),
-      permissionMode = stringField(obj, "permissionMode").map(PermissionMode.fromString)
+      permissionMode = stringField(obj, "permissionMode").map(PermissionMode.fromString),
     )
 
   private def parseHookResponseEvent(obj: js.Dynamic, raw: Json): SystemEvent.HookResponse =
@@ -591,14 +608,14 @@ object MessageConverter:
       stderr = stringField(obj, "stderr").getOrElse(""),
       output = stringField(obj, "output").getOrElse(""),
       exitCode = intField(obj, "exit_code"),
-      outcome = HookOutcome.fromString(requiredString(obj, "outcome", raw))
+      outcome = HookOutcome.fromString(requiredString(obj, "outcome", raw)),
     )
 
   private def parseHookStartedEvent(obj: js.Dynamic, raw: Json): SystemEvent.HookStarted =
     SystemEvent.HookStarted(
       hookId = requiredString(obj, "hook_id", raw),
       hookName = requiredString(obj, "hook_name", raw),
-      hookEvent = requiredString(obj, "hook_event", raw)
+      hookEvent = requiredString(obj, "hook_event", raw),
     )
 
   private def parseHookProgressEvent(obj: js.Dynamic, raw: Json): SystemEvent.HookProgress =
@@ -608,7 +625,7 @@ object MessageConverter:
       hookEvent = requiredString(obj, "hook_event", raw),
       stdout = stringField(obj, "stdout").getOrElse(""),
       stderr = stringField(obj, "stderr").getOrElse(""),
-      output = stringField(obj, "output").getOrElse("")
+      output = stringField(obj, "output").getOrElse(""),
     )
 
   private def parseFilesPersistedEvent(obj: js.Dynamic): SystemEvent.FilesPersisted =
@@ -616,16 +633,16 @@ object MessageConverter:
       files = dynamicArrayField(obj, "files").flatMap { file =>
         for
           filename <- stringField(file, "filename")
-          fileId <- stringField(file, "file_id")
+          fileId   <- stringField(file, "file_id")
         yield PersistedFile(filename, fileId)
       },
       failed = dynamicArrayField(obj, "failed").flatMap { file =>
         for
           filename <- stringField(file, "filename")
-          error <- stringField(file, "error")
+          error    <- stringField(file, "error")
         yield FailedFile(filename, error)
       },
-      processedAt = stringField(obj, "processed_at").getOrElse("")
+      processedAt = stringField(obj, "processed_at").getOrElse(""),
     )
 
   private def parseSessionStateChangedEvent(obj: js.Dynamic): SystemEvent.SessionStateChanged =
@@ -642,55 +659,54 @@ object MessageConverter:
       mirroredSessionId = SessionId(requiredString(key, "sessionId", raw)),
       subpath = stringField(key, "subpath"),
       uuid = requiredUuid(obj, raw),
-      sessionId = requiredSessionId(obj, raw)
+      sessionId = requiredSessionId(obj, raw),
     )
 
   private def parseMemoryRecallEvent(obj: js.Dynamic, raw: Json): SystemEvent.MemoryRecall =
-    val mode = MemoryRecallMode.fromString(requiredString(obj, "mode", raw))
+    val mode     = MemoryRecallMode.fromString(requiredString(obj, "mode", raw))
     val memories = dynamicArrayField(obj, "memories").flatMap { mem =>
       for path <- stringField(mem, "path")
       yield RecalledMemory(
         path = path,
         scope = stringField(mem, "scope").map(MemoryScope.fromString).getOrElse(MemoryScope.Custom("")),
-        content = stringField(mem, "content")
+        content = stringField(mem, "content"),
       )
     }
     SystemEvent.MemoryRecall(mode = mode, memories = memories)
 
   private def parseMcpServer(server: js.Dynamic): Option[McpServerStatus] =
     for
-      name <- stringField(server, "name")
+      name   <- stringField(server, "name")
       status <- stringField(server, "status")
-    yield
-      McpServerStatus(
-        name = name,
-        status = McpConnectionStatus.fromString(status),
-        serverInfo = dynamicField(server, "server_info").flatMap { info =>
-          for
-            serverName <- stringField(info, "name")
-            version <- stringField(info, "version")
-          yield McpServerInfo(serverName, version)
-        },
-        error = stringField(server, "error"),
-        scope = stringField(server, "scope"),
-        tools = optionDynamicArray(server, "tools").map { tools =>
-          tools.flatMap { tool =>
-            stringField(tool, "name").map { toolName =>
-              McpToolInfo(
-                name = toolName,
-                description = stringField(tool, "description"),
-                annotations = dynamicField(tool, "annotations").map { ann =>
-                  McpToolAnnotations(
-                    readOnly = booleanField(ann, "readOnly"),
-                    destructive = booleanField(ann, "destructive"),
-                    openWorld = booleanField(ann, "openWorld")
-                  )
-                }
-              )
-            }
+    yield McpServerStatus(
+      name = name,
+      status = McpConnectionStatus.fromString(status),
+      serverInfo = dynamicField(server, "server_info").flatMap { info =>
+        for
+          serverName <- stringField(info, "name")
+          version    <- stringField(info, "version")
+        yield McpServerInfo(serverName, version)
+      },
+      error = stringField(server, "error"),
+      scope = stringField(server, "scope"),
+      tools = optionDynamicArray(server, "tools").map { tools =>
+        tools.flatMap { tool =>
+          stringField(tool, "name").map { toolName =>
+            McpToolInfo(
+              name = toolName,
+              description = stringField(tool, "description"),
+              annotations = dynamicField(tool, "annotations").map { ann =>
+                McpToolAnnotations(
+                  readOnly = booleanField(ann, "readOnly"),
+                  destructive = booleanField(ann, "destructive"),
+                  openWorld = booleanField(ann, "openWorld"),
+                )
+              },
+            )
           }
         }
-      )
+      },
+    )
 
   private def parsePlugin(plugin: js.Dynamic): Option[PluginInfo] =
     for
@@ -703,7 +719,7 @@ object MessageConverter:
       inputTokens = intField(obj, "input_tokens").getOrElse(0),
       outputTokens = intField(obj, "output_tokens").getOrElse(0),
       cacheReadInputTokens = intField(obj, "cache_read_input_tokens").getOrElse(0),
-      cacheCreationInputTokens = intField(obj, "cache_creation_input_tokens").getOrElse(0)
+      cacheCreationInputTokens = intField(obj, "cache_creation_input_tokens").getOrElse(0),
     )
 
   private def parseModelUsageFlexible(obj: js.Dynamic): ModelUsage =
@@ -711,28 +727,29 @@ object MessageConverter:
       inputTokens = intField(obj, "input_tokens").orElse(intField(obj, "total_tokens")).getOrElse(0),
       outputTokens = intField(obj, "output_tokens").getOrElse(0),
       cacheReadInputTokens = intField(obj, "cache_read_input_tokens").getOrElse(0),
-      cacheCreationInputTokens = intField(obj, "cache_creation_input_tokens").getOrElse(0)
+      cacheCreationInputTokens = intField(obj, "cache_creation_input_tokens").getOrElse(0),
     )
 
   private def parseModelUsageMap(obj: js.Dynamic): Map[String, PerModelUsage] =
-    obj.asInstanceOf[js.Dictionary[js.Dynamic]].toMap.map { case (modelId, usage) =>
-      modelId -> PerModelUsage(
-        inputTokens = intField(usage, "inputTokens").getOrElse(0),
-        outputTokens = intField(usage, "outputTokens").getOrElse(0),
-        cacheReadInputTokens = intField(usage, "cacheReadInputTokens").getOrElse(0),
-        cacheCreationInputTokens = intField(usage, "cacheCreationInputTokens").getOrElse(0),
-        webSearchRequests = intField(usage, "webSearchRequests").getOrElse(0),
-        costUSD = doubleField(usage, "costUSD").getOrElse(0.0),
-        contextWindow = intField(usage, "contextWindow").getOrElse(0),
-        maxOutputTokens = intField(usage, "maxOutputTokens").getOrElse(0)
-      )
+    obj.asInstanceOf[js.Dictionary[js.Dynamic]].toMap.map {
+      case (modelId, usage) =>
+        modelId -> PerModelUsage(
+          inputTokens = intField(usage, "inputTokens").getOrElse(0),
+          outputTokens = intField(usage, "outputTokens").getOrElse(0),
+          cacheReadInputTokens = intField(usage, "cacheReadInputTokens").getOrElse(0),
+          cacheCreationInputTokens = intField(usage, "cacheCreationInputTokens").getOrElse(0),
+          webSearchRequests = intField(usage, "webSearchRequests").getOrElse(0),
+          costUSD = doubleField(usage, "costUSD").getOrElse(0.0),
+          contextWindow = intField(usage, "contextWindow").getOrElse(0),
+          maxOutputTokens = intField(usage, "maxOutputTokens").getOrElse(0),
+        )
     }
 
   private def parsePermissionDenial(denial: js.Dynamic): PermissionDenial =
     PermissionDenial(
       toolName = ToolName.fromString(stringField(denial, "tool_name").getOrElse("unknown")),
       toolUseId = ToolUseId(stringField(denial, "tool_use_id").getOrElse("")),
-      toolInput = anyField(denial, "tool_input").map(jsToJson).getOrElse(Json.Null)
+      toolInput = anyField(denial, "tool_input").map(jsToJson).getOrElse(Json.Null),
     )
 
   private def asDynamicObject(value: js.Any, raw: Json): js.Dynamic =
@@ -747,14 +764,14 @@ object MessageConverter:
     EnvelopeContext(
       uuid = stringField(obj, "uuid").map(MessageUuid.apply),
       sessionId = stringField(obj, "session_id").map(SessionId.apply),
-      parentToolUseId = stringField(obj, "parent_tool_use_id").map(ToolUseId.apply)
+      parentToolUseId = stringField(obj, "parent_tool_use_id").map(ToolUseId.apply),
     )
 
   private def unknownEnvelope(
-      raw: Json,
-      rawType: String,
-      rawSubtype: Option[String],
-      context: EnvelopeContext
+    raw: Json,
+    rawType: String,
+    rawSubtype: Option[String],
+    context: EnvelopeContext,
   ): UnknownEnvelope =
     UnknownEnvelope(
       raw = raw,
@@ -762,7 +779,7 @@ object MessageConverter:
       rawSubtype = rawSubtype,
       uuid = context.uuid,
       sessionId = context.sessionId,
-      parentToolUseId = context.parentToolUseId
+      parentToolUseId = context.parentToolUseId,
     )
 
   private def requiredUuid(obj: js.Dynamic, raw: Json): MessageUuid =
@@ -771,18 +788,31 @@ object MessageConverter:
   private def requiredSessionId(obj: js.Dynamic, raw: Json): SessionId =
     SessionId(requiredString(obj, "session_id", raw))
 
-  private def requiredDynamic(obj: js.Dynamic, field: String, raw: Json, context: String): js.Dynamic =
+  private def requiredDynamic(
+    obj: js.Dynamic,
+    field: String,
+    raw: Json,
+    context: String,
+  ): js.Dynamic =
     dynamicField(obj, field).getOrElse {
       throw MessageParseException(s"Missing required object field '$field' in $context", raw)
     }
 
-  private def requiredArray(obj: js.Dynamic, field: String, raw: Json): js.Array[js.Any] =
+  private def requiredArray(
+    obj: js.Dynamic,
+    field: String,
+    raw: Json,
+  ): js.Array[js.Any] =
     anyField(obj, field)
       .filter(js.Array.isArray)
       .map(_.asInstanceOf[js.Array[js.Any]])
       .getOrElse(throw MessageParseException(s"Missing required array field '$field'", raw))
 
-  private def requiredString(obj: js.Dynamic, field: String, raw: Json): String =
+  private def requiredString(
+    obj: js.Dynamic,
+    field: String,
+    raw: Json,
+  ): String =
     stringField(obj, field).getOrElse {
       throw MessageParseException(s"Missing required string field '$field'", raw)
     }
@@ -808,41 +838,42 @@ object MessageConverter:
   private def optionStringArray(obj: js.Dynamic, field: String): Option[List[String]] =
     anyField(obj, field)
       .filter(js.Array.isArray)
-      .map(_.asInstanceOf[js.Array[js.Any]].toList.collect { case value if js.typeOf(value) == "string" =>
-        value.asInstanceOf[String]
+      .map(_.asInstanceOf[js.Array[js.Any]].toList.collect {
+        case value if js.typeOf(value) == "string" =>
+          value.asInstanceOf[String]
       })
 
   private def stringField(obj: js.Dynamic, field: String): Option[String] =
     anyField(obj, field).flatMap {
       case value if js.typeOf(value) == "string" => Some(value.asInstanceOf[String])
-      case _                                      => None
+      case _                                     => None
     }
 
   private def booleanField(obj: js.Dynamic, field: String): Option[Boolean] =
     anyField(obj, field).flatMap {
       case value if js.typeOf(value) == "boolean" => Some(value.asInstanceOf[Boolean])
-      case _                                       => None
+      case _                                      => None
     }
 
   private def intField(obj: js.Dynamic, field: String): Option[Int] =
     anyField(obj, field).flatMap {
       case value if js.typeOf(value) == "number" => Some(value.asInstanceOf[Double].toInt)
       case value if js.typeOf(value) == "string" => Try(value.asInstanceOf[String].toInt).toOption
-      case _                                      => None
+      case _                                     => None
     }
 
   private def longField(obj: js.Dynamic, field: String): Option[Long] =
     anyField(obj, field).flatMap {
       case value if js.typeOf(value) == "number" => Some(value.asInstanceOf[Double].toLong)
       case value if js.typeOf(value) == "string" => Try(value.asInstanceOf[String].toLong).toOption
-      case _                                      => None
+      case _                                     => None
     }
 
   private def doubleField(obj: js.Dynamic, field: String): Option[Double] =
     anyField(obj, field).flatMap {
       case value if js.typeOf(value) == "number" => Some(value.asInstanceOf[Double])
       case value if js.typeOf(value) == "string" => Try(value.asInstanceOf[String].toDouble).toOption
-      case _                                      => None
+      case _                                     => None
     }
 
   private def firstString(obj: js.Dynamic, fields: String*): Option[String] =
@@ -856,3 +887,4 @@ object MessageConverter:
     else
       val jsonStr = js.JSON.stringify(value)
       jsonStr.fromJson[Json].getOrElse(Json.Null)
+end MessageConverter

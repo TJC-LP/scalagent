@@ -13,8 +13,7 @@ object A2AConverters:
     if value == null || js.isUndefined(value) then None
     else
       try Json.decoder.decodeJson(JsJSON.stringify(value)).toOption
-      catch
-        case _: Throwable => None
+      catch case _: Throwable => None
 
   private def decodeDynamicJsonOrNull(value: js.Any): Json =
     decodeDynamicJson(value).getOrElse(Json.Null)
@@ -34,7 +33,7 @@ object A2AConverters:
       authorizationUrl = optionalString(flowDyn, "authorizationUrl"),
       tokenUrl = optionalString(flowDyn, "tokenUrl"),
       refreshUrl = optionalString(flowDyn, "refreshUrl"),
-      scopes = decodeStringMap(flowDyn.selectDynamic("scopes"))
+      scopes = decodeStringMap(flowDyn.selectDynamic("scopes")),
     )
 
   private def toScalaOAuth2Flows(flowsDyn: js.Dynamic): OAuth2Flows =
@@ -42,7 +41,7 @@ object A2AConverters:
       authorizationCode = optionalDynamic(flowsDyn, "authorizationCode").map(toScalaOAuth2Flow),
       clientCredentials = optionalDynamic(flowsDyn, "clientCredentials").map(toScalaOAuth2Flow),
       implicit_ = optionalDynamic(flowsDyn, "implicit").map(toScalaOAuth2Flow),
-      password = optionalDynamic(flowsDyn, "password").map(toScalaOAuth2Flow)
+      password = optionalDynamic(flowsDyn, "password").map(toScalaOAuth2Flow),
     )
 
   private def toJsStringMap(values: Map[String, String]): js.Dictionary[String] =
@@ -98,7 +97,7 @@ object A2AConverters:
         .map(toScalaSecuritySchemes)
         .getOrElse(Map.empty),
       signatures = js.signatures.toOption.map(_.toList.map(toScala)).getOrElse(Nil),
-      supportsAuthenticatedExtendedCard = js.supportsAuthenticatedExtendedCard.getOrElse(false)
+      supportsAuthenticatedExtendedCard = js.supportsAuthenticatedExtendedCard.getOrElse(false),
     )
 
   def toJs(card: AgentCard): JsAgentCard =
@@ -107,27 +106,23 @@ object A2AConverters:
       description = card.description,
       url = card.url,
       version = card.version,
-      protocolVersion = card.protocolVersion
+      protocolVersion = card.protocolVersion,
     )
     card.provider.foreach(p => obj.provider = toJs(p))
     card.documentationUrl.foreach(u => obj.documentationUrl = u)
     card.iconUrl.foreach(u => obj.iconUrl = u)
     obj.capabilities = toJs(card.capabilities)
     obj.preferredTransport = card.preferredTransport.toRaw
-    if card.additionalInterfaces.nonEmpty then
-      obj.additionalInterfaces = card.additionalInterfaces.map(toJs).toJSArray
+    if card.additionalInterfaces.nonEmpty then obj.additionalInterfaces = card.additionalInterfaces.map(toJs).toJSArray
     obj.defaultInputModes = card.defaultInputModes.toJSArray
     obj.defaultOutputModes = card.defaultOutputModes.toJSArray
     if card.skills.nonEmpty then obj.skills = card.skills.map(toJs).toJSArray
-    if card.security.nonEmpty then
-      obj.security = card.security.map(toJsSecurityRequirement).toJSArray
-    if card.securitySchemes.nonEmpty then
-      obj.securitySchemes = toJsSecuritySchemes(card.securitySchemes)
-    if card.signatures.nonEmpty then
-      obj.signatures = card.signatures.map(toJs).toJSArray
-    if card.supportsAuthenticatedExtendedCard then
-      obj.supportsAuthenticatedExtendedCard = true
+    if card.security.nonEmpty then obj.security = card.security.map(toJsSecurityRequirement).toJSArray
+    if card.securitySchemes.nonEmpty then obj.securitySchemes = toJsSecuritySchemes(card.securitySchemes)
+    if card.signatures.nonEmpty then obj.signatures = card.signatures.map(toJs).toJSArray
+    if card.supportsAuthenticatedExtendedCard then obj.supportsAuthenticatedExtendedCard = true
     obj.asInstanceOf[JsAgentCard]
+  end toJs
 
   def toScala(js: JsAgentProvider): AgentProvider =
     AgentProvider(organization = js.organization, url = js.url)
@@ -142,14 +137,14 @@ object A2AConverters:
       streaming = js.streaming.getOrElse(true),
       pushNotifications = js.pushNotifications.getOrElse(false),
       stateTransitionHistory = js.stateTransitionHistory.getOrElse(false),
-      extensions = js.extensions.toOption.map(_.toList.map(toScala)).getOrElse(Nil)
+      extensions = js.extensions.toOption.map(_.toList.map(toScala)).getOrElse(Nil),
     )
 
   def toJs(c: AgentCapabilities): JsAgentCapabilities =
     val obj = js.Dynamic.literal(
       streaming = c.streaming,
       pushNotifications = c.pushNotifications,
-      stateTransitionHistory = c.stateTransitionHistory
+      stateTransitionHistory = c.stateTransitionHistory,
     )
     if c.extensions.nonEmpty then obj.extensions = c.extensions.map(toJs).toJSArray
     obj.asInstanceOf[JsAgentCapabilities]
@@ -159,7 +154,7 @@ object A2AConverters:
       uri = js.uri,
       description = js.description.toOption,
       params = js.params.toOption.flatMap(decodeDynamicJson),
-      required = js.required.getOrElse(false)
+      required = js.required.getOrElse(false),
     )
 
   def toJs(e: AgentExtension): JsAgentExtension =
@@ -180,7 +175,7 @@ object A2AConverters:
       outputModes = js.outputModes.toOption.map(_.toList).getOrElse(Nil),
       security = js.security.toOption
         .map(_.toList.map(toScalaSecurityRequirement))
-        .getOrElse(Nil)
+        .getOrElse(Nil),
     )
 
   def toJs(s: AgentSkill): JsAgentSkill =
@@ -209,80 +204,91 @@ object A2AConverters:
     AgentCardSignature(
       `protected` = js.`protected`,
       signature = js.signature,
-      header = js.header.toOption.flatMap(decodeDynamicJson)
+      header = js.header.toOption.flatMap(decodeDynamicJson),
     )
 
   def toJs(s: AgentCardSignature): JsAgentCardSignature =
     val obj = js.Dynamic.literal(
       `protected` = s.`protected`,
-      signature = s.signature
+      signature = s.signature,
     )
     s.header.foreach(h => obj.header = JsJSON.parse(h.toString))
     obj.asInstanceOf[JsAgentCardSignature]
 
   // Security helpers (use js.Dynamic since these are complex Map-based types)
   private def toScalaSecurityRequirement(dyn: js.Dynamic): SecurityRequirement =
-    val obj = dyn.asInstanceOf[js.Dictionary[js.Array[String]]]
+    val obj     = dyn.asInstanceOf[js.Dictionary[js.Array[String]]]
     val schemes = obj.toMap.map { case (k, v) => k -> v.toList }
     SecurityRequirement(schemes = schemes)
 
   private def toJsSecurityRequirement(req: SecurityRequirement): js.Dynamic =
     val obj = js.Dynamic.literal()
-    req.schemes.foreach { case (scheme, scopes) =>
-      obj.updateDynamic(scheme)(scopes.toJSArray)
+    req.schemes.foreach {
+      case (scheme, scopes) =>
+        obj.updateDynamic(scheme)(scopes.toJSArray)
     }
     obj
 
   private def toScalaSecuritySchemes(dyn: js.Dynamic): Map[String, SecurityScheme] =
     val dict = dyn.asInstanceOf[js.Dictionary[js.Dynamic]]
-    dict.toMap.flatMap { case (name, schemeDyn) =>
-      val schemeType = schemeDyn.`type`.asInstanceOf[js.UndefOr[String]].toOption
-      val scheme = schemeType match
-        case Some("apiKey") =>
-          Some(SecurityScheme.ApiKey(
-            name = schemeDyn.name.asInstanceOf[String],
-            in = schemeDyn.in.asInstanceOf[String]
-          ))
-        case Some("http") =>
-          Some(SecurityScheme.Http(
-            scheme = schemeDyn.scheme.asInstanceOf[String],
-            bearerFormat = schemeDyn.bearerFormat.asInstanceOf[js.UndefOr[String]].toOption
-          ))
-        case Some("mutualTLS") =>
-          Some(SecurityScheme.MutualTLS)
-        case Some("openIdConnect") =>
-          Some(SecurityScheme.OpenIdConnect(
-            openIdConnectUrl = schemeDyn.openIdConnectUrl.asInstanceOf[String]
-          ))
-        case Some("oauth2") =>
-          val flows = schemeDyn.flows.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.getOrElse(js.Dynamic.literal())
-          val metadataUrl = optionalString(schemeDyn, "oauth2MetadataUrl")
-          Some(SecurityScheme.OAuth2(toScalaOAuth2Flows(flows), metadataUrl))
-        case _ => None
-      scheme.map(name -> _)
+    dict.toMap.flatMap {
+      case (name, schemeDyn) =>
+        val schemeType = schemeDyn.`type`.asInstanceOf[js.UndefOr[String]].toOption
+        val scheme     = schemeType match
+          case Some("apiKey") =>
+            Some(
+              SecurityScheme.ApiKey(
+                name = schemeDyn.name.asInstanceOf[String],
+                in = schemeDyn.in.asInstanceOf[String],
+              )
+            )
+          case Some("http") =>
+            Some(
+              SecurityScheme.Http(
+                scheme = schemeDyn.scheme.asInstanceOf[String],
+                bearerFormat = schemeDyn.bearerFormat.asInstanceOf[js.UndefOr[String]].toOption,
+              )
+            )
+          case Some("mutualTLS") =>
+            Some(SecurityScheme.MutualTLS)
+          case Some("openIdConnect") =>
+            Some(
+              SecurityScheme.OpenIdConnect(
+                openIdConnectUrl = schemeDyn.openIdConnectUrl.asInstanceOf[String]
+              )
+            )
+          case Some("oauth2") =>
+            val flows = schemeDyn.flows.asInstanceOf[js.UndefOr[js.Dynamic]].toOption.getOrElse(js.Dynamic.literal())
+            val metadataUrl = optionalString(schemeDyn, "oauth2MetadataUrl")
+            Some(SecurityScheme.OAuth2(toScalaOAuth2Flows(flows), metadataUrl))
+          case _ => None
+        scheme.map(name -> _)
     }
+  end toScalaSecuritySchemes
 
   private def toJsSecuritySchemes(schemes: Map[String, SecurityScheme]): js.Dynamic =
     val obj = js.Dynamic.literal()
-    schemes.foreach { case (name, scheme) =>
-      val schemeObj = scheme match
-        case SecurityScheme.ApiKey(apiName, in) =>
-          js.Dynamic.literal(`type` = "apiKey", name = apiName, in = in)
-        case SecurityScheme.Http(httpScheme, bearerFormat) =>
-          val o = js.Dynamic.literal(`type` = "http", scheme = httpScheme)
-          bearerFormat.foreach(b => o.bearerFormat = b)
-          o
-        case SecurityScheme.OAuth2(flows, metadataUrl) =>
-          val o = js.Dynamic.literal(`type` = "oauth2", flows = toJsOAuth2Flows(flows))
-          metadataUrl.foreach(u => o.oauth2MetadataUrl = u)
-          o
-        case SecurityScheme.OpenIdConnect(url) =>
-          js.Dynamic.literal(`type` = "openIdConnect", openIdConnectUrl = url)
-        case SecurityScheme.MutualTLS =>
-          js.Dynamic.literal(`type` = "mutualTLS")
-      obj.updateDynamic(name)(schemeObj)
+    schemes.foreach {
+      case (name, scheme) =>
+        val schemeObj = scheme match
+          case SecurityScheme.ApiKey(apiName, in) =>
+            js.Dynamic.literal(`type` = "apiKey", name = apiName, in = in)
+          case SecurityScheme.Http(httpScheme, bearerFormat) =>
+            val o = js.Dynamic.literal(`type` = "http", scheme = httpScheme)
+            bearerFormat.foreach(b => o.bearerFormat = b)
+            o
+          case SecurityScheme.OAuth2(flows, metadataUrl) =>
+            val o = js.Dynamic.literal(`type` = "oauth2", flows = toJsOAuth2Flows(flows))
+            metadataUrl.foreach(u => o.oauth2MetadataUrl = u)
+            o
+          case SecurityScheme.OpenIdConnect(url) =>
+            js.Dynamic.literal(`type` = "openIdConnect", openIdConnectUrl = url)
+          case SecurityScheme.MutualTLS =>
+            js.Dynamic.literal(`type` = "mutualTLS")
+        obj.updateDynamic(name)(schemeObj)
     }
     obj
+  end toJsSecuritySchemes
 
   // ==================== Message ====================
 
@@ -295,7 +301,7 @@ object A2AConverters:
       taskId = js.taskId.toOption.map(TaskId(_)),
       referenceTaskIds = js.referenceTaskIds.toOption.map(_.toList.map(TaskId(_))).getOrElse(Nil),
       metadata = js.metadata.toOption.flatMap(decodeDynamicJson),
-      extensions = js.extensions.toOption.map(_.toList).getOrElse(Nil)
+      extensions = js.extensions.toOption.map(_.toList).getOrElse(Nil),
     )
 
   def toJs(msg: A2AMessage): JsMessage =
@@ -303,14 +309,12 @@ object A2AConverters:
       kind = "message",
       messageId = msg.messageId.value,
       role = if msg.role == A2ARole.User then "user" else "agent",
-      parts = msg.parts.map(toJsPart).toJSArray
+      parts = msg.parts.map(toJsPart).toJSArray,
     )
     msg.contextId.foreach(id => obj.contextId = id.value)
     msg.taskId.foreach(id => obj.taskId = id.value)
-    if msg.referenceTaskIds.nonEmpty then
-      obj.referenceTaskIds = msg.referenceTaskIds.map(_.value).toJSArray
-    if msg.extensions.nonEmpty then
-      obj.extensions = msg.extensions.toJSArray
+    if msg.referenceTaskIds.nonEmpty then obj.referenceTaskIds = msg.referenceTaskIds.map(_.value).toJSArray
+    if msg.extensions.nonEmpty then obj.extensions = msg.extensions.toJSArray
     msg.metadata.foreach(m => obj.metadata = JsJSON.parse(m.toString))
     obj.asInstanceOf[JsMessage]
 
@@ -320,19 +324,19 @@ object A2AConverters:
         val tp = js.asInstanceOf[JsTextPart]
         Part.Text(
           tp.text,
-          metadata = js.metadata.toOption.flatMap(decodeDynamicJson)
+          metadata = js.metadata.toOption.flatMap(decodeDynamicJson),
         )
       case "file" =>
         val fp = js.asInstanceOf[JsFilePart]
         Part.File(
           file = toScalaFileContent(fp.file),
-          metadata = js.metadata.toOption.flatMap(decodeDynamicJson)
+          metadata = js.metadata.toOption.flatMap(decodeDynamicJson),
         )
       case "data" =>
         val dp = js.asInstanceOf[JsDataPart]
         Part.Data(
           data = decodeDynamicJsonOrNull(dp.data),
-          metadata = js.metadata.toOption.flatMap(decodeDynamicJson)
+          metadata = js.metadata.toOption.flatMap(decodeDynamicJson),
         )
       case other =>
         Part.Text(s"[Unknown part type: $other]")
@@ -353,7 +357,7 @@ object A2AConverters:
         obj.asInstanceOf[JsPart]
 
   def toScalaFileContent(js: JsFileContent): FileContent =
-    val name = js.name.toOption
+    val name     = js.name.toOption
     val mimeType = js.mimeType.toOption
     js.bytes.toOption match
       case Some(bytes) => FileContent.Bytes(bytes, name, mimeType)
@@ -381,7 +385,7 @@ object A2AConverters:
       status = toScala(js.status),
       artifacts = js.artifacts.toOption.map(_.toList.map(toScala)).getOrElse(Nil),
       history = js.history.toOption.map(_.toList.map(toScala)).getOrElse(Nil),
-      metadata = js.metadata.toOption.flatMap(decodeDynamicJson)
+      metadata = js.metadata.toOption.flatMap(decodeDynamicJson),
     )
 
   def toJs(task: A2ATask): JsTask =
@@ -389,7 +393,7 @@ object A2AConverters:
       kind = "task",
       id = task.id.value,
       contextId = task.contextId.value,
-      status = toJs(task.status)
+      status = toJs(task.status),
     )
     if task.artifacts.nonEmpty then obj.artifacts = task.artifacts.map(toJs).toJSArray
     if task.history.nonEmpty then obj.history = task.history.map(toJs).toJSArray
@@ -400,7 +404,7 @@ object A2AConverters:
     TaskStatus(
       state = toScalaTaskState(js.state),
       message = js.message.toOption.map(toScala),
-      timestamp = js.timestamp.toOption
+      timestamp = js.timestamp.toOption,
     )
 
   def toJs(status: TaskStatus): JsTaskStatus =
@@ -442,13 +446,13 @@ object A2AConverters:
       name = js.name.toOption,
       description = js.description.toOption,
       extensions = js.extensions.toOption.map(_.toList).getOrElse(Nil),
-      metadata = js.metadata.toOption.flatMap(decodeDynamicJson)
+      metadata = js.metadata.toOption.flatMap(decodeDynamicJson),
     )
 
   def toJs(a: Artifact): JsArtifact =
     val obj = js.Dynamic.literal(
       artifactId = a.artifactId,
-      parts = a.parts.map(toJsPart).toJSArray
+      parts = a.parts.map(toJsPart).toJSArray,
     )
     a.name.foreach(n => obj.name = n)
     a.description.foreach(d => obj.description = d)
@@ -463,7 +467,7 @@ object A2AConverters:
       url = js.url,
       id = js.id.toOption,
       token = js.token.toOption,
-      authentication = js.authentication.toOption.map(toScala)
+      authentication = js.authentication.toOption.map(toScala),
     )
 
   def toJs(c: PushNotificationConfig): JsPushNotificationConfig =
@@ -474,7 +478,7 @@ object A2AConverters:
     obj.asInstanceOf[JsPushNotificationConfig]
 
   def toScalaPushNotificationConfigResult(result: js.Any): PushNotificationConfig =
-    val dyn = result.asInstanceOf[js.Dynamic]
+    val dyn    = result.asInstanceOf[js.Dynamic]
     val config = dyn.selectDynamic("pushNotificationConfig").asInstanceOf[js.UndefOr[js.Any]].toOption.getOrElse(result)
     toScala(config.asInstanceOf[JsPushNotificationConfig])
 
@@ -484,10 +488,11 @@ object A2AConverters:
   def toScala(js: JsPushNotificationAuth): PushNotificationAuth =
     PushNotificationAuth(
       schemes = js.schemes.toList,
-      credentials = js.credentials.toOption
+      credentials = js.credentials.toOption,
     )
 
   def toJs(a: PushNotificationAuth): JsPushNotificationAuth =
     val obj = js.Dynamic.literal(schemes = a.schemes.toJSArray)
     a.credentials.foreach(c => obj.credentials = c)
     obj.asInstanceOf[JsPushNotificationAuth]
+end A2AConverters

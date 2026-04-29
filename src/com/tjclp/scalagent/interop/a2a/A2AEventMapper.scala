@@ -5,12 +5,13 @@ import zio.json.ast.Json
 import com.tjclp.scalagent.core.{AgentEvent, RunSummary}
 import com.tjclp.scalagent.a2a.*
 
-/** Pure mapping from A2A stream events to normalized AgentEvents.
-  *
-  * Follows the same pattern as `ClaudeInterpreter`'s `EventMapper`:
-  * normalized events for text, status, and completion; `Native` for
-  * protocol-specific events like artifacts and snapshots.
-  */
+/**
+ * Pure mapping from A2A stream events to normalized AgentEvents.
+ *
+ * Follows the same pattern as `ClaudeInterpreter`'s `EventMapper`:
+ * normalized events for text, status, and completion; `Native` for
+ * protocol-specific events like artifacts and snapshots.
+ */
 private[a2a] object A2AEventMapper:
 
   def mapStreamEvent(event: A2AResponse.StreamEvent): List[AgentEvent] = event match
@@ -28,23 +29,28 @@ private[a2a] object A2AEventMapper:
       List(nativeEvent("a2a.snapshot", event))
 
   private def mapTaskStatus(status: TaskStatus, isFinal: Boolean): List[AgentEvent] =
-    val state = status.state
+    val state       = status.state
     val messageText = status.message.filter(_.hasText).map(_.text)
 
     if isFinal then
       val isSuccess = state == TaskState.Completed
-      List(AgentEvent.Completed(RunSummary(
-        durationMs = 0, // A2A doesn't carry timing metadata
-        numTurns = 0,
-        costUsd = 0.0,  // A2A doesn't carry cost metadata
-        isSuccess = isSuccess,
-        resultText = messageText,
-        stopReason = Some(state.toString)
-      )))
+      List(
+        AgentEvent.Completed(
+          RunSummary(
+            durationMs = 0, // A2A doesn't carry timing metadata
+            numTurns = 0,
+            costUsd = 0.0, // A2A doesn't carry cost metadata
+            isSuccess = isSuccess,
+            resultText = messageText,
+            stopReason = Some(state.toString),
+          )
+        )
+      )
     else
       messageText match
         case Some(text) => List(AgentEvent.Status(text))
         case None       => List(AgentEvent.Status(state.toString))
+  end mapTaskStatus
 
   /** Reverse mapping: AgentEvent → A2A message for server adapter. */
   def toA2AMessage(event: AgentEvent): Option[A2AMessage] = event match
@@ -58,3 +64,4 @@ private[a2a] object A2AEventMapper:
 
   private def nativeEvent(tag: String, event: A2AResponse.StreamEvent): AgentEvent.Native =
     AgentEvent.Native(tag, event.toJsonAST.getOrElse(Json.Str(event.toString)))
+end A2AEventMapper

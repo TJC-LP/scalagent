@@ -6,34 +6,35 @@ import com.tjclp.scalagent.*
 import com.tjclp.scalagent.codex.*
 import com.tjclp.scalagent.interop.codex.CodexInterpreter
 
-/** DSL structured output: type-safe agent responses via native provider JSON schemas.
-  *
-  * Demonstrates:
-  * - StructuredOutput.derive — macro-generated JSON schema from a case class
-  * - ClaudeInterpreter.typed[A] — agent whose output type is A, not String
-  * - ClaudeInterpreter.typedBuilder[A] — capability-typed structured output agent
-  * - CodexInterpreter.typed[A] — same case class, different provider
-  * - OutputCodec dispatch — transparent structured output wiring to each provider
-  *
-  * Run with: ./mill examples.run dsl-structured
-  *
-  * Requires ANTHROPIC_API_KEY environment variable.
-  * Part 3 (Codex) also requires OPENAI_API_KEY and codex CLI installed.
-  */
+/**
+ * DSL structured output: type-safe agent responses via native provider JSON schemas.
+ *
+ * Demonstrates:
+ * - StructuredOutput.derive — macro-generated JSON schema from a case class
+ * - ClaudeInterpreter.typed[A] — agent whose output type is A, not String
+ * - ClaudeInterpreter.typedBuilder[A] — capability-typed structured output agent
+ * - CodexInterpreter.typed[A] — same case class, different provider
+ * - OutputCodec dispatch — transparent structured output wiring to each provider
+ *
+ * Run with: ./mill examples.run dsl-structured
+ *
+ * Requires ANTHROPIC_API_KEY environment variable.
+ * Part 3 (Codex) also requires OPENAI_API_KEY and codex CLI installed.
+ */
 object DslStructuredOutputExample extends ZIOAppDefault:
 
   // --- Define structured output types ---
 
   case class RiskAssessment(
-      @description("Risk severity: low, medium, high, or critical")
-      severity: String,
-      @description("Numeric risk score from 0.0 to 1.0")
-      score: Double,
-      @description("Specific risk findings")
-      findings: List[String],
-      @description("Recommended action to mitigate the risk")
-      recommendation: String
-  ) derives JsonDecoder
+    @description("Risk severity: low, medium, high, or critical")
+    severity: String,
+    @description("Numeric risk score from 0.0 to 1.0")
+    score: Double,
+    @description("Specific risk findings")
+    findings: List[String],
+    @description("Recommended action to mitigate the risk")
+    recommendation: String)
+      derives JsonDecoder
 
   // Single line: macro generates JSON schema + decoder
   given StructuredOutput[RiskAssessment] = StructuredOutput.derive[RiskAssessment]
@@ -44,14 +45,14 @@ object DslStructuredOutputExample extends ZIOAppDefault:
       .withPermissionMode(PermissionMode.DontAsk)
 
     val policy = ExecutionPolicy(
-        budget = Budget.usd(0.50),
-        maxTurns = Some(3),
-        stopStrategy = StopStrategy.FirstResponse
+      budget = Budget.usd(0.50),
+      maxTurns = Some(3),
+      stopStrategy = StopStrategy.FirstResponse,
     )
 
     val program = for
       claudeAgent <- ZIO.service[ClaudeAgent]
-      _ <- Console.printLine("=== DSL Structured Output Example ===\n").orDie
+      _           <- Console.printLine("=== DSL Structured Output Example ===\n").orDie
 
       // --- Part 1: Simple typed agent ---
       _ <- Console.printLine("--- Part 1: ClaudeInterpreter.typed[RiskAssessment] ---").orDie
@@ -61,7 +62,11 @@ object DslStructuredOutputExample extends ZIOAppDefault:
 
       assessment <- ZIO.scoped {
         typedAgent
-          .run("analyst", "Assess the cybersecurity risk of a legacy COBOL system handling PII data with no encryption at rest.", policy)
+          .run(
+            "analyst",
+            "Assess the cybersecurity risk of a legacy COBOL system handling PII data with no encryption at rest.",
+            policy,
+          )
           .result
       }
 
@@ -75,18 +80,23 @@ object DslStructuredOutputExample extends ZIOAppDefault:
       _ <- Console.printLine("--- Part 2: ClaudeInterpreter.typedBuilder[RiskAssessment] ---").orDie
 
       // TypedAgent[Any, String, RiskAssessment, CanUseTools[ReadOnlyTools] & HasBudget]
-      capableAgent = ClaudeInterpreter.typedBuilder[RiskAssessment](claudeAgent, baseOptions)
+      capableAgent = ClaudeInterpreter
+        .typedBuilder[RiskAssessment](claudeAgent, baseOptions)
         .withReadOnlyTools(ToolSurface.readOnlyBuiltins)
         .withBudget
         .build
 
       assessment2 <- ZIO.scoped {
-        val agentRun = capableAgent.run("auditor", "Read CLAUDE.md and assess the risk of the build configuration described there.", policy)
+        val agentRun = capableAgent.run(
+          "auditor",
+          "Read CLAUDE.md and assess the risk of the build configuration described there.",
+          policy,
+        )
         for
           events <- agentRun.events.runCollect.map(_.toList)
           output <- agentRun.result
-          trace   = TraceSummary.fromEvents(events)
-          _      <- Console.printLine(s"  Turns: ${trace.numTurns}, Cost: $$${trace.costUsd}").orDie
+          trace = TraceSummary.fromEvents(events)
+          _ <- Console.printLine(s"  Turns: ${trace.numTurns}, Cost: $$${trace.costUsd}").orDie
         yield output
       }
 
@@ -99,11 +109,11 @@ object DslStructuredOutputExample extends ZIOAppDefault:
       // --- Part 3: Codex typed agent (same RiskAssessment, different provider) ---
       _ <- Console.printLine("--- Part 3: CodexInterpreter.typed[RiskAssessment] ---").orDie
 
-      codexClient = CodexClient.create()
+      codexClient        = CodexClient.create()
       codexThreadOptions = CodexThreadOptions(
         sandboxMode = Some(SandboxMode.ReadOnly),
         approvalPolicy = Some(ApprovalMode.Never),
-        skipGitRepoCheck = true
+        skipGitRepoCheck = true,
       )
 
       // Agent[Any, CodexInput, RiskAssessment] — same output type, Codex provider
@@ -111,7 +121,11 @@ object DslStructuredOutputExample extends ZIOAppDefault:
 
       assessment3 <- ZIO.scoped {
         codexTypedAgent
-          .run("analyst", "Assess the cybersecurity risk of a legacy COBOL system handling PII data with no encryption at rest.", policy)
+          .run(
+            "analyst",
+            "Assess the cybersecurity risk of a legacy COBOL system handling PII data with no encryption at rest.",
+            policy,
+          )
           .result
       }
 
@@ -125,3 +139,5 @@ object DslStructuredOutputExample extends ZIOAppDefault:
     yield ()
 
     program.provide(ClaudeAgent.live)
+  end run
+end DslStructuredOutputExample

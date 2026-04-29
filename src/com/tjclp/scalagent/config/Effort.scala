@@ -3,10 +3,11 @@ package com.tjclp.scalagent.config
 import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
-/** Controls how much effort Claude puts into its response.
-  *
-  * Works with adaptive thinking to guide thinking depth.
-  */
+/**
+ * Controls how much effort Claude puts into its response.
+ *
+ * Works with adaptive thinking to guide thinking depth.
+ */
 enum Effort:
   /** Minimal thinking, fastest responses */
   case Low
@@ -34,6 +35,7 @@ enum Effort:
     case XHigh     => "xhigh"
     case Max       => "max"
     case Custom(v) => v
+end Effort
 
 object Effort:
   given JsonEncoder[Effort] = StringEnumJsonCodec.encoder(_.toRaw)

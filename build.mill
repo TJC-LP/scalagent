@@ -7,21 +7,24 @@ package build
 
 import mill.*, scalalib.*, publish.*
 import mill.bun.bun
+import mill.scalalib.scalafmt.*
 import mill.scalajslib.api.*
 import mill.scalajslib.bun.*
 
 // Main library module - sources in /src
-object agent extends BunScalaJSModule with BunPublishModule with PublishModule {
-  def scalaVersion = "3.8.3"
+object agent extends BunScalaJSModule with BunPublishModule with PublishModule with ScalafmtModule:
+  def scalaVersion        = "3.8.3"
   override def moduleKind = Task { ModuleKind.ESModule }
 
   // JS dependencies (replaces package.json)
-  def bunDeps = Task { Seq(
-    bun"@anthropic-ai/claude-agent-sdk@^0.2.116",
-    bun"@a2a-js/sdk@^0.3.13",
-    bun"@openai/codex-sdk@^0.122.0",
-    bun"zod@^4.0.0"
-  )}
+  def bunDeps = Task {
+    Seq(
+      bun"@anthropic-ai/claude-agent-sdk@^0.2.116",
+      bun"@a2a-js/sdk@^0.3.13",
+      bun"@openai/codex-sdk@^0.122.0",
+      bun"zod@^4.0.0",
+    )
+  }
   def bunDevDeps = Task { Seq(bun"@types/bun@^1.3.5") }
 
   // Scala dependencies
@@ -34,17 +37,17 @@ object agent extends BunScalaJSModule with BunPublishModule with PublishModule {
     mvn"dev.zio::zio-schema-json::1.8.3",
     mvn"dev.zio::zio-schema-derivation::1.8.3",
     // zio-blocks/scope for compile-time resource safety (non-experimental alternative to capture checking)
-    mvn"dev.zio::zio-blocks-scope::0.0.33"
+    mvn"dev.zio::zio-blocks-scope::0.0.33",
   )
 
   // Source at project root /src
   override def moduleDir = build.moduleDir
-  override def sources = Task.Sources(moduleDir / "src")
+  override def sources   = Task.Sources(moduleDir / "src")
 
   // Publishing configuration - read from PUBLISH_VERSION env var (set by CI)
   // Task.Input ensures env var is re-evaluated each run (not cached)
   override def publishVersion = Task.Input {
-    Task.env.get("PUBLISH_VERSION").getOrElse("0.6.1")
+    Task.env.get("PUBLISH_VERSION").getOrElse("0.6.2")
   }
 
   // Skip scaladoc generation - Scala.js facades cause doc errors
@@ -63,59 +66,103 @@ object agent extends BunScalaJSModule with BunPublishModule with PublishModule {
     versionControl = VersionControl.github("TJC-LP", "scalagent"),
     developers = Seq(
       Developer("TJC-LP", "TJC-LP", "https://github.com/TJC-LP")
-    )
+    ),
   )
 
   def artifactName = "scalagent"
 
   // Test module
-  object test extends BunScalaJSTests, TestModule.Munit {
+  object test extends BunScalaJSTests, TestModule.Munit:
     def munitVersion = "1.2.4"
+end agent
+
+// Optional fast-mcp-scala interop. Kept as a separate artifact so projects
+// only pull fast-mcp-scala when they want to mount its typed contracts as
+// in-process scalagent MCP servers.
+object fastMcp extends BunScalaJSModule with BunPublishModule with PublishModule with ScalafmtModule:
+  def scalaVersion        = agent.scalaVersion
+  override def moduleKind = Task { ModuleKind.ESModule }
+  override def moduleDeps = Seq(agent)
+
+  override def moduleDir = build.moduleDir / "interop" / "fastmcp"
+  override def sources   = Task.Sources(moduleDir / "src")
+
+  def mvnDeps = Seq(
+    mvn"com.tjclp::fast-mcp-scala::0.3.2",
+    mvn"dev.zio::zio::2.1.24",
+    mvn"dev.zio::zio-json::0.9.0",
+  )
+
+  override def scalacOptions = Seq("-experimental")
+
+  override def publishVersion = agent.publishVersion()
+
+  override def docJar: T[PathRef] = Task {
+    val jar = Task.dest / "empty-javadoc.jar"
+    val jos = new java.util.jar.JarOutputStream(new java.io.FileOutputStream(jar.toIO))
+    jos.close()
+    PathRef(jar)
   }
-}
+
+  def pomSettings = PomSettings(
+    description = "Optional fast-mcp-scala interop for Scalagent",
+    organization = "com.tjclp",
+    url = "https://github.com/TJC-LP/scalagent",
+    licenses = Seq(License.MIT),
+    versionControl = VersionControl.github("TJC-LP", "scalagent"),
+    developers = Seq(
+      Developer("TJC-LP", "TJC-LP", "https://github.com/TJC-LP")
+    ),
+  )
+
+  def artifactName = "scalagent-fast-mcp"
+
+  object test extends BunScalaJSTests, TestModule.Munit:
+    def munitVersion = "1.2.4"
+end fastMcp
 
 // Example application module
 // Run examples with: ./mill examples.go --example simple
 // List examples with: ./mill examples.list
-object examples extends BunScalaJSModule {
-  def scalaVersion = agent.scalaVersion
-  override def moduleKind = Task { ModuleKind.ESModule }
-  override def moduleDeps = Seq(agent)
+object examples extends BunScalaJSModule with ScalafmtModule:
+  def scalaVersion             = agent.scalaVersion
+  override def moduleKind      = Task { ModuleKind.ESModule }
+  override def moduleDeps      = Seq(agent)
   override def bunBundleTarget = Task { "bun" }
 
   def mvnDeps = Seq(
     mvn"dev.zio::zio::2.1.24",
-    mvn"dev.zio::zio-streams::2.1.24"
+    mvn"dev.zio::zio-streams::2.1.24",
   )
 
   // Sources in examples/
   override def moduleDir = build.moduleDir
-  override def sources = Task.Sources(moduleDir / "examples")
+  override def sources   = Task.Sources(moduleDir / "examples")
 
   // Available examples - add new ones here
   val exampleClasses = Map(
-    "simple"       -> "com.tjclp.scalagent.examples.SimpleQuery",
-    "macro"        -> "com.tjclp.scalagent.examples.MacroToolExample",
-    "custom"       -> "com.tjclp.scalagent.examples.CustomToolExample",
-    "hook"         -> "com.tjclp.scalagent.examples.HookExample",
-    "permission"   -> "com.tjclp.scalagent.examples.PermissionExample",
-    "session"      -> "com.tjclp.scalagent.examples.SessionExample",
-    "structured"   -> "com.tjclp.scalagent.examples.StructuredOutputExample",
-    "subagent"     -> "com.tjclp.scalagent.examples.SubagentExample",
-    "plugin"       -> "com.tjclp.scalagent.examples.PluginExample",
-    "prompt"       -> "com.tjclp.scalagent.examples.SystemPromptExample",
-    "command"      -> "com.tjclp.scalagent.examples.SlashCommandExample",
-    "a2a"          -> "com.tjclp.scalagent.examples.A2AExample",
-    "agent-hooks"  -> "com.tjclp.scalagent.examples.AgentHooksExample",
-    "dsl-basic"    -> "com.tjclp.scalagent.examples.DslBasicExample",
-    "dsl-builder"  -> "com.tjclp.scalagent.examples.DslBuilderExample",
+    "simple"         -> "com.tjclp.scalagent.examples.SimpleQuery",
+    "macro"          -> "com.tjclp.scalagent.examples.MacroToolExample",
+    "custom"         -> "com.tjclp.scalagent.examples.CustomToolExample",
+    "hook"           -> "com.tjclp.scalagent.examples.HookExample",
+    "permission"     -> "com.tjclp.scalagent.examples.PermissionExample",
+    "session"        -> "com.tjclp.scalagent.examples.SessionExample",
+    "structured"     -> "com.tjclp.scalagent.examples.StructuredOutputExample",
+    "subagent"       -> "com.tjclp.scalagent.examples.SubagentExample",
+    "plugin"         -> "com.tjclp.scalagent.examples.PluginExample",
+    "prompt"         -> "com.tjclp.scalagent.examples.SystemPromptExample",
+    "command"        -> "com.tjclp.scalagent.examples.SlashCommandExample",
+    "a2a"            -> "com.tjclp.scalagent.examples.A2AExample",
+    "agent-hooks"    -> "com.tjclp.scalagent.examples.AgentHooksExample",
+    "dsl-basic"      -> "com.tjclp.scalagent.examples.DslBasicExample",
+    "dsl-builder"    -> "com.tjclp.scalagent.examples.DslBuilderExample",
     "dsl-delegation" -> "com.tjclp.scalagent.examples.DslDelegationExample",
-    "dsl-review"   -> "com.tjclp.scalagent.examples.DslReviewExample",
-    "dsl-cells"    -> "com.tjclp.scalagent.examples.DslClandestineCellExample",
+    "dsl-review"     -> "com.tjclp.scalagent.examples.DslReviewExample",
+    "dsl-cells"      -> "com.tjclp.scalagent.examples.DslClandestineCellExample",
     "dsl-structured" -> "com.tjclp.scalagent.examples.DslStructuredOutputExample",
     "dsl-dirscope"   -> "com.tjclp.scalagent.examples.DslDirectoryScopeExample",
-    "dsl-codex"    -> "com.tjclp.scalagent.examples.DslCodexExample",
-    "dsl-cross"    -> "com.tjclp.scalagent.examples.DslCrossProviderExample"
+    "dsl-codex"      -> "com.tjclp.scalagent.examples.DslCodexExample",
+    "dsl-cross"      -> "com.tjclp.scalagent.examples.DslCrossProviderExample",
   )
 
   // Fixed mainClass — ExampleRunner dispatches at runtime.
@@ -130,17 +177,16 @@ object examples extends BunScalaJSModule {
   override def run(args: mill.api.Task[mill.api.Args] = mill.api.Task.Anon(mill.api.Args())) = Task.Command {
     val cliArgs = args().value
     val example = cliArgs.headOption.getOrElse("")
-    val linked = fastLinkJS()
-    val entry = primaryEntrypoint(linked)
-    val env = if example.nonEmpty then
-      bunJsEnv() ++ Map("EXAMPLE" -> example)
-    else
-      bunJsEnv()
+    val linked  = fastLinkJS()
+    val entry   = primaryEntrypoint(linked)
+    val env =
+      if example.nonEmpty then bunJsEnv() ++ Map("EXAMPLE" -> example)
+      else bunJsEnv()
     runBun(
       bunExecutable(),
       Seq("run", entry.toString),
       cwd = linked.dest.path,
-      env = env
+      env = env,
     )
   }
-}
+end examples

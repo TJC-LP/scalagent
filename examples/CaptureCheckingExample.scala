@@ -2,18 +2,19 @@ package com.tjclp.scalagent.examples
 
 import zio.*
 
-/** Example demonstrating capture-checked capabilities for agent sandboxing.
-  *
-  * Scala 3's capture checking prevents capability leakage at compile time.
-  * Capabilities (filesystem access, budget, spawn permits) cannot escape
-  * their authorized scope.
-  *
-  * The actual capture-checked logic lives in `CaptureCheckedOps` (a separate
-  * file with `language.experimental.captureChecking` enabled). This file
-  * is the ZIO app shell that calls into it.
-  *
-  * Run with: EXAMPLE=captureChecking ./mill examples.bun
-  */
+/**
+ * Example demonstrating capture-checked capabilities for agent sandboxing.
+ *
+ * Scala 3's capture checking prevents capability leakage at compile time.
+ * Capabilities (filesystem access, budget, spawn permits) cannot escape
+ * their authorized scope.
+ *
+ * The actual capture-checked logic lives in `CaptureCheckedOps` (a separate
+ * file with `language.experimental.captureChecking` enabled). This file
+ * is the ZIO app shell that calls into it.
+ *
+ * Run with: EXAMPLE=captureChecking ./mill examples.bun
+ */
 object CaptureCheckingExample extends ZIOAppDefault:
 
   val run: ZIO[Any, Any, Unit] =
@@ -39,3 +40,4 @@ object CaptureCheckingExample extends ZIOAppDefault:
       _ <- Console.printLine("").orDie
       _ <- Console.printLine("=== All capability scopes enforced at compile time ===").orDie
     yield ()
+end CaptureCheckingExample

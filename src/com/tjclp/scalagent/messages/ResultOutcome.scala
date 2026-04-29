@@ -9,10 +9,9 @@ import com.tjclp.scalagent.types.ToolUseId
 
 /** Deferred tool use returned in a successful result. */
 final case class DeferredToolUse(
-    id: String,
-    name: String,
-    input: zio.json.ast.Json
-)
+  id: String,
+  name: String,
+  input: zio.json.ast.Json)
 
 object DeferredToolUse:
   given JsonDecoder[DeferredToolUse] = DeriveJsonDecoder.gen[DeferredToolUse]
@@ -22,32 +21,31 @@ object DeferredToolUse:
 enum ResultOutcome:
   /** Successful query completion */
   case Success(
-      durationMs: Long,
-      durationApiMs: Long,
-      numTurns: Int,
-      result: String,
-      totalCostUsd: Double,
-      usage: ModelUsage,
-      modelUsage: Map[String, PerModelUsage],
-      permissionDenials: List[PermissionDenial],
-      structuredOutput: Option[zio.json.ast.Json],
-      stopReason: Option[StopReason] = None,
-      deferredToolUse: Option[DeferredToolUse] = None
-  )
+    durationMs: Long,
+    durationApiMs: Long,
+    numTurns: Int,
+    result: String,
+    totalCostUsd: Double,
+    usage: ModelUsage,
+    modelUsage: Map[String, PerModelUsage],
+    permissionDenials: List[PermissionDenial],
+    structuredOutput: Option[zio.json.ast.Json],
+    stopReason: Option[StopReason] = None,
+    deferredToolUse: Option[DeferredToolUse] = None)
 
   /** Query terminated with error */
   case Error(
-      reason: ErrorReason,
-      durationMs: Long,
-      durationApiMs: Long,
-      numTurns: Int,
-      totalCostUsd: Double,
-      usage: ModelUsage,
-      modelUsage: Map[String, PerModelUsage],
-      permissionDenials: List[PermissionDenial],
-      errors: List[String],
-      stopReason: Option[StopReason] = None
-  )
+    reason: ErrorReason,
+    durationMs: Long,
+    durationApiMs: Long,
+    numTurns: Int,
+    totalCostUsd: Double,
+    usage: ModelUsage,
+    modelUsage: Map[String, PerModelUsage],
+    permissionDenials: List[PermissionDenial],
+    errors: List[String],
+    stopReason: Option[StopReason] = None)
+end ResultOutcome
 
 object ResultOutcome:
   given JsonDecoder[ResultOutcome] = DeriveJsonDecoder.gen[ResultOutcome]
@@ -123,27 +121,30 @@ object ResultOutcome:
       case s: Success => s.stopReason
       case e: Error   => e.stopReason
 
-    /** Parse structured output to a typed value.
-      *
-      * Requires a StructuredOutput type class instance for the target type.
-      *
-      * Example:
-      * {{{
-      * case class Result(summary: String, score: Int)
-      * object Result:
-      *   given Schema[Result] = DeriveSchema.gen[Result]
-      *   given JsonDecoder[Result] = DeriveJsonDecoder.gen[Result]
-      *   given StructuredOutput[Result] = StructuredOutput.derive[Result]
-      *
-      * outcome.parseAs[Result] match
-      *   case Right(result) => println(result.summary)
-      *   case Left(error) => println(s"Parse error: $error")
-      * }}}
-      */
+    /**
+     * Parse structured output to a typed value.
+     *
+     * Requires a StructuredOutput type class instance for the target type.
+     *
+     * Example:
+     * {{{
+     * case class Result(summary: String, score: Int)
+     * object Result:
+     *   given Schema[Result] = DeriveSchema.gen[Result]
+     *   given JsonDecoder[Result] = DeriveJsonDecoder.gen[Result]
+     *   given StructuredOutput[Result] = StructuredOutput.derive[Result]
+     *
+     * outcome.parseAs[Result] match
+     *   case Right(result) => println(result.summary)
+     *   case Left(error) => println(s"Parse error: $error")
+     * }}}
+     */
     def parseAs[A](using so: StructuredOutput[A]): Either[String, A] =
       structuredOutput match
         case Some(json) => so.parse(json)
         case None       => Left("No structured output in result")
+  end extension
+end ResultOutcome
 
 /** Reason for query error termination */
 enum ErrorReason:
@@ -154,11 +155,11 @@ enum ErrorReason:
   case Custom(value: String)
 
   def toRaw: String = this match
-    case DuringExecution          => "error_during_execution"
-    case MaxTurns                 => "error_max_turns"
-    case MaxBudgetUsd             => "error_max_budget_usd"
+    case DuringExecution            => "error_during_execution"
+    case MaxTurns                   => "error_max_turns"
+    case MaxBudgetUsd               => "error_max_budget_usd"
     case MaxStructuredOutputRetries => "error_max_structured_output_retries"
-    case Custom(v)                => v
+    case Custom(v)                  => v
 
 object ErrorReason:
   given JsonEncoder[ErrorReason] = StringEnumJsonCodec.encoder(_.toRaw)
@@ -173,11 +174,10 @@ object ErrorReason:
 
 /** Token usage statistics */
 final case class ModelUsage(
-    inputTokens: Int,
-    outputTokens: Int,
-    cacheReadInputTokens: Int,
-    cacheCreationInputTokens: Int
-)
+  inputTokens: Int,
+  outputTokens: Int,
+  cacheReadInputTokens: Int,
+  cacheCreationInputTokens: Int)
 
 object ModelUsage:
   given JsonDecoder[ModelUsage] = DeriveJsonDecoder.gen[ModelUsage]
@@ -187,15 +187,14 @@ object ModelUsage:
 
 /** Per-model usage statistics */
 final case class PerModelUsage(
-    inputTokens: Int,
-    outputTokens: Int,
-    cacheReadInputTokens: Int,
-    cacheCreationInputTokens: Int,
-    webSearchRequests: Int,
-    costUSD: Double,
-    contextWindow: Int,
-    maxOutputTokens: Int = 0
-)
+  inputTokens: Int,
+  outputTokens: Int,
+  cacheReadInputTokens: Int,
+  cacheCreationInputTokens: Int,
+  webSearchRequests: Int,
+  costUSD: Double,
+  contextWindow: Int,
+  maxOutputTokens: Int = 0)
 
 object PerModelUsage:
   given JsonDecoder[PerModelUsage] = DeriveJsonDecoder.gen[PerModelUsage]
@@ -203,10 +202,9 @@ object PerModelUsage:
 
 /** Record of a permission denial during query execution */
 final case class PermissionDenial(
-    toolName: ToolName,
-    toolUseId: ToolUseId,
-    toolInput: zio.json.ast.Json
-)
+  toolName: ToolName,
+  toolUseId: ToolUseId,
+  toolInput: zio.json.ast.Json)
 
 object PermissionDenial:
   given JsonDecoder[PermissionDenial] = DeriveJsonDecoder.gen[PermissionDenial]

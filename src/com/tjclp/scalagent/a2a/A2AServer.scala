@@ -4,7 +4,9 @@ import scala.scalajs.js
 import scala.scalajs.js.annotation.*
 import scala.scalajs.js.JSConverters.*
 import scala.scalajs.js.JSON as JsJSON
+import scala.collection.mutable
 import scala.concurrent.ExecutionContext.Implicits.global
+import java.util.concurrent.TimeoutException
 import zio.*
 import zio.stream.*
 import com.tjclp.scalagent.*
@@ -12,11 +14,12 @@ import com.tjclp.scalagent.config.*
 import com.tjclp.scalagent.messages.*
 import com.tjclp.scalagent.a2a.facade.*
 
-/** A2A Server that exposes a Claude agent via the A2A protocol.
-  *
-  * This bridges A2A requests to ClaudeAgent queries, allowing Claude to be called by other A2A
-  * clients.
-  */
+/**
+ * A2A Server that exposes a Claude agent via the A2A protocol.
+ *
+ * This bridges A2A requests to ClaudeAgent queries, allowing Claude to be called by other A2A
+ * clients.
+ */
 trait A2AServer:
   /** Start the server */
   def start: Task[Unit]
@@ -30,21 +33,22 @@ trait A2AServer:
   /** Get the server URL */
   def url: String
 
-/** Per-task A2A session logger. Writes JSONL to a configurable directory.
-  *
-  * This supplements the SDK's native session transcripts (which capture full agent messages)
-  * with A2A-level events: task IDs, prompts, completion status, and timing.
-  */
+/**
+ * Per-task A2A session logger. Writes JSONL to a configurable directory.
+ *
+ * This supplements the SDK's native session transcripts (which capture full agent messages)
+ * with A2A-level events: task IDs, prompts, completion status, and timing.
+ */
 object SessionLogger:
   @js.native
   @JSImport("node:fs", JSImport.Namespace)
   private object Fs extends js.Object:
-    def appendFileSync(path: String, data: String): Unit = js.native
+    def appendFileSync(path: String, data: String): Unit   = js.native
     def mkdirSync(path: String, options: js.Dynamic): Unit = js.native
-    def existsSync(path: String): Boolean = js.native
+    def existsSync(path: String): Boolean                  = js.native
 
   private var logDir: Option[String] = None
-  private var dirEnsured = false
+  private var dirEnsured             = false
 
   /** Configure the log directory. Call before using sink/logEvent. */
   def configure(dir: Option[String]): Unit =
@@ -53,21 +57,24 @@ object SessionLogger:
 
   private def ensureDir(): Boolean =
     logDir match
-      case None => false
+      case None      => false
       case Some(dir) =>
         if !dirEnsured then
           try
-            if !Fs.existsSync(dir) then
-              Fs.mkdirSync(dir, js.Dynamic.literal(recursive = true))
+            if !Fs.existsSync(dir) then Fs.mkdirSync(dir, js.Dynamic.literal(recursive = true))
             dirEnsured = true
           catch case _: Throwable => ()
         dirEnsured
 
   /** Log an A2A event (prompt, completion, failure, etc.) */
-  def logEvent(taskId: String, event: String, data: String): Unit =
+  def logEvent(
+    taskId: String,
+    event: String,
+    data: String,
+  ): Unit =
     if !ensureDir() then return
-    val dir = logDir.get
-    val ts = new js.Date().toISOString().asInstanceOf[String]
+    val dir     = logDir.get
+    val ts      = new js.Date().toISOString().asInstanceOf[String]
     val escaped = data
       .replace("\\", "\\\\")
       .replace("\"", "\\\"")
@@ -78,19 +85,32 @@ object SessionLogger:
     val line = s"""{"ts":"$ts","taskId":"$taskId","event":"$event","data":"$escaped"}"""
     try Fs.appendFileSync(s"$dir/$taskId.jsonl", line + "\n")
     catch case _: Throwable => ()
+end SessionLogger
 
 object A2AServer:
 
   /** Server configuration */
   final case class Config(
-      name: String,
-      description: String,
-      host: String = "localhost",
-      port: Int = 3000,
-      agentOptions: AgentOptions = AgentOptions.default,
-      skills: List[AgentSkill] = Nil,
-      sessionLogDir: Option[String] = None,
-  ):
+    name: String,
+    description: String,
+    host: String = "localhost",
+    port: Int = 3000,
+    agentOptions: AgentOptions = AgentOptions.default,
+    executionMode: ExecutionMode = ExecutionMode.Default,
+    taskTimeout: Option[Duration] = None,
+    capabilities: AgentCapabilities = AgentCapabilities.default,
+    skills: List[AgentSkill] = Nil,
+    sessionLogDir: Option[String] = None,
+    // Per-request customization seam. When set, the executor calls
+    // this before each `message/send` to obtain a prompt override,
+    // optional `AgentOptions` modifier, post-result artifacts to
+    // attach, and a cleanup hook (run via `.ensuring`). Defaults to
+    // None for full back-compat with existing 0.6.1 callers.
+    invocationPreparer: Option[(A2AMessage, TaskId) => Task[InvocationContext]] = None,
+    // Optional low-level executor override. Servers that need a different
+    // execution substrate can still reuse scalagent's A2A transport,
+    // task store, and request handling while supplying their own executor.
+    executorFactory: Option[(JsTaskStore, Runtime[Any]) => JsAgentExecutor] = None):
     def url: String = s"http://$host:$port"
 
     def toAgentCard: AgentCard =
@@ -98,33 +118,63 @@ object A2AServer:
         name = name,
         description = description,
         url = url,
-        capabilities = AgentCapabilities(streaming = true),
-        skills = skills
+        capabilities = capabilities,
+        skills = skills,
       )
+  end Config
+
+  /**
+   * A pre-built [[Config.invocationPreparer]] that auto-stages every
+   * `Part.File.Bytes` on the incoming message into a per-task tmp dir,
+   * exposes a typed [[com.tjclp.scalagent.core.AgentWorkspace]] on
+   * the resulting [[InvocationContext]], augments the prompt with the
+   * default file manifest, and (after the agent settles) returns any
+   * new files in `rootDir` as A2A `Artifact`s.
+   *
+   * Wire this in one line to opt every NDA/redline/documentation
+   * agent into Stage B file-context handling:
+   *
+   * {{{
+   * A2AServer.Config(
+   *   ...,
+   *   invocationPreparer = Some(A2AServer.workspaceStaging),
+   * )
+   * }}}
+   *
+   * Power-users who want to control prompt construction should
+   * call [[WorkspaceStaging.stageFromMessage]] directly inside their
+   * own preparer and read `staged.workspace.inputs`.
+   */
+  val workspaceStaging: (A2AMessage, TaskId) => Task[InvocationContext] =
+    (message, taskId) => ZIO.attempt(WorkspaceStaging.stageFromMessage(message, taskId).toInvocationContext)
 
   /** Create and start an A2A server */
   def create(config: Config): ZIO[Scope, Throwable, A2AServer] =
     for
       runtime <- ZIO.runtime[Any]
-      server <- ZIO.acquireRelease(
+      server  <- ZIO.acquireRelease(
         start(config, runtime)
       )(srv => srv.stop.ignore)
     yield server
 
   /** Start server without scope management */
   def start(config: Config, runtime: Runtime[Any]): Task[A2AServer] =
-    ZIO.attempt {
-      A2AServerLive(config, runtime)
-    }.tap(_.start)
+    ZIO
+      .attempt {
+        A2AServerLive(config, runtime)
+      }
+      .tap(_.start)
 
   /** Create a server layer */
   def live(config: Config): ZLayer[Scope, Throwable, A2AServer] =
     ZLayer.fromZIO(create(config))
+end A2AServer
 
 /** Live implementation of A2A Server */
 private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any]) extends A2AServer:
 
   private var bunServer: js.Dynamic = null
+  private val activeRuns            = mutable.Map.empty[String, Fiber[Nothing, Unit]]
 
   override def agentCard: AgentCard = config.toAgentCard
 
@@ -137,11 +187,14 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
 
       val card = A2AConverters.toJs(config.toAgentCard)
 
-      // Create executor that bridges to ClaudeAgent
-      val executor = createExecutor()
-
-      // Create task store
+      // Create task store before the executor so cancel and future store-backed
+      // features can inspect the latest task snapshot.
       val taskStore = new JsInMemoryTaskStore()
+
+      // Create executor that bridges to ClaudeAgent unless the server
+      // supplied a lower-level execution substrate.
+      val executor =
+        config.executorFactory.fold(createExecutor(taskStore))(factory => factory(taskStore, runtime))
 
       // Create request handler
       val requestHandler = new JsDefaultRequestHandler(card, taskStore, executor)
@@ -154,7 +207,7 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         js.Dynamic.literal(
           hostname = config.host,
           port = config.port,
-          fetch = createFetchHandler(transportHandler, card)
+          fetch = createFetchHandler(transportHandler, card),
         )
       )
 
@@ -162,15 +215,17 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
     }
 
   override def stop: Task[Unit] =
-    ZIO.attempt {
-      if bunServer != null then bunServer.stop()
-      ()
-    }
+    ZIO.foreachDiscard(activeRuns.values.toList)(_.interrupt).ignore *>
+      ZIO.attempt {
+        activeRuns.clear()
+        if bunServer != null then bunServer.stop()
+        ()
+      }
 
   private def taskIds(ctx: JsRequestContext): (TaskId, ContextId) =
     (
       TaskId(ctx.taskId),
-      ContextId(ctx.contextId)
+      ContextId(ctx.contextId),
     )
 
   private def publishTaskSnapshot(ctx: JsRequestContext, bus: JsExecutionEventBus): Unit =
@@ -180,25 +235,62 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         A2ATask(
           id = taskId,
           contextId = contextId,
-          status = com.tjclp.scalagent.a2a.TaskStatus.working()
+          status = com.tjclp.scalagent.a2a.TaskStatus.working(),
         )
       )
     )
 
   private def publishStatusUpdate(
-      ctx: JsRequestContext,
-      bus: JsExecutionEventBus,
-      status: com.tjclp.scalagent.a2a.TaskStatus,
-      finalUpdate: Boolean = false
+    ctx: JsRequestContext,
+    bus: JsExecutionEventBus,
+    status: com.tjclp.scalagent.a2a.TaskStatus,
+    finalUpdate: Boolean = false,
   ): Unit =
     val (taskId, contextId) = taskIds(ctx)
+    publishStatusUpdate(taskId, contextId, bus, status, finalUpdate)
+
+  private def publishStatusUpdate(
+    taskId: TaskId,
+    contextId: ContextId,
+    bus: JsExecutionEventBus,
+    status: com.tjclp.scalagent.a2a.TaskStatus,
+    finalUpdate: Boolean,
+  ): Unit =
     bus.publish(
       js.Dynamic.literal(
         kind = "status-update",
         taskId = taskId.value,
         contextId = contextId.value,
         status = A2AConverters.toJs(status),
-        `final` = finalUpdate
+        `final` = finalUpdate,
+      )
+    )
+
+  /**
+   * Publish a `TaskArtifactUpdateEvent` (A2A spec §4 / proto:308-322).
+   * Always emits `append=false, lastChunk=true` — i.e., the whole
+   * artifact arrives in one event. Streaming chunked artifacts is
+   * out of scope for 0.6.2.
+   *
+   * Per spec §6.2 (specification.md:1376-1380), artifact-update
+   * events MUST be emitted before the terminal status-update so
+   * polling clients see them on the snapshot that flips to
+   * `completed`.
+   */
+  private def publishArtifactUpdate(
+    ctx: JsRequestContext,
+    bus: JsExecutionEventBus,
+    artifact: Artifact,
+  ): Unit =
+    val (taskId, contextId) = taskIds(ctx)
+    bus.publish(
+      js.Dynamic.literal(
+        kind = "artifact-update",
+        taskId = taskId.value,
+        contextId = contextId.value,
+        artifact = A2AConverters.toJs(artifact),
+        append = false,
+        lastChunk = true,
       )
     )
 
@@ -221,13 +313,17 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         if toolNames.nonEmpty then Some(s"Calling ${toolNames.mkString(", ")}")
         else None
       case AgentMessage.System(SystemEvent.Status(status, _), _, _) =>
-        status.map {
-          case SdkStatus.Compacting    => "Compacting context"
-          case SdkStatus.Requesting    => "Requesting from model"
-          case SdkStatus.Custom(value) => value
-        }.flatMap(nonEmpty)
+        status
+          .map {
+            case SdkStatus.Compacting    => "Compacting context"
+            case SdkStatus.Requesting    => "Requesting from model"
+            case SdkStatus.Custom(value) => value
+          }
+          .flatMap(nonEmpty)
       case _ =>
         None
+    end match
+  end progressText
 
   private def progressSink(ctx: JsRequestContext, bus: JsExecutionEventBus): QueryCollector.MessageSink =
     var lastPublished: Option[String] = None
@@ -238,81 +334,126 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
           ZIO.succeed {
             lastPublished = Some(text)
             val (_, contextId) = taskIds(ctx)
-            val statusMessage = A2AMessage
+            val statusMessage  = A2AMessage
               .agentText(text, Some(contextId))
               .copy(taskId = Some(TaskId(ctx.taskId)))
             publishStatusUpdate(
               ctx,
               bus,
-              com.tjclp.scalagent.a2a.TaskStatus.working(Some(statusMessage))
+              com.tjclp.scalagent.a2a.TaskStatus.working(Some(statusMessage)),
             )
           }
         case _ =>
           ZIO.unit
+  end progressSink
+
+  private def withTaskTimeout[A](taskId: TaskId, effect: Task[A]): Task[A] =
+    config.taskTimeout match
+      case Some(timeout) =>
+        effect.timeoutFail(new TimeoutException(s"A2A task ${taskId.value} timed out after $timeout"))(timeout)
+      case None =>
+        effect
+
+  private def loadTask(taskStore: JsTaskStore, taskId: String): Task[Option[A2ATask]] =
+    ZIO
+      .fromPromiseJS(taskStore.load(taskId))
+      .map { jsTask =>
+        if jsTask == null then None
+        else Some(A2AConverters.toScala(jsTask.asInstanceOf[JsTask]))
+      }
+
+  private def publishCanceled(task: A2ATask, bus: JsExecutionEventBus): Unit =
+    publishStatusUpdate(
+      task.id,
+      task.contextId,
+      bus,
+      com.tjclp.scalagent.a2a.TaskStatus.canceled,
+      finalUpdate = true,
+    )
+    bus.finished()
 
   /** Create an AgentExecutor that bridges to ClaudeAgent */
-  private def createExecutor(): JsAgentExecutor =
+  private def createExecutor(taskStore: JsTaskStore): JsAgentExecutor =
     JsExecutorBuilder.create(
-      handler = (ctx, bus) => {
+      handler = (ctx, bus) =>
         // Convert JS message to prompt
-        val message = A2AConverters.toScala(ctx.userMessage)
-        val prompt = message.text
+        val message             = A2AConverters.toScala(ctx.userMessage)
         val (taskId, contextId) = taskIds(ctx)
+        val taskKey             = taskId.value
 
-        // Log the initial prompt at the A2A level
-        SessionLogger.logEvent(taskId.value, "prompt", prompt)
+        // Resolve the per-invocation context: either via the configured
+        // preparer (Stage B file-staging hook) or a default that just
+        // forwards `message.text` and runs no side effects.
+        val prepared: Task[InvocationContext] =
+          config.invocationPreparer match
+            case Some(prep) => prep(message, taskId)
+            case None       => ZIO.succeed(InvocationContext(prompt = message.text))
 
-        // Run ClaudeAgent query (SDK writes native transcripts; progressSink publishes A2A status-updates)
-        val effect = for
-          result <- ClaudeAgent
+        // Run ClaudeAgent query (SDK writes native transcripts; progressSink publishes A2A status-updates).
+        // `cleanup` runs via `.ensuring` so it fires on success, failure, AND interruption.
+        val effect: Task[(QueryResult, List[Artifact])] = prepared.flatMap { invocation =>
+          SessionLogger.logEvent(taskId.value, "prompt", invocation.prompt)
+          ClaudeAgent
             .queryComplete(
-              prompt,
-              config.agentOptions,
+              invocation.prompt,
+              invocation.optionsModifier(config.agentOptions),
               collectionPolicy = CollectionPolicy.ResultOnly,
-              sink = progressSink(ctx, bus)
+              sink = progressSink(ctx, bus),
             )
             .provideLayer(ClaudeAgent.live)
-        yield result
+            .flatMap(result => invocation.artifactsAfter.map(artifacts => (result, artifacts)))
+            .ensuring(invocation.cleanup.ignore)
+        }
+        val effectWithTimeout = withTaskTimeout(taskId, effect)
 
         // Publish task in "working" state immediately so non-blocking sends
         // get a task ID back without waiting for the full agent response.
         publishTaskSnapshot(ctx, bus)
 
-        // Execute and publish results
+        // Execute in a detached fiber. The SDK's non-blocking send will return
+        // the first task snapshot, while its event loop keeps this bus alive
+        // until the final status update is published.
         Unsafe.unsafe { implicit unsafe =>
-          runtime.unsafe.runToFuture {
-            effect
-              .map { queryResult =>
-                // Convert result to A2A message
-                val responseText =
-                  queryResult.outcome.resultText
-                    .orElse(queryResult.semanticText.toOption)
-                    .getOrElse("Error: " + queryResult.outcome.toString)
-                val responseMsg = A2AMessage
-                  .agentText(responseText, Some(contextId))
-                  .copy(taskId = Some(taskId))
-                val jsMsg = A2AConverters.toJs(responseMsg)
+          val run =
+            effectWithTimeout
+              .map {
+                case (queryResult, artifacts) =>
+                  // Convert result to A2A message
+                  val responseText =
+                    queryResult.outcome.resultText
+                      .orElse(queryResult.semanticText.toOption)
+                      .getOrElse("Error: " + queryResult.outcome.toString)
+                  val responseMsg = A2AMessage
+                    .agentText(responseText, Some(contextId))
+                    .copy(taskId = Some(taskId))
+                  val jsMsg = A2AConverters.toJs(responseMsg)
 
-                // Log completion
-                SessionLogger.logEvent(taskId.value, "completed", responseText.take(500))
+                  // Log completion
+                  SessionLogger.logEvent(taskId.value, "completed", responseText.take(500))
 
-                // Publish completed status BEFORE the message event.
-                // The A2A SDK's event queue breaks on whichever comes first
-                // ("message" or final "status-update"), so the status-update
-                // must come first to ensure the task store transitions to "completed".
-                publishStatusUpdate(
-                  ctx,
-                  bus,
-                  com.tjclp.scalagent.a2a.TaskStatus.completed(responseMsg),
-                  finalUpdate = true
-                )
-                bus.publish(jsMsg)
-                bus.finished()
+                  // A2A spec §6.2 (specification.md:1376-1380): artifact-update
+                  // events MUST be published BEFORE the terminal status-update
+                  // so polling clients see them on the snapshot that flips to
+                  // `completed`.
+                  artifacts.foreach(art => publishArtifactUpdate(ctx, bus, art))
+
+                  // Publish completed status BEFORE the message event.
+                  // The A2A SDK's event queue breaks on whichever comes first
+                  // ("message" or final "status-update"), so the status-update
+                  // must come first to ensure the task store transitions to "completed".
+                  publishStatusUpdate(
+                    ctx,
+                    bus,
+                    com.tjclp.scalagent.a2a.TaskStatus.completed(responseMsg),
+                    finalUpdate = true,
+                  )
+                  bus.publish(jsMsg)
+                  bus.finished()
               }
               .catchAll { error =>
                 ZIO.succeed {
                   val errorText = s"Error: ${error.getMessage}"
-                  val errorMsg = A2AMessage
+                  val errorMsg  = A2AMessage
                     .agentText(errorText, Some(contextId))
                     .copy(taskId = Some(taskId))
 
@@ -324,29 +465,52 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
                     ctx,
                     bus,
                     com.tjclp.scalagent.a2a.TaskStatus.failed(errorMsg),
-                    finalUpdate = true
+                    finalUpdate = true,
                   )
                   bus.publish(A2AConverters.toJs(errorMsg))
                   bus.finished()
                 }
               }
-          }.toJSPromise.`then`[Unit](_ => ())
+              .ensuring(ZIO.succeed(activeRuns.remove(taskKey)).unit)
+
+          val fiber = runtime.unsafe.fork(run)
+          activeRuns.update(taskKey, fiber)
+          js.Promise.resolve(())
         }
-      },
-      cancelHandler = (taskId, bus) => {
-        bus.finished()
-        js.Promise.resolve(())
-      }
+      ,
+      cancelHandler = (taskId, bus) =>
+        Unsafe.unsafe { implicit unsafe =>
+          activeRuns.remove(taskId) match
+            case Some(fiber) =>
+              val cancel =
+                fiber.interrupt.unit *>
+                  loadTask(taskStore, taskId).flatMap {
+                    case Some(task) => ZIO.succeed(publishCanceled(task, bus))
+                    case None       => ZIO.succeed(bus.finished())
+                  }
+              runtime.unsafe.runToFuture(cancel).toJSPromise.`then`[Unit](_ => ())
+            case None =>
+              val cancel =
+                loadTask(taskStore, taskId)
+                  .fold(
+                    _ => bus.finished(),
+                    {
+                      case Some(task) => publishCanceled(task, bus)
+                      case None       => bus.finished()
+                    },
+                  )
+              runtime.unsafe.runToFuture(cancel).toJSPromise.`then`[Unit](_ => ())
+        },
     )
 
   /** Create the fetch handler for Bun.serve */
   private def createFetchHandler(
-      transportHandler: JsJsonRpcTransportHandler,
-      card: JsAgentCard
+    transportHandler: JsJsonRpcTransportHandler,
+    card: JsAgentCard,
   ): js.Function1[js.Dynamic, js.Promise[js.Dynamic]] =
-    (req: js.Dynamic) => {
-      val url = req.url.asInstanceOf[String]
-      val method = req.method.asInstanceOf[String]
+    (req: js.Dynamic) =>
+      val url      = req.url.asInstanceOf[String]
+      val method   = req.method.asInstanceOf[String]
       val pathname = js.Dynamic.newInstance(js.Dynamic.global.URL)(url).pathname.asInstanceOf[String]
       val Response = js.Dynamic.global.Response
 
@@ -357,7 +521,7 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         js.Promise.resolve(
           js.Dynamic.newInstance(Response)(
             JsJSON.stringify(card),
-            js.Dynamic.literal(status = 200, headers = headers)
+            js.Dynamic.literal(status = 200, headers = headers),
           )
         )
       else if pathname == "/" && method == "POST" then
@@ -365,25 +529,27 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         req
           .text()
           .asInstanceOf[js.Promise[String]]
-          .`then`[js.Dynamic] { body =>
-            handleJsonRpc(body, transportHandler)
-          }
+          .`then`[js.Dynamic] { body => handleJsonRpc(body, transportHandler) }
       else
         // 404
         js.Promise.resolve(
           js.Dynamic.newInstance(Response)(
             "Not Found",
-            js.Dynamic.literal(status = 404)
+            js.Dynamic.literal(status = 404),
           )
         )
-    }
+      end if
 
   /** Handle JSON-RPC request via transport handler */
   private def handleJsonRpc(body: String, transportHandler: JsJsonRpcTransportHandler): js.Promise[js.Dynamic] =
-    val requestId = BunJsonRpcResponses.requestIdOf(body)
+    val normalizedBody =
+      if config.executionMode == ExecutionMode.Asynchronous then
+        A2AJsonRpcRequests.withDefaultMessageSendBlocking(body, blocking = false)
+      else body
+    val requestId = BunJsonRpcResponses.requestIdOf(normalizedBody)
 
     transportHandler
-      .handle(body)
+      .handle(normalizedBody)
       .`then`[js.Dynamic](result => BunJsonRpcResponses.fromResult(result, requestId))
       .`catch`[js.Dynamic] { error =>
         val errorMsg =
@@ -393,6 +559,7 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
             dyn.selectDynamic("message").asInstanceOf[js.UndefOr[String]].toOption.getOrElse(error.toString)
         BunJsonRpcResponses.jsonRpcError(A2AErrorCode.InternalError, errorMsg, requestId)
       }
+end A2AServerLive
 
 /** Bun.serve binding */
 @js.native

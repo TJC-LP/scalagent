@@ -5,13 +5,14 @@ import zio.json.ast.Json
 import com.tjclp.scalagent.core.{AgentEvent, RunSummary}
 import com.tjclp.scalagent.messages.*
 
-/** Pure mapping from provider-specific AgentMessage to normalized AgentEvent.
-  *
-  * Each AgentMessage may produce zero or more AgentEvents (e.g., an Assistant
-  * message with text + tool use produces two events). Provider-specific messages
-  * that don't normalize pass through as `AgentEvent.Native` with a tag and
-  * lossless JSON payload.
-  */
+/**
+ * Pure mapping from provider-specific AgentMessage to normalized AgentEvent.
+ *
+ * Each AgentMessage may produce zero or more AgentEvents (e.g., an Assistant
+ * message with text + tool use produces two events). Provider-specific messages
+ * that don't normalize pass through as `AgentEvent.Native` with a tag and
+ * lossless JSON payload.
+ */
 private[claude] object EventMapper:
 
   def mapMessage(msg: AgentMessage): List[AgentEvent] = msg match
@@ -19,12 +20,13 @@ private[claude] object EventMapper:
       message.content.flatMap(mapContentBlock)
 
     case AgentMessage.User(message, _, isSynthetic, _, _, _, _) if isSynthetic =>
-      message.content.collect { case ContentBlock.ToolResult(toolUseId, content, isError) =>
-        AgentEvent.ToolResult(
-          name = toolUseId.value,
-          value = Json.Str(content),
-          isError = isError
-        )
+      message.content.collect {
+        case ContentBlock.ToolResult(toolUseId, content, isError) =>
+          AgentEvent.ToolResult(
+            name = toolUseId.value,
+            value = Json.Str(content),
+            isError = isError,
+          )
       }
 
     case AgentMessage.Result(outcome, _, _, _) =>
@@ -77,7 +79,7 @@ private[claude] object EventMapper:
       costUsd = outcome.totalCostUsd,
       isSuccess = outcome.isSuccess,
       resultText = outcome.resultText,
-      stopReason = outcome.stopReason.map(_.toRaw)
+      stopReason = outcome.stopReason.map(_.toRaw),
     )
 
   private def nativeTag(msg: AgentMessage): String = msg match
@@ -95,3 +97,4 @@ private[claude] object EventMapper:
 
   private def nativeEvent(tag: String, msg: AgentMessage): AgentEvent.Native =
     AgentEvent.Native(tag, msg.toJsonAST.getOrElse(Json.Str(msg.toString)))
+end EventMapper

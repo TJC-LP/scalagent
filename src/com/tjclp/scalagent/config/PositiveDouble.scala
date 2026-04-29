@@ -3,23 +3,24 @@ package com.tjclp.scalagent.config
 import scala.language.implicitConversions
 import scala.compiletime.error
 
-/** A positive double (> 0.0).
-  *
-  * Use this for configuration fields that must be positive, like maxBudgetUsd.
-  *
-  * Example:
-  * {{{
-  * // Safe construction
-  * PositiveDouble(1.50) // Right(PositiveDouble(1.50))
-  * PositiveDouble(-1.0) // Left("Must be positive: -1.0")
-  *
-  * // Unsafe construction (for trusted values)
-  * PositiveDouble.unsafe(5.0)
-  *
-  * // In options builder
-  * options.withMaxBudgetUsd(PositiveDouble.unsafe(10.0))
-  * }}}
-  */
+/**
+ * A positive double (> 0.0).
+ *
+ * Use this for configuration fields that must be positive, like maxBudgetUsd.
+ *
+ * Example:
+ * {{{
+ * // Safe construction
+ * PositiveDouble(1.50) // Right(PositiveDouble(1.50))
+ * PositiveDouble(-1.0) // Left("Must be positive: -1.0")
+ *
+ * // Unsafe construction (for trusted values)
+ * PositiveDouble.unsafe(5.0)
+ *
+ * // In options builder
+ * options.withMaxBudgetUsd(PositiveDouble.unsafe(10.0))
+ * }}}
+ */
 opaque type PositiveDouble = Double
 
 object PositiveDouble:
@@ -32,10 +33,11 @@ object PositiveDouble:
   /** Create a PositiveDouble without validation (for trusted/internal values) */
   def unsafe(n: Double): PositiveDouble = n
 
-  /** Create a PositiveDouble from a literal at compile time.
-    *
-    * This fails compilation when the literal is not strictly positive.
-    */
+  /**
+   * Create a PositiveDouble from a literal at compile time.
+   *
+   * This fails compilation when the literal is not strictly positive.
+   */
   inline def literal(inline n: Double): PositiveDouble =
     inline if n > 0.0 then n
     else error("PositiveDouble literal must be > 0.0")
@@ -53,3 +55,4 @@ object PositiveDouble:
 
   /** Implicit conversion to Double for convenience */
   given Conversion[PositiveDouble, Double] = _.value
+end PositiveDouble

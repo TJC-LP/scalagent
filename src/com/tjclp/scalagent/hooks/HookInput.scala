@@ -8,10 +8,11 @@ import com.tjclp.scalagent.types.{SessionId, SubagentId, ToolUseId}
 import zio.json.*
 import zio.json.ast.Json
 
-/** Input payloads for different hook event types.
-  *
-  * Each hook receives specific context relevant to the event being handled.
-  */
+/**
+ * Input payloads for different hook event types.
+ *
+ * Each hook receives specific context relevant to the event being handled.
+ */
 sealed trait HookInput:
   /** Session ID for this hook invocation */
   def sessionId: SessionId
@@ -25,167 +26,170 @@ sealed trait HookInput:
   /** Permission mode active for this session */
   def permissionMode: Option[PermissionMode]
 
-  /** Subagent identifier, present when the hook fires from within a subagent.
-    * Absent for the main thread, even in --agent sessions.
-    */
+  /**
+   * Subagent identifier, present when the hook fires from within a subagent.
+   * Absent for the main thread, even in --agent sessions.
+   */
   def hookAgentId: Option[SubagentId]
 
-  /** Agent type name (e.g., "general-purpose", "code-reviewer").
-    * Present when the hook fires from within a subagent (alongside agentId),
-    * or on the main thread of a session started with --agent (without agentId).
-    */
+  /**
+   * Agent type name (e.g., "general-purpose", "code-reviewer").
+   * Present when the hook fires from within a subagent (alongside agentId),
+   * or on the main thread of a session started with --agent (without agentId).
+   */
   def hookAgentType: Option[String]
+end HookInput
 
 object HookInput:
 
   /** Input for PreToolUse hook - before tool execution */
   final case class PreToolUse(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      toolName: ToolName,
-      toolInput: Json,
-      toolUseId: ToolUseId,
-      agentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput:
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    toolName: ToolName,
+    toolInput: Json,
+    toolUseId: ToolUseId,
+    agentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput:
     def hookAgentId: Option[SubagentId] = agentId
 
   /** Input for PostToolUse hook - after successful tool execution */
   final case class PostToolUse(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      toolName: ToolName,
-      toolInput: Json,
-      toolUseId: ToolUseId,
-      toolResponse: String,
-      agentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput:
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    toolName: ToolName,
+    toolInput: Json,
+    toolUseId: ToolUseId,
+    toolResponse: String,
+    agentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput:
     def hookAgentId: Option[SubagentId] = agentId
 
   /** Input for PostToolUseFailure hook - after tool execution error */
   final case class PostToolUseFailure(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      toolName: ToolName,
-      toolInput: Json,
-      toolUseId: ToolUseId,
-      error: String,
-      agentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      isInterrupt: Boolean = false,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput:
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    toolName: ToolName,
+    toolInput: Json,
+    toolUseId: ToolUseId,
+    error: String,
+    agentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    isInterrupt: Boolean = false,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput:
     def hookAgentId: Option[SubagentId] = agentId
 
   /** Input for PermissionRequest hook - when permission decision needed */
   final case class PermissionRequest(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      toolName: ToolName,
-      toolInput: Json,
-      permissionSuggestions: List[Json] = Nil,
-      permissionMode: Option[PermissionMode] = None,
-      toolUseId: Option[ToolUseId] = None,
-      agentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      title: Option[String] = None,
-      displayName: Option[String] = None,
-      description: Option[String] = None
-  ) extends HookInput:
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    toolName: ToolName,
+    toolInput: Json,
+    permissionSuggestions: List[Json] = Nil,
+    permissionMode: Option[PermissionMode] = None,
+    toolUseId: Option[ToolUseId] = None,
+    agentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    title: Option[String] = None,
+    displayName: Option[String] = None,
+    description: Option[String] = None)
+      extends HookInput:
     def hookAgentId: Option[SubagentId] = agentId
 
   /** Input for Notification hook */
   final case class Notification(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      message: String,
-      title: Option[String] = None,
-      notificationType: String = "info",
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    message: String,
+    title: Option[String] = None,
+    notificationType: String = "info",
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for UserPromptSubmit hook */
   final case class UserPromptSubmit(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      prompt: String,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    prompt: String,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for SessionStart hook */
   final case class SessionStart(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      source: SessionStartSource,
-      agentType: Option[String] = None,
-      model: Option[String] = None,
-      hookAgentId: Option[SubagentId] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput:
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    source: SessionStartSource,
+    agentType: Option[String] = None,
+    model: Option[String] = None,
+    hookAgentId: Option[SubagentId] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput:
     def hookAgentType: Option[String] = agentType
 
   /** Input for SessionEnd hook */
   final case class SessionEnd(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      reason: ExitReason,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None,
-      totalCostUsd: Option[Double] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    reason: ExitReason,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None,
+    totalCostUsd: Option[Double] = None)
+      extends HookInput
 
   /** Input for Stop hook */
   final case class Stop(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      stopHookActive: Boolean = false,
-      lastAssistantMessage: Option[String] = None,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    stopHookActive: Boolean = false,
+    lastAssistantMessage: Option[String] = None,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for StopFailure hook - triggered when agent fails to stop cleanly */
   final case class StopFailure(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      error: AssistantMessageError,
-      errorDetails: Option[String] = None,
-      lastAssistantMessage: Option[String] = None,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    error: AssistantMessageError,
+    errorDetails: Option[String] = None,
+    lastAssistantMessage: Option[String] = None,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for SubagentStart hook */
   final case class SubagentStart(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      agentId: SubagentId,
-      agentType: String,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput:
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    agentId: SubagentId,
+    agentType: String,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput:
     def hookAgentId: Option[SubagentId] = Some(agentId)
-    def hookAgentType: Option[String] = Some(agentType)
+    def hookAgentType: Option[String]   = Some(agentType)
 
     @deprecated("Use agentId", "0.2.63")
     def subagentId: SubagentId = agentId
@@ -195,18 +199,18 @@ object HookInput:
 
   /** Input for SubagentStop hook */
   final case class SubagentStop(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      stopHookActive: Boolean = false,
-      agentId: SubagentId,
-      agentTranscriptPath: String,
-      agentType: String,
-      lastAssistantMessage: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput:
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    stopHookActive: Boolean = false,
+    agentId: SubagentId,
+    agentTranscriptPath: String,
+    agentType: String,
+    lastAssistantMessage: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput:
     def hookAgentId: Option[SubagentId] = Some(agentId)
-    def hookAgentType: Option[String] = Some(agentType)
+    def hookAgentType: Option[String]   = Some(agentType)
 
     @deprecated("Use agentId", "0.2.63")
     def subagentId: SubagentId = agentId
@@ -216,206 +220,206 @@ object HookInput:
 
   /** Input for PostCompact hook - after context compaction completes */
   final case class PostCompact(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      trigger: CompactTrigger,
-      compactSummary: String,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    trigger: CompactTrigger,
+    compactSummary: String,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for PreCompact hook - before context compaction */
   final case class PreCompact(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      trigger: CompactTrigger,
-      customInstructions: Option[String] = None,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    trigger: CompactTrigger,
+    customInstructions: Option[String] = None,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for Setup hook */
   final case class Setup(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      trigger: SetupTrigger,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    trigger: SetupTrigger,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for TeammateIdle hook - multi-agent coordination */
   final case class TeammateIdle(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      teammateName: String,
-      teamName: String,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    teammateName: String,
+    teamName: String,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for TaskCompleted hook */
   final case class TaskCompleted(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      taskId: String,
-      taskSubject: String,
-      taskDescription: Option[String] = None,
-      teammateName: Option[String] = None,
-      teamName: Option[String] = None,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    taskId: String,
+    taskSubject: String,
+    taskDescription: Option[String] = None,
+    teammateName: Option[String] = None,
+    teamName: Option[String] = None,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for Elicitation hook - MCP elicitation request */
   final case class Elicitation(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      mcpServerName: String,
-      message: String,
-      mode: Option[ElicitationMode] = None,
-      url: Option[String] = None,
-      elicitationId: Option[String] = None,
-      requestedSchema: Option[Json] = None,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    mcpServerName: String,
+    message: String,
+    mode: Option[ElicitationMode] = None,
+    url: Option[String] = None,
+    elicitationId: Option[String] = None,
+    requestedSchema: Option[Json] = None,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for ElicitationResult hook */
   final case class ElicitationResult(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      mcpServerName: String,
-      action: ElicitationAction,
-      elicitationId: Option[String] = None,
-      mode: Option[ElicitationMode] = None,
-      content: Option[Json] = None,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    mcpServerName: String,
+    action: ElicitationAction,
+    elicitationId: Option[String] = None,
+    mode: Option[ElicitationMode] = None,
+    content: Option[Json] = None,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for ConfigChange hook */
   final case class ConfigChange(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      source: ConfigChangeSource,
-      filePath: Option[String] = None,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    source: ConfigChangeSource,
+    filePath: Option[String] = None,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for WorktreeCreate hook */
   final case class WorktreeCreate(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      name: String,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    name: String,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for WorktreeRemove hook */
   final case class WorktreeRemove(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      worktreePath: String,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    worktreePath: String,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for InstructionsLoaded hook - when CLAUDE.md or memory files are loaded */
   final case class InstructionsLoaded(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      filePath: String,
-      memoryType: MemoryType,
-      loadReason: InstructionsLoadReason,
-      globs: Option[List[String]] = None,
-      triggerFilePath: Option[String] = None,
-      parentFilePath: Option[String] = None,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    filePath: String,
+    memoryType: MemoryType,
+    loadReason: InstructionsLoadReason,
+    globs: Option[List[String]] = None,
+    triggerFilePath: Option[String] = None,
+    parentFilePath: Option[String] = None,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for PermissionDenied hook - when a tool permission is denied */
   final case class PermissionDenied(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      toolName: ToolName,
-      toolInput: Json,
-      toolUseId: ToolUseId,
-      reason: Option[String] = None,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    toolName: ToolName,
+    toolInput: Json,
+    toolUseId: ToolUseId,
+    reason: Option[String] = None,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for TaskCreated hook - when a background task is created */
   final case class TaskCreated(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      taskId: String,
-      taskSubject: String,
-      taskDescription: Option[String] = None,
-      teammateName: Option[String] = None,
-      teamName: Option[String] = None,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    taskId: String,
+    taskSubject: String,
+    taskDescription: Option[String] = None,
+    teammateName: Option[String] = None,
+    teamName: Option[String] = None,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for CwdChanged hook - when the working directory changes */
   final case class CwdChanged(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      oldCwd: String,
-      newCwd: String,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    oldCwd: String,
+    newCwd: String,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 
   /** Input for FileChanged hook - when a watched file changes */
   final case class FileChanged(
-      sessionId: SessionId,
-      cwd: String,
-      transcriptPath: String,
-      filePath: String,
-      event: FileChangeEvent,
-      hookAgentId: Option[SubagentId] = None,
-      hookAgentType: Option[String] = None,
-      permissionMode: Option[PermissionMode] = None
-  ) extends HookInput
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    filePath: String,
+    event: FileChangeEvent,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
+end HookInput
 
 /** Permission suggestion from the SDK */
 final case class PermissionSuggestion(
-    toolName: ToolName,
-    behavior: PermissionBehavior,
-    prefix: Option[String] = None
-)
+  toolName: ToolName,
+  behavior: PermissionBehavior,
+  prefix: Option[String] = None)
 
 object PermissionSuggestion:
   given JsonDecoder[PermissionSuggestion] = DeriveJsonDecoder.gen[PermissionSuggestion]
@@ -445,13 +449,13 @@ enum ExitReason:
   case Custom(value: String)
 
   def toRaw: String = this match
-    case Clear                      => "clear"
-    case Resume                     => "resume"
-    case Logout                     => "logout"
-    case PromptInputExit            => "prompt_input_exit"
-    case Other                      => "other"
-    case BypassPermissionsDisabled  => "bypass_permissions_disabled"
-    case Custom(v)                  => v
+    case Clear                     => "clear"
+    case Resume                    => "resume"
+    case Logout                    => "logout"
+    case PromptInputExit           => "prompt_input_exit"
+    case Other                     => "other"
+    case BypassPermissionsDisabled => "bypass_permissions_disabled"
+    case Custom(v)                 => v
 
 object ExitReason:
   given JsonEncoder[ExitReason] = StringEnumJsonCodec.encoder(_.toRaw)
@@ -472,10 +476,10 @@ enum SessionStartSource:
   case Custom(value: String)
 
   def toRaw: String = this match
-    case Startup  => "startup"
-    case Resume   => "resume"
-    case Clear    => "clear"
-    case Compact  => "compact"
+    case Startup   => "startup"
+    case Resume    => "resume"
+    case Clear     => "clear"
+    case Compact   => "compact"
     case Custom(v) => v
 
 object SessionStartSource:
@@ -573,11 +577,11 @@ enum MemoryType:
   case Custom(value: String)
 
   def toRaw: String = this match
-    case User       => "User"
-    case Project    => "Project"
-    case Local      => "Local"
-    case Managed    => "Managed"
-    case Custom(v)  => v
+    case User      => "User"
+    case Project   => "Project"
+    case Local     => "Local"
+    case Managed   => "Managed"
+    case Custom(v) => v
 
 object MemoryType:
   given JsonEncoder[MemoryType] = StringEnumJsonCodec.encoder(_.toRaw)

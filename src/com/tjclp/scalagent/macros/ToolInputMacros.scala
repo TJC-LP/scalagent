@@ -29,39 +29,41 @@ object ToolInputMacros:
         val jsonSchema: JsonSchema = $schemaExpr
     }
 
-  private def generateSchemaExpr(using Quotes)(
-      fieldInfos: List[(String, quotes.reflect.TypeRepr, Boolean, Option[String])]
+  private def generateSchemaExpr(
+    using Quotes
+  )(fieldInfos: List[(String, quotes.reflect.TypeRepr, Boolean, Option[String])]
   ): Expr[JsonSchema] =
     import quotes.reflect.*
 
-    val propertiesExprs: List[Expr[(String, JsonSchema)]] = fieldInfos.map { case (name, tpe, _, descOpt) =>
-      val nameExpr = Expr(name)
-      val baseSchemaExpr = typeToSchemaExpr(tpe)
-      val schemaExpr = descOpt match
-        case Some(desc) =>
-          val descExpr = Expr(desc)
-          '{ JsonSchema.Described($baseSchemaExpr, $descExpr) }
-        case None =>
-          baseSchemaExpr
-      '{ ($nameExpr, $schemaExpr) }
+    val propertiesExprs: List[Expr[(String, JsonSchema)]] = fieldInfos.map {
+      case (name, tpe, _, descOpt) =>
+        val nameExpr       = Expr(name)
+        val baseSchemaExpr = typeToSchemaExpr(tpe)
+        val schemaExpr     = descOpt match
+          case Some(desc) =>
+            val descExpr = Expr(desc)
+            '{ JsonSchema.Described($baseSchemaExpr, $descExpr) }
+          case None =>
+            baseSchemaExpr
+        '{ ($nameExpr, $schemaExpr) }
     }
 
-    val requiredExprs: List[Expr[String]] = fieldInfos.collect {
-      case (name, _, false, _) => Expr(name)
-    }
+    val requiredExprs: List[Expr[String]] = fieldInfos.collect { case (name, _, false, _) => Expr(name) }
 
     val propertiesListExpr = Expr.ofList(propertiesExprs)
-    val requiredListExpr = Expr.ofList(requiredExprs)
+    val requiredListExpr   = Expr.ofList(requiredExprs)
 
     '{
-      val props = $propertiesListExpr
-      val builder = JsonSchema.obj(props*)
+      val props        = $propertiesListExpr
+      val builder      = JsonSchema.obj(props*)
       val withRequired = builder.required($requiredListExpr*)
       withRequired.build
     }
+  end generateSchemaExpr
 
-  private def typeToSchemaExpr(using Quotes)(
-      tpe: quotes.reflect.TypeRepr
+  private def typeToSchemaExpr(
+    using Quotes
+  )(tpe: quotes.reflect.TypeRepr
   ): Expr[JsonSchema] =
     import quotes.reflect.*
 
@@ -81,8 +83,7 @@ object ToolInputMacros:
       case AppliedType(tycon, List(inner)) if tycon.typeSymbol.fullName == "scala.Option" =>
         typeToSchemaExpr(inner)
 
-      case AppliedType(tycon, List(elemType))
-          if isListLike(tycon) =>
+      case AppliedType(tycon, List(elemType)) if isListLike(tycon) =>
         val elemSchemaExpr = typeToSchemaExpr(elemType)
         '{ JsonSchema.array($elemSchemaExpr) }
 
@@ -110,14 +111,16 @@ object ToolInputMacros:
           report.warning(s"Unknown type ${other.show}, using object schema")
           '{ JsonSchema.obj().build }
         }
+    end match
+  end typeToSchemaExpr
 
   /** Try to summon a ToolInput[T] given in scope and extract its schema. */
-  private def trySummonToolInput(using Quotes)(
-      tpe: quotes.reflect.TypeRepr
+  private def trySummonToolInput(
+    using Quotes
+  )(tpe: quotes.reflect.TypeRepr
   ): Option[Expr[JsonSchema]] =
     import quotes.reflect.*
     tpe.asType match
       case '[t] =>
-        Expr.summon[ToolInput[t]].map { ti =>
-          '{ $ti.jsonSchema }
-        }
+        Expr.summon[ToolInput[t]].map { ti => '{ $ti.jsonSchema } }
+end ToolInputMacros

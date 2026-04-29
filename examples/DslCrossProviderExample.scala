@@ -8,29 +8,30 @@ import com.tjclp.scalagent.codex.*
 import com.tjclp.scalagent.interop.claude.ClaudeInterpreter
 import com.tjclp.scalagent.interop.codex.CodexInterpreter
 
-/** Cross-provider example: Claude and Codex agents interacting via the DSL.
-  *
-  * Demonstrates the ultimate proof of provider independence:
-  * - Both agents implement the same `Agent[Any, String, String]` trait
-  * - Claude and Codex chain: one generates, the other answers
-  * - Same TraceSummary, Evaluation, TraceLogger pipeline for both
-  * - The DSL doesn't care which provider backs the agent
-  *
-  * Run with: ./mill examples.go --example dsl-cross
-  *
-  * Requires: ANTHROPIC_API_KEY and OPENAI_API_KEY environment variables
-  * Requires: codex CLI installed
-  */
+/**
+ * Cross-provider example: Claude and Codex agents interacting via the DSL.
+ *
+ * Demonstrates the ultimate proof of provider independence:
+ * - Both agents implement the same `Agent[Any, String, String]` trait
+ * - Claude and Codex chain: one generates, the other answers
+ * - Same TraceSummary, Evaluation, TraceLogger pipeline for both
+ * - The DSL doesn't care which provider backs the agent
+ *
+ * Run with: ./mill examples.go --example dsl-cross
+ *
+ * Requires: ANTHROPIC_API_KEY and OPENAI_API_KEY environment variables
+ * Requires: codex CLI installed
+ */
 object DslCrossProviderExample extends ZIOAppDefault:
 
   /** Run an agent, collect events, evaluate, and return the output. */
   private def runAndEval(
-      label: String,
-      agent: Agent[Any, String, String],
-      input: String,
-      policy: ExecutionPolicy,
-      logger: TraceLogger,
-      utility: Utility[String, String]
+    label: String,
+    agent: Agent[Any, String, String],
+    input: String,
+    policy: ExecutionPolicy,
+    logger: TraceLogger,
+    utility: Utility[String, String],
   ): ZIO[Any, Any, String] =
     ZIO.scoped {
       val agentRun = agent.run(label, input, policy)
@@ -42,20 +43,22 @@ object DslCrossProviderExample extends ZIOAppDefault:
           .map(_.toList)
         output <- agentRun.result
         trace = TraceSummary.fromEvents(events)
-        eval = Evaluation.fromTrace(label, output, trace, utility)
+        eval  = Evaluation.fromTrace(label, output, trace, utility)
         _ <- logger.logEvaluation(eval)
         _ <- Console.printLine(s"  [$label] Result: $output").orDie
-        _ <- Console.printLine(s"  [$label] Score: ${eval.score} | Events: ${trace.totalEvents} | Tools: ${trace.toolNames}").orDie
+        _ <- Console
+          .printLine(s"  [$label] Score: ${eval.score} | Events: ${trace.totalEvents} | Tools: ${trace.toolNames}")
+          .orDie
       yield output
     }
 
   val run: ZIO[Any, Any, Unit] =
     // --- Set up both providers ---
-    val codexClient = CodexClient.create()
+    val codexClient  = CodexClient.create()
     val codexOptions = CodexThreadOptions(
       sandboxMode = Some(SandboxMode.ReadOnly),
       approvalPolicy = Some(ApprovalMode.Never),
-      skipGitRepoCheck = true
+      skipGitRepoCheck = true,
     )
 
     val claudeOptions = AgentOptions.default
@@ -64,21 +67,19 @@ object DslCrossProviderExample extends ZIOAppDefault:
 
     val policy = ExecutionPolicy(
       maxTurns = Some(5),
-      stopStrategy = StopStrategy.FirstResponse
+      stopStrategy = StopStrategy.FirstResponse,
     )
 
-    val logger = TraceLogger.console
+    val logger  = TraceLogger.console
     val utility = Utility.weighted[String, String](
       Utility.reliability      -> 0.5,
       Utility.costMinimizing   -> 0.3,
-      Utility.simplicityBiased -> 0.2
+      Utility.simplicityBiased -> 0.2,
     )
 
     // No tools needed — both agents do pure Q&A with safe default (no tools)
     val program = for
-      claudeAgent <- ZIO.service[ClaudeAgent].map { ca =>
-        ClaudeInterpreter.string(ca, claudeOptions)
-      }
+      claudeAgent <- ZIO.service[ClaudeAgent].map { ca => ClaudeInterpreter.string(ca, claudeOptions) }
       codexAgent = CodexInterpreter.string(codexClient, codexOptions)
 
       // --- Round 1: Ask both the same question ---
@@ -130,3 +131,5 @@ object DslCrossProviderExample extends ZIOAppDefault:
     yield ()
 
     program.provide(ClaudeAgent.live)
+  end run
+end DslCrossProviderExample

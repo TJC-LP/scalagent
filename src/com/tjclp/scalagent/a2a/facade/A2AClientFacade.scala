@@ -7,11 +7,13 @@ import scala.scalajs.js.annotation.*
 @js.native
 trait JsA2AClient extends js.Object:
   /** Send a message and wait for response */
-  def sendMessage(params: JsSendMessageParams, options: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[JsTask | JsMessage] =
+  def sendMessage(params: JsSendMessageParams, options: js.UndefOr[js.Dynamic] = js.undefined)
+    : js.Promise[JsTask | JsMessage] =
     js.native
 
   /** Send a message and stream responses */
-  def sendMessageStream(params: JsSendMessageParams, options: js.UndefOr[js.Dynamic] = js.undefined): js.Any = js.native // AsyncGenerator
+  def sendMessageStream(params: JsSendMessageParams, options: js.UndefOr[js.Dynamic] = js.undefined): js.Any =
+    js.native // AsyncGenerator
 
   /** Get task by query params */
   def getTask(params: js.Dynamic, options: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[JsTask] = js.native
@@ -20,34 +22,36 @@ trait JsA2AClient extends js.Object:
   def cancelTask(params: js.Dynamic, options: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[JsTask] = js.native
 
   /** Re-subscribe to task updates */
-  def resubscribeTask(params: js.Dynamic, options: js.UndefOr[js.Dynamic] = js.undefined): js.Any = js.native // AsyncGenerator
+  def resubscribeTask(params: js.Dynamic, options: js.UndefOr[js.Dynamic] = js.undefined): js.Any =
+    js.native // AsyncGenerator
 
   /** Get agent card (fetches extended card if supported) */
   def getAgentCard(options: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[JsAgentCard] = js.native
 
   /** Set push notification config */
   def setTaskPushNotificationConfig(
-      params: js.Dynamic,
-      options: js.UndefOr[js.Dynamic] = js.undefined
+    params: js.Dynamic,
+    options: js.UndefOr[js.Dynamic] = js.undefined,
   ): js.Promise[js.Dynamic] = js.native
 
   /** Get push notification config */
   def getTaskPushNotificationConfig(
-      params: js.Dynamic,
-      options: js.UndefOr[js.Dynamic] = js.undefined
+    params: js.Dynamic,
+    options: js.UndefOr[js.Dynamic] = js.undefined,
   ): js.Promise[js.Dynamic] = js.native
 
   /** List push notification configs */
   def listTaskPushNotificationConfig(
-      params: js.Dynamic,
-      options: js.UndefOr[js.Dynamic] = js.undefined
+    params: js.Dynamic,
+    options: js.UndefOr[js.Dynamic] = js.undefined,
   ): js.Promise[js.Dynamic] = js.native
 
   /** Delete push notification config */
   def deleteTaskPushNotificationConfig(
-      params: js.Dynamic,
-      options: js.UndefOr[js.Dynamic] = js.undefined
+    params: js.Dynamic,
+    options: js.UndefOr[js.Dynamic] = js.undefined,
   ): js.Promise[js.Dynamic] = js.native
+end JsA2AClient
 
 /** JavaScript facade for @a2a-js/sdk ClientFactory */
 @js.native

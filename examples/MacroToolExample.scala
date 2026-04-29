@@ -4,29 +4,34 @@ import zio.*
 import zio.json.*
 import com.tjclp.scalagent.*
 
-/** Example demonstrating macro-based tool definition.
-  *
-  * This example shows how to define MCP tools with minimal boilerplate using @Tool and @Param
-  * annotations. Compare with CustomToolExample.scala to see the ~60% reduction in boilerplate.
-  *
-  * Key features:
-  *   - @Tool annotation for defining tools
-  *   - @Param annotation for parameter descriptions
-  *   - Automatic JSON schema generation
-  *   - Support for structured output with ToolResult.json()
-  *   - Support for multimodal output with ToolResult.multi
-  *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.MacroToolExample
-  *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
-  */
+/**
+ * Example demonstrating macro-based tool definition.
+ *
+ * This example shows how to define MCP tools with minimal boilerplate using @Tool and @Param
+ * annotations. Compare with CustomToolExample.scala to see the ~60% reduction in boilerplate.
+ *
+ * Key features:
+ *   - @Tool annotation for defining tools
+ *   - @Param annotation for parameter descriptions
+ *   - Automatic JSON schema generation
+ *   - Support for structured output with ToolResult.json()
+ *   - Support for multimodal output with ToolResult.multi
+ *
+ * Run with: mill examples.runMain com.tjclp.scalagent.examples.MacroToolExample
+ *
+ * Requires ANTHROPIC_API_KEY environment variable to be set.
+ */
 object MacroToolExample extends ZIOAppDefault:
 
   // Define tools with minimal ceremony using @Tool and @Param annotations
   object MyTools:
 
     // Structured output data class - Claude can parse and use fields directly
-    case class WeatherData(location: String, temp: Int, unit: String, condition: String)
+    case class WeatherData(
+      location: String,
+      temp: Int,
+      unit: String,
+      condition: String)
     object WeatherData:
       given JsonEncoder[WeatherData] = DeriveJsonEncoder.gen[WeatherData]
 
@@ -42,10 +47,10 @@ object MacroToolExample extends ZIOAppDefault:
 
     @Tool("get_weather", "Get the current weather for a location")
     def getWeather(
-        @Param("City or location name") location: String,
-        @Param("Temperature unit") unit: Option[TempUnit] = None
+      @Param("City or location name") location: String,
+      @Param("Temperature unit") unit: Option[TempUnit] = None,
     ): Task[ToolResult] =
-      val u = unit.getOrElse(TempUnit.Celsius)
+      val u              = unit.getOrElse(TempUnit.Celsius)
       val (temp, symbol) = u match
         case TempUnit.Fahrenheit => (72, "F")
         case TempUnit.Celsius    => (22, "C")
@@ -55,9 +60,9 @@ object MacroToolExample extends ZIOAppDefault:
     // Type-safe calculator using Scala 3 enum for operations
     @Tool("calculator", "Perform basic arithmetic operations")
     def calculate(
-        @Param("Arithmetic operation") operation: Operation,
-        @Param("First number") a: Double,
-        @Param("Second number") b: Double
+      @Param("Arithmetic operation") operation: Operation,
+      @Param("First number") a: Double,
+      @Param("Second number") b: Double,
     ): Task[ToolResult] =
       operation match
         case Operation.Add =>
@@ -72,13 +77,13 @@ object MacroToolExample extends ZIOAppDefault:
 
     @Tool("knowledge_lookup", "Look up information from a knowledge base")
     def lookup(
-        @Param("Search query") query: String
+      @Param("Search query") query: String
     ): Task[ToolResult] =
       // Simulated knowledge base
       val knowledge = Map(
-        "scala" -> "Scala is a programming language that combines object-oriented and functional programming.",
-        "zio" -> "ZIO is a type-safe, composable library for async and concurrent programming in Scala.",
-        "claude" -> "Claude is an AI assistant made by Anthropic."
+        "scala"  -> "Scala is a programming language that combines object-oriented and functional programming.",
+        "zio"    -> "ZIO is a type-safe, composable library for async and concurrent programming in Scala.",
+        "claude" -> "Claude is an AI assistant made by Anthropic.",
       )
 
       val result = knowledge
@@ -90,7 +95,7 @@ object MacroToolExample extends ZIOAppDefault:
 
     @Tool("rich_content_demo", "Return rich MCP content blocks")
     def richContent(
-        @Param("Response mode (Ok or Error)") mode: RichMode
+      @Param("Response mode (Ok or Error)") mode: RichMode
     ): Task[ToolResult] =
       mode match
         case RichMode.Error =>
@@ -99,8 +104,8 @@ object MacroToolExample extends ZIOAppDefault:
               ToolContent.Text("Unable to render rich content."),
               ToolContent.ResourceLink(
                 uri = "https://example.com/help",
-                description = Some("Help center")
-              )
+                description = Some("Help center"),
+              ),
             )
           )
         case RichMode.Media =>
@@ -121,6 +126,7 @@ object MacroToolExample extends ZIOAppDefault:
               .resourceLink("https://example.com/spec", description = Some("Spec link"))
               .build
           )
+  end MyTools
 
   val run: ZIO[Any, Throwable, Unit] =
     for
@@ -149,7 +155,7 @@ object MacroToolExample extends ZIOAppDefault:
             |4. Show a rich content response using rich_content_demo (mode=Media) and summarize the image.
             |
             |Please use the tools to answer these questions.""".stripMargin,
-          options
+          options,
         )
         .tap(handleMessage)
         .runDrain
@@ -159,9 +165,10 @@ object MacroToolExample extends ZIOAppDefault:
   private def handleMessage(msg: AgentMessage): Task[Unit] =
     msg match
       case AgentMessage.Assistant(message, _, _, _, _) =>
-        val text = message.content.collect { case ContentBlock.Text(t) => t }.mkString
-        val toolCalls = message.content.collect { case ContentBlock.ToolUse(id, name, _) =>
-          s"[Calling $name]"
+        val text      = message.content.collect { case ContentBlock.Text(t) => t }.mkString
+        val toolCalls = message.content.collect {
+          case ContentBlock.ToolUse(id, name, _) =>
+            s"[Calling $name]"
         }
         for
           _ <- ZIO.foreach(toolCalls)(call => Console.printLine(call))
@@ -171,8 +178,9 @@ object MacroToolExample extends ZIOAppDefault:
       case AgentMessage.User(message, _, _, toolResult, _, _, _) =>
         toolResult match
           case Some(_) =>
-            val results = message.content.collect { case ContentBlock.ToolResult(_, content, isError) =>
-              if isError then s"[Tool Error] $content" else s"[Tool Result] $content"
+            val results = message.content.collect {
+              case ContentBlock.ToolResult(_, content, isError) =>
+                if isError then s"[Tool Error] $content" else s"[Tool Result] $content"
             }
             ZIO.foreach(results)(r => Console.printLine(r)).unit
           case None => ZIO.unit
@@ -187,3 +195,4 @@ object MacroToolExample extends ZIOAppDefault:
 
       case _ =>
         ZIO.unit
+end MacroToolExample

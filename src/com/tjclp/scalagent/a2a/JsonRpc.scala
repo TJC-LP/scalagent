@@ -5,11 +5,10 @@ import zio.json.ast.Json
 
 /** JSON-RPC 2.0 request structure */
 final case class JsonRpcRequest(
-    jsonrpc: String = A2AProtocol.JsonRpcVersion,
-    method: String,
-    params: Option[Json] = None,
-    id: Option[JsonRpcId] = None
-):
+  jsonrpc: String = A2AProtocol.JsonRpcVersion,
+  method: String,
+  params: Option[Json] = None,
+  id: Option[JsonRpcId] = None):
   /** Check if this is a notification (no id) */
   def isNotification: Boolean = id.isEmpty
 
@@ -27,11 +26,10 @@ object JsonRpcRequest:
 
 /** JSON-RPC 2.0 response structure */
 final case class JsonRpcResponse(
-    jsonrpc: String = A2AProtocol.JsonRpcVersion,
-    result: Option[Json] = None,
-    error: Option[JsonRpcError] = None,
-    id: Option[JsonRpcId] = None
-):
+  jsonrpc: String = A2AProtocol.JsonRpcVersion,
+  result: Option[Json] = None,
+  error: Option[JsonRpcError] = None,
+  id: Option[JsonRpcId] = None):
   /** Check if this response is an error */
   def isError: Boolean = error.isDefined
 
@@ -61,19 +59,24 @@ object JsonRpcResponse:
     JsonRpcResponse(error = Some(error), id = id)
 
   /** Create an error response from code and message */
-  def error(id: Option[JsonRpcId], code: Int, message: String, data: Option[Json] = None): JsonRpcResponse =
+  def error(
+    id: Option[JsonRpcId],
+    code: Int,
+    message: String,
+    data: Option[Json] = None,
+  ): JsonRpcResponse =
     JsonRpcResponse(error = Some(JsonRpcError(code, message, data)), id = id)
 
   /** Create an error response from A2AError */
   def fromA2AError(id: Option[JsonRpcId], err: A2AError): JsonRpcResponse =
     error(id, err.toJsonRpcError)
+end JsonRpcResponse
 
 /** JSON-RPC error structure */
 final case class JsonRpcError(
-    code: Int,
-    message: String,
-    data: Option[Json] = None
-):
+  code: Int,
+  message: String,
+  data: Option[Json] = None):
   def toA2AError: A2AError = A2AError(code, message, data.map(_.toString))
 
 object JsonRpcError:
@@ -97,7 +100,7 @@ object JsonRpcId:
     Num(counter)
 
   def apply(s: String): JsonRpcId = Str(s)
-  def apply(n: Long): JsonRpcId = Num(n)
+  def apply(n: Long): JsonRpcId   = Num(n)
 
   given JsonEncoder[JsonRpcId] = JsonEncoder[Json].contramap(_.toJson)
 
@@ -110,18 +113,18 @@ object JsonRpcId:
 /** A2A protocol methods */
 object A2AMethod:
   // Message methods
-  val MessageSend = "message/send"
+  val MessageSend   = "message/send"
   val MessageStream = "message/stream"
 
   // Task methods
-  val TasksGet = "tasks/get"
-  val TasksCancel = "tasks/cancel"
+  val TasksGet         = "tasks/get"
+  val TasksCancel      = "tasks/cancel"
   val TasksResubscribe = "tasks/resubscribe"
 
   // Push notification methods
-  val PushNotificationConfigSet = "tasks/pushNotificationConfig/set"
-  val PushNotificationConfigGet = "tasks/pushNotificationConfig/get"
-  val PushNotificationConfigList = "tasks/pushNotificationConfig/list"
+  val PushNotificationConfigSet    = "tasks/pushNotificationConfig/set"
+  val PushNotificationConfigGet    = "tasks/pushNotificationConfig/get"
+  val PushNotificationConfigList   = "tasks/pushNotificationConfig/list"
   val PushNotificationConfigDelete = "tasks/pushNotificationConfig/delete"
 
   // Agent methods

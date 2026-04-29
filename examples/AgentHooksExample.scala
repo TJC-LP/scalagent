@@ -5,19 +5,20 @@ import zio.json.*
 import com.tjclp.scalagent.*
 import com.tjclp.scalagent.hooks.HookConfig
 
-/** Example demonstrating agent-level hooks and the HookConfig system.
-  *
-  * This example shows how to:
-  *   1. Use HookConfig.Shell for serializable shell command hooks
-  *   2. Use HookConfig.Callback for runtime callback hooks
-  *   3. Add hooks directly to AgentDefinition
-  *   4. Use the permissionMode field in AgentDefinition
-  *   5. Use the fluent extension methods (withShellHook, withCallbackHook)
-  *
-  * Run with: EXAMPLE=agent-hooks mill examples.run
-  *
-  * Requires ANTHROPIC_API_KEY environment variable to be set.
-  */
+/**
+ * Example demonstrating agent-level hooks and the HookConfig system.
+ *
+ * This example shows how to:
+ *   1. Use HookConfig.Shell for serializable shell command hooks
+ *   2. Use HookConfig.Callback for runtime callback hooks
+ *   3. Add hooks directly to AgentDefinition
+ *   4. Use the permissionMode field in AgentDefinition
+ *   5. Use the fluent extension methods (withShellHook, withCallbackHook)
+ *
+ * Run with: EXAMPLE=agent-hooks mill examples.run
+ *
+ * Requires ANTHROPIC_API_KEY environment variable to be set.
+ */
 object AgentHooksExample extends ZIOAppDefault:
 
   val run: ZIO[Any, Any, Unit] =
@@ -41,18 +42,18 @@ object AgentHooksExample extends ZIOAppDefault:
       shellHook = HookConfig.shell(
         matcher = "Bash|Edit|Write",
         command = "echo 'Tool: $TOOL_NAME'",
-        timeout = Some(5000)
+        timeout = Some(5000),
       )
-      _ <- Console.printLine(s"Shell hook: matcher=${shellHook.matcherPattern.getOrElse("*")}, isShell=${shellHook.isShell}")
+      _ <- Console.printLine(
+        s"Shell hook: matcher=${shellHook.matcherPattern.getOrElse("*")}, isShell=${shellHook.isShell}"
+      )
 
       // One-time shell hook
       oneTimeHook = HookConfig.shellOnce("Write", "./audit.sh")
       _ <- Console.printLine(s"One-time hook: isOnce=${oneTimeHook.isOnce}")
 
       // Callback hooks are runtime-only
-      callbackHook: HookConfig = HookConfig.callback { _ =>
-        ZIO.succeed(HookOutput.continue)
-      }
+      callbackHook: HookConfig = HookConfig.callback { _ => ZIO.succeed(HookOutput.continue) }
       _ <- Console.printLine(s"Callback hook: isCallback=${callbackHook.isCallback}")
 
       // Show JSON serialization
@@ -85,13 +86,15 @@ object AgentHooksExample extends ZIOAppDefault:
       hookedAgent = AgentDefinition
         .readOnly(
           description = "Code analyzer with logging hooks",
-          prompt = "You analyze code and report findings concisely."
+          prompt = "You analyze code and report findings concisely.",
         )
         .withPermissionMode(PermissionMode.DontAsk)
         .withCallbackHook(HookEvent.PreToolUse, loggingCallback)
         .withCallbackHook(HookEvent.PostToolUse, loggingCallback)
 
-      _ <- Console.printLine(s"Agent configured: hasHooks=${hookedAgent.hasHooks}, permissionMode=${hookedAgent.permissionMode}")
+      _ <- Console.printLine(
+        s"Agent configured: hasHooks=${hookedAgent.hasHooks}, permissionMode=${hookedAgent.permissionMode}"
+      )
 
       // Also add global hooks to see both in action
       globalLoggingHook: HookCallback = {
@@ -114,7 +117,7 @@ object AgentHooksExample extends ZIOAppDefault:
       // Run the query
       result <- Claude.queryComplete(
         "Use the Glob tool to find *.scala files in the current directory. Just list the first 3 files you find.",
-        options
+        options,
       )
 
       _ <- result.outcome match
@@ -125,5 +128,5 @@ object AgentHooksExample extends ZIOAppDefault:
         case error: ResultOutcome.Error =>
           Console.printLine(s"\n--- Error: ${error.reason} ---") *>
             Console.printLine(s"${error.errors.mkString(", ")}")
-
     yield ()
+end AgentHooksExample

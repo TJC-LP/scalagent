@@ -6,200 +6,183 @@ import com.tjclp.scalagent.json.StringEnumJsonCodec
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{ApiMessageId, MessageUuid, SessionId, ToolUseId}
 
-/** All message types emitted by the Claude Agent SDK.
-  *
-  * This sealed hierarchy mirrors the TypeScript SDK's `SDKMessage` discriminated union.
-  */
+/**
+ * All message types emitted by the Claude Agent SDK.
+ *
+ * This sealed hierarchy mirrors the TypeScript SDK's `SDKMessage` discriminated union.
+ */
 enum AgentMessage:
   /** Assistant response message */
   case Assistant(
-      message: ApiAssistantMessage,
-      parentToolUseId: Option[ToolUseId],
-      error: Option[AssistantMessageError],
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    message: ApiAssistantMessage,
+    parentToolUseId: Option[ToolUseId],
+    error: Option[AssistantMessageError],
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** User message (including synthetic tool results) */
   case User(
-      message: ApiUserMessage,
-      parentToolUseId: Option[ToolUseId],
-      isSynthetic: Boolean,
-      toolUseResult: Option[zio.json.ast.Json],
-      uuid: Option[MessageUuid],
-      sessionId: SessionId,
-      timestamp: Option[String] = None
-  )
+    message: ApiUserMessage,
+    parentToolUseId: Option[ToolUseId],
+    isSynthetic: Boolean,
+    toolUseResult: Option[zio.json.ast.Json],
+    uuid: Option[MessageUuid],
+    sessionId: SessionId,
+    timestamp: Option[String] = None)
 
   /** User message replay (from session resume) */
   case UserReplay(
-      message: ApiUserMessage,
-      parentToolUseId: Option[ToolUseId],
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    message: ApiUserMessage,
+    parentToolUseId: Option[ToolUseId],
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Final result message */
   case Result(
-      outcome: ResultOutcome,
-      fastModeState: Option[FastModeState],
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    outcome: ResultOutcome,
+    fastModeState: Option[FastModeState],
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** System event message */
   case System(
-      event: SystemEvent,
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    event: SystemEvent,
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Streaming event (partial response) */
   case StreamEvent(
-      event: RawStreamEvent,
-      parentToolUseId: Option[ToolUseId],
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    event: RawStreamEvent,
+    parentToolUseId: Option[ToolUseId],
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Tool execution progress */
   case ToolProgress(
-      toolUseId: ToolUseId,
-      toolName: ToolName,
-      parentToolUseId: Option[ToolUseId],
-      elapsedTimeSeconds: Double,
-      taskId: Option[String],
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    toolUseId: ToolUseId,
+    toolName: ToolName,
+    parentToolUseId: Option[ToolUseId],
+    elapsedTimeSeconds: Double,
+    taskId: Option[String],
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Authentication status update */
   case AuthStatus(
-      isAuthenticating: Boolean,
-      output: List[String],
-      error: Option[String],
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    isAuthenticating: Boolean,
+    output: List[String],
+    error: Option[String],
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Task/subagent completion notification */
   case TaskNotification(
-      taskId: String,
-      status: TaskStatus,
-      outputFile: String,
-      summary: String,
-      toolUseId: Option[ToolUseId],
-      usage: Option[ModelUsage],
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    taskId: String,
+    status: TaskStatus,
+    outputFile: String,
+    summary: String,
+    toolUseId: Option[ToolUseId],
+    usage: Option[ModelUsage],
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Tool use summary (aggregate info) */
   case ToolUseSummary(
-      summary: String,
-      precedingToolUseIds: List[ToolUseId],
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    summary: String,
+    precedingToolUseIds: List[ToolUseId],
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Prompt suggestion after a turn (when promptSuggestions is enabled) */
   case PromptSuggestion(
-      suggestion: String,
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    suggestion: String,
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Rate limit event */
   case RateLimitEvent(
-      retryAfterMs: Option[Long],
-      model: Option[String],
-      status: Option[String],
-      resetsAt: Option[Long],
-      rateLimitType: Option[String],
-      utilization: Option[Double],
-      uuid: MessageUuid,
-      sessionId: SessionId,
-      overageStatus: Option[String] = None,
-      overageResetsAt: Option[String] = None,
-      overageDisabledReason: Option[String] = None,
-      isUsingOverage: Option[Boolean] = None,
-      surpassedThreshold: Option[Boolean] = None
-  )
+    retryAfterMs: Option[Long],
+    model: Option[String],
+    status: Option[String],
+    resetsAt: Option[Long],
+    rateLimitType: Option[String],
+    utilization: Option[Double],
+    uuid: MessageUuid,
+    sessionId: SessionId,
+    overageStatus: Option[String] = None,
+    overageResetsAt: Option[String] = None,
+    overageDisabledReason: Option[String] = None,
+    isUsingOverage: Option[Boolean] = None,
+    surpassedThreshold: Option[Boolean] = None)
 
   /** Local command output */
   case LocalCommandOutput(
-      output: String,
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    output: String,
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Elicitation complete */
   case ElicitationComplete(
-      mcpServerName: String,
-      elicitationId: String,
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    mcpServerName: String,
+    elicitationId: String,
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Task started notification */
   case TaskStarted(
-      taskId: String,
-      description: String,
-      uuid: MessageUuid,
-      sessionId: SessionId,
-      toolUseId: Option[String] = None,
-      taskType: Option[String] = None,
-      prompt: Option[String] = None,
-      workflowName: Option[String] = None
-  )
+    taskId: String,
+    description: String,
+    uuid: MessageUuid,
+    sessionId: SessionId,
+    toolUseId: Option[String] = None,
+    taskType: Option[String] = None,
+    prompt: Option[String] = None,
+    workflowName: Option[String] = None)
 
   /** Task progress update */
   case TaskProgress(
-      taskId: String,
-      progress: String,
-      uuid: MessageUuid,
-      sessionId: SessionId,
-      summary: Option[String] = None,
-      toolUseId: Option[String] = None,
-      lastToolName: Option[String] = None
-  )
+    taskId: String,
+    progress: String,
+    uuid: MessageUuid,
+    sessionId: SessionId,
+    summary: Option[String] = None,
+    toolUseId: Option[String] = None,
+    lastToolName: Option[String] = None)
 
   /** API retry notification - emitted when a retryable error occurs and the request will be retried */
   case ApiRetry(
-      attempt: Int,
-      maxRetries: Int,
-      retryDelayMs: Long,
-      errorStatus: Option[Int],
-      error: AssistantMessageError,
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    attempt: Int,
+    maxRetries: Int,
+    retryDelayMs: Long,
+    errorStatus: Option[Int],
+    error: AssistantMessageError,
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Bridge metadata message carrying slash commands */
   case BridgeMetadata(
-      @jsonField("slash_commands") slashCommands: List[String],
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    @jsonField("slash_commands") slashCommands: List[String],
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
-  /** SessionStore mirror-error event (SDK 0.2.113).
-    * Emitted when a transcript-mirror batch write to `SessionStore.append()`
-    * fails or times out. The batch is dropped (at-most-once delivery); this
-    * message surfaces the failure so consumers aren't silent on data loss.
-    */
+  /**
+   * SessionStore mirror-error event (SDK 0.2.113).
+   * Emitted when a transcript-mirror batch write to `SessionStore.append()`
+   * fails or times out. The batch is dropped (at-most-once delivery); this
+   * message surfaces the failure so consumers aren't silent on data loss.
+   */
   case MirrorError(
-      error: String,
-      projectKey: String,
-      mirroredSessionId: SessionId,
-      subpath: Option[String],
-      uuid: MessageUuid,
-      sessionId: SessionId
-  )
+    error: String,
+    projectKey: String,
+    mirroredSessionId: SessionId,
+    subpath: Option[String],
+    uuid: MessageUuid,
+    sessionId: SessionId)
 
   /** Forward-compatible fallback for unknown top-level SDK messages */
   case Unknown(
-      envelope: UnknownEnvelope
-  )
+    envelope: UnknownEnvelope)
+end AgentMessage
 
 object AgentMessage:
   given JsonDecoder[AgentMessage] = DeriveJsonDecoder.gen[AgentMessage]
@@ -275,6 +258,7 @@ object AgentMessage:
     def isPromptSuggestion: Boolean = msg match
       case _: PromptSuggestion => true
       case _                   => false
+  end extension
 
   // Extension methods for message lists
   extension (messages: List[AgentMessage])
@@ -316,17 +300,18 @@ object AgentMessage:
     /** Extract all prompt suggestions from messages */
     def promptSuggestions: List[AgentMessage.PromptSuggestion] =
       messages.collect { case ps: AgentMessage.PromptSuggestion => ps }
+  end extension
+end AgentMessage
 
 /** API assistant message structure */
 final case class ApiAssistantMessage(
-    id: ApiMessageId,
-    role: Role,
-    content: List[ContentBlock],
-    model: String,
-    stopReason: Option[StopReason],
-    stopSequence: Option[String],
-    usage: Option[ModelUsage]
-)
+  id: ApiMessageId,
+  role: Role,
+  content: List[ContentBlock],
+  model: String,
+  stopReason: Option[StopReason],
+  stopSequence: Option[String],
+  usage: Option[ModelUsage])
 
 object ApiAssistantMessage:
   given JsonDecoder[ApiAssistantMessage] = DeriveJsonDecoder.gen[ApiAssistantMessage]
@@ -334,9 +319,8 @@ object ApiAssistantMessage:
 
 /** API user message structure */
 final case class ApiUserMessage(
-    role: Role,
-    content: List[ContentBlock]
-)
+  role: Role,
+  content: List[ContentBlock])
 
 object ApiUserMessage:
   given JsonDecoder[ApiUserMessage] = DeriveJsonDecoder.gen[ApiUserMessage]
@@ -367,11 +351,10 @@ object AssistantMessageError:
 
 /** Raw streaming event from the API */
 final case class RawStreamEvent(
-    eventType: String,
-    index: Option[Int],
-    contentBlock: Option[ContentBlock],
-    delta: Option[StreamDelta]
-)
+  eventType: String,
+  index: Option[Int],
+  contentBlock: Option[ContentBlock],
+  delta: Option[StreamDelta])
 
 object RawStreamEvent:
   given JsonDecoder[RawStreamEvent] = DeriveJsonDecoder.gen[RawStreamEvent]
@@ -396,10 +379,10 @@ enum TaskStatus:
   case Custom(value: String)
 
   def toRaw: String = this match
-    case Completed  => "completed"
-    case Failed     => "failed"
-    case Stopped    => "stopped"
-    case Custom(v)  => v
+    case Completed => "completed"
+    case Failed    => "failed"
+    case Stopped   => "stopped"
+    case Custom(v) => v
 
 object TaskStatus:
   given JsonEncoder[TaskStatus] = StringEnumJsonCodec.encoder(_.toRaw)

@@ -6,26 +6,27 @@ import com.tjclp.scalagent.core.*
 import com.tjclp.scalagent.experimental.*
 import com.tjclp.scalagent.interop.claude.ClaudeInterpreter
 
-/** DSL review example: operational scoring plus gated agentic semantic review.
-  *
-  * Demonstrates:
-  * - pure `Utility` scoring with named breakdowns
-  * - effectful `Reviewer` / `AgenticReviewer`
-  * - `ReviewPermit` as an explicit impurity boundary
-  * - `Evaluation.withReview` vs `AgenticReview.enrich`
-  *
-  * Run with: ./mill examples.go --example dsl-review
-  *
-  * Requires ANTHROPIC_API_KEY environment variable.
-  */
+/**
+ * DSL review example: operational scoring plus gated agentic semantic review.
+ *
+ * Demonstrates:
+ * - pure `Utility` scoring with named breakdowns
+ * - effectful `Reviewer` / `AgenticReviewer`
+ * - `ReviewPermit` as an explicit impurity boundary
+ * - `Evaluation.withReview` vs `AgenticReview.enrich`
+ *
+ * Run with: ./mill examples.go --example dsl-review
+ *
+ * Requires ANTHROPIC_API_KEY environment variable.
+ */
 object DslReviewExample extends ZIOAppDefault:
 
   case class ReviewJudgment(
-      score: Double,
-      rationale: String,
-      strengths: List[String],
-      issues: List[String]
-  ) derives zio.json.JsonDecoder
+    score: Double,
+    rationale: String,
+    strengths: List[String],
+    issues: List[String])
+      derives zio.json.JsonDecoder
   given StructuredOutput[ReviewJudgment] = StructuredOutput.derive[ReviewJudgment]
 
   val run: ZIO[Any, Any, Unit] =
@@ -35,7 +36,7 @@ object DslReviewExample extends ZIOAppDefault:
 
     val policy = ExecutionPolicy(
       budget = Budget.usd(1.00),
-      maxTurns = Some(6)
+      maxTurns = Some(6),
     )
 
     val program = for
@@ -49,7 +50,7 @@ object DslReviewExample extends ZIOAppDefault:
         val run = answerAgent.run(
           "user",
           "In one short paragraph, explain what Scala.js is good for.",
-          policy
+          policy,
         )
         for
           events <- run.events.runCollect.map(_.toList)
@@ -62,21 +63,26 @@ object DslReviewExample extends ZIOAppDefault:
       operationalUtility = Utility.weightedNamed[String, String](
         Utility.named("reliability", Utility.reliability, 0.5),
         Utility.named("cost", Utility.costMinimizing, 0.3),
-        Utility.named("simplicity", Utility.simplicityBiased, 0.2)
+        Utility.named("simplicity", Utility.simplicityBiased, 0.2),
       )
       baseEval = Evaluation.evaluate("user", output, events, operationalUtility)
 
       _ <- Console.printLine("=== Operational Evaluation ===").orDie
       _ <- Console.printLine(s"Score: ${baseEval.score}").orDie
-      _ <- Console.printLine(
-        s"Breakdown: ${baseEval.breakdown.components.map(c => s"${c.name}=${"%.3f".format(c.raw)}").mkString(", ")}"
-      ).orDie
+      _ <- Console
+        .printLine(
+          s"Breakdown: ${baseEval.breakdown.components.map(c => s"${c.name}=${"%.3f".format(c.raw)}").mkString(", ")}"
+        )
+        .orDie
 
       // 3. Build an effectful semantic reviewer
       semanticReviewer = Reviewer.fromAgent[String, String](
         reviewAgent.mapOutput(j => ReviewScore(j.score, j.rationale, j.strengths, j.issues)),
-        renderPrompt = (principal, candidateOutput, trace) =>
-          s"""Review the following model answer for the principal "$principal".
+        renderPrompt = (
+          principal,
+          candidateOutput,
+          trace,
+        ) => s"""Review the following model answer for the principal "$principal".
              |
              |Return JSON with:
              |- score: 0.0 to 1.0
@@ -92,7 +98,7 @@ object DslReviewExample extends ZIOAppDefault:
              |- costUsd: ${trace.costUsd}
              |- totalEvents: ${trace.totalEvents}
              |""".stripMargin,
-        policy = ExecutionPolicy(maxTurns = Some(2))
+        policy = ExecutionPolicy(maxTurns = Some(2)),
       )
 
       // 4. Explicitly opt into the impurity boundary
@@ -111,3 +117,5 @@ object DslReviewExample extends ZIOAppDefault:
     yield ()
 
     program.provide(ClaudeAgent.live)
+  end run
+end DslReviewExample

@@ -5,11 +5,12 @@ import zio.json.{JsonDecoder, JsonEncoder}
 import scala.scalajs.js
 import scala.scalajs.js.annotation.*
 
-/** Type-safe opaque wrappers for A2A protocol identifiers.
-  *
-  * These provide zero-cost compile-time type safety for different ID types, preventing accidental
-  * mixing of IDs (e.g., passing a TaskId where a MessageId is expected).
-  */
+/**
+ * Type-safe opaque wrappers for A2A protocol identifiers.
+ *
+ * These provide zero-cost compile-time type safety for different ID types, preventing accidental
+ * mixing of IDs (e.g., passing a TaskId where a MessageId is expected).
+ */
 
 /** JS crypto API for UUID generation */
 @js.native
@@ -21,11 +22,11 @@ private object Crypto extends js.Object:
 opaque type TaskId = String
 object TaskId:
   def apply(s: String): TaskId = s
-  def generate: TaskId = Crypto.randomUUID()
+  def generate: TaskId         = Crypto.randomUUID()
 
   extension (id: TaskId)
-    def value: String = id
-    def isEmpty: Boolean = (id: String).isEmpty
+    def value: String     = id
+    def isEmpty: Boolean  = (id: String).isEmpty
     def nonEmpty: Boolean = !isEmpty
 
   given JsonEncoder[TaskId] = OpaqueStringJsonCodec.encoder(_.value)
@@ -35,11 +36,11 @@ object TaskId:
 opaque type MessageId = String
 object MessageId:
   def apply(s: String): MessageId = s
-  def generate: MessageId = Crypto.randomUUID()
+  def generate: MessageId         = Crypto.randomUUID()
 
   extension (id: MessageId)
-    def value: String = id
-    def isEmpty: Boolean = (id: String).isEmpty
+    def value: String     = id
+    def isEmpty: Boolean  = (id: String).isEmpty
     def nonEmpty: Boolean = !isEmpty
 
   given JsonEncoder[MessageId] = OpaqueStringJsonCodec.encoder(_.value)
@@ -49,11 +50,11 @@ object MessageId:
 opaque type ContextId = String
 object ContextId:
   def apply(s: String): ContextId = s
-  def generate: ContextId = Crypto.randomUUID()
+  def generate: ContextId         = Crypto.randomUUID()
 
   extension (id: ContextId)
-    def value: String = id
-    def isEmpty: Boolean = (id: String).isEmpty
+    def value: String     = id
+    def isEmpty: Boolean  = (id: String).isEmpty
     def nonEmpty: Boolean = !isEmpty
 
   given JsonEncoder[ContextId] = OpaqueStringJsonCodec.encoder(_.value)
@@ -61,7 +62,7 @@ object ContextId:
 
 /** A2A protocol version */
 object A2AProtocol:
-  val Version = "0.3.0"
+  val Version        = "0.3.0"
   val JsonRpcVersion = "2.0"
 
 /** Standard A2A transport types */

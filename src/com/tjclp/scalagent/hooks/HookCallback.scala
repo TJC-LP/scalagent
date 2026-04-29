@@ -10,21 +10,22 @@ import com.tjclp.scalagent.messages.AssistantMessageError
 import com.tjclp.scalagent.tools.ToolName
 import com.tjclp.scalagent.types.{SessionId, SubagentId, ToolUseId}
 
-/** Type alias for hook callback functions.
-  *
-  * A hook callback receives input context and returns an output that controls agent behavior. Callbacks are ZIO effects
-  * that can perform async operations.
-  *
-  * Example usage:
-  * {{{
-  * val myHook: HookCallback = {
-  *   case input: HookInput.PreToolUse if input.toolName == ToolName.Bash =>
-  *     ZIO.succeed(HookOutput.deny("Bash commands are not allowed"))
-  *   case _ =>
-  *     ZIO.succeed(HookOutput.continue)
-  * }
-  * }}}
-  */
+/**
+ * Type alias for hook callback functions.
+ *
+ * A hook callback receives input context and returns an output that controls agent behavior. Callbacks are ZIO effects
+ * that can perform async operations.
+ *
+ * Example usage:
+ * {{{
+ * val myHook: HookCallback = {
+ *   case input: HookInput.PreToolUse if input.toolName == ToolName.Bash =>
+ *     ZIO.succeed(HookOutput.deny("Bash commands are not allowed"))
+ *   case _ =>
+ *     ZIO.succeed(HookOutput.continue)
+ * }
+ * }}}
+ */
 type HookCallback = HookInput => Task[HookOutput]
 
 object HookCallback:
@@ -32,13 +33,14 @@ object HookCallback:
   /** Create a simple hook that always continues */
   val alwaysContinue: HookCallback = _ => ZIO.succeed(HookOutput.continue)
 
-  /** Create a hook that blocks specific tools.
-    *
-    * Example:
-    * {{{
-    * val hook = HookCallback.blockTools(ToolName.Bash, ToolName.Write)
-    * }}}
-    */
+  /**
+   * Create a hook that blocks specific tools.
+   *
+   * Example:
+   * {{{
+   * val hook = HookCallback.blockTools(ToolName.Bash, ToolName.Write)
+   * }}}
+   */
   def blockTools(toolNames: ToolName*): HookCallback = {
     case input: HookInput.PreToolUse if toolNames.contains(input.toolName) =>
       ZIO.succeed(HookOutput.block(s"Tool ${input.toolName.raw} is blocked"))
@@ -48,13 +50,14 @@ object HookCallback:
       ZIO.succeed(HookOutput.continue)
   }
 
-  /** Create a hook that auto-approves specific tools.
-    *
-    * Example:
-    * {{{
-    * val hook = HookCallback.autoApprove(ToolName.Read, ToolName.Glob)
-    * }}}
-    */
+  /**
+   * Create a hook that auto-approves specific tools.
+   *
+   * Example:
+   * {{{
+   * val hook = HookCallback.autoApprove(ToolName.Read, ToolName.Glob)
+   * }}}
+   */
   def autoApprove(toolNames: ToolName*): HookCallback = {
     case input: HookInput.PermissionRequest if toolNames.contains(input.toolName) =>
       ZIO.succeed(HookOutput.approve)
@@ -63,50 +66,52 @@ object HookCallback:
   }
 
   /** Create a hook that logs all events */
-  def logging(logger: String => Task[Unit]): HookCallback = { input =>
+  def logging(logger: String => Task[Unit]): HookCallback = input =>
     val eventType = input.getClass.getSimpleName
     logger(s"Hook event: $eventType for session ${input.sessionId}") *>
       ZIO.succeed(HookOutput.continue)
-  }
 
   /** Combine multiple hooks - runs all and uses the first non-continue result */
-  def combine(hooks: HookCallback*): HookCallback = { input =>
+  def combine(hooks: HookCallback*): HookCallback = input =>
     ZIO.foreach(hooks.toList)(hook => hook(input)).map { outputs =>
-      outputs.find {
-        case _: HookOutput.Continue => false
-        case _                      => true
-      }.getOrElse(HookOutput.continue)
+      outputs
+        .find {
+          case _: HookOutput.Continue => false
+          case _                      => true
+        }
+        .getOrElse(HookOutput.continue)
     }
-  }
 
-  /** Convert a Scala hook callback to a JavaScript function for the SDK.
-    *
-    * This bridges the ZIO-based callback to the SDK's expected JavaScript function format.
-    */
+  /**
+   * Convert a Scala hook callback to a JavaScript function for the SDK.
+   *
+   * This bridges the ZIO-based callback to the SDK's expected JavaScript function format.
+   */
   def toRawJs(
-      callback: HookCallback,
-      runtime: Runtime[Any]
+    callback: HookCallback,
+    runtime: Runtime[Any],
   ): js.Function3[js.Dynamic, js.UndefOr[String], js.Dynamic, js.Promise[js.Object]] =
-    (rawInput: js.Dynamic, _toolUseId: js.UndefOr[String], _options: js.Dynamic) => {
-      val input = parseHookInput(rawInput)
+    (rawInput: js.Dynamic,
+      _toolUseId: js.UndefOr[String],
+      _options: js.Dynamic,
+    ) =>
+      val input  = parseHookInput(rawInput)
       val effect = callback(input).map(_.toRaw)
-      Unsafe.unsafe { implicit unsafe =>
-        runtime.unsafe.runToFuture(effect).toJSPromise
-      }
-    }
+      Unsafe.unsafe { implicit unsafe => runtime.unsafe.runToFuture(effect).toJSPromise }
 
-  /** Parse raw JavaScript hook input to Scala type.
-    *
-    * This converts the SDK's hook input format to our typed HookInput ADT.
-    */
+  /**
+   * Parse raw JavaScript hook input to Scala type.
+   *
+   * This converts the SDK's hook input format to our typed HookInput ADT.
+   */
   private def parseHookInput(raw: js.Dynamic): HookInput =
-    val sessionId = SessionId(raw.session_id.asInstanceOf[String])
-    val cwd = raw.cwd.asInstanceOf[String]
+    val sessionId      = SessionId(raw.session_id.asInstanceOf[String])
+    val cwd            = raw.cwd.asInstanceOf[String]
     val transcriptPath = raw.transcript_path.asInstanceOf[String]
-    val hookEvent = firstString(raw, "hook_event", "hook_event_name").getOrElse("Unknown")
+    val hookEvent      = firstString(raw, "hook_event", "hook_event_name").getOrElse("Unknown")
     val permissionMode = firstString(raw, "permission_mode", "permissionMode").map(PermissionMode.fromString)
-    val baseAgentId = firstString(raw, "agent_id", "agentId").map(SubagentId.apply)
-    val baseAgentType = firstString(raw, "agent_type", "agentType")
+    val baseAgentId    = firstString(raw, "agent_id", "agentId").map(SubagentId.apply)
+    val baseAgentType  = firstString(raw, "agent_type", "agentType")
 
     hookEvent match
       case "PreToolUse" =>
@@ -119,7 +124,7 @@ object HookCallback:
           toolUseId = ToolUseId(raw.tool_use_id.asInstanceOf[String]),
           agentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "PostToolUse" =>
@@ -133,7 +138,7 @@ object HookCallback:
           toolResponse = raw.tool_response.asInstanceOf[String],
           agentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "PostToolUseFailure" =>
@@ -148,7 +153,7 @@ object HookCallback:
           agentId = baseAgentId,
           hookAgentType = baseAgentType,
           isInterrupt = optionalBoolean(raw, "is_interrupt").getOrElse(false),
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "PermissionRequest" =>
@@ -168,7 +173,7 @@ object HookCallback:
           hookAgentType = baseAgentType,
           title = firstString(raw, "title"),
           displayName = firstString(raw, "display_name", "displayName"),
-          description = firstString(raw, "description")
+          description = firstString(raw, "description"),
         )
 
       case "Notification" =>
@@ -181,7 +186,7 @@ object HookCallback:
           notificationType = firstString(raw, "notification_type", "notificationType").getOrElse("info"),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "UserPromptSubmit" =>
@@ -192,7 +197,7 @@ object HookCallback:
           prompt = raw.prompt.asInstanceOf[String],
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "SessionStart" =>
@@ -206,7 +211,7 @@ object HookCallback:
           agentType = baseAgentType,
           model = firstString(raw, "model"),
           hookAgentId = baseAgentId,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "SessionEnd" =>
@@ -218,7 +223,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
-          totalCostUsd = optionalDouble(raw, "total_cost_usd", "totalCostUsd")
+          totalCostUsd = optionalDouble(raw, "total_cost_usd", "totalCostUsd"),
         )
 
       case "Stop" =>
@@ -230,7 +235,7 @@ object HookCallback:
           lastAssistantMessage = firstString(raw, "last_assistant_message", "lastAssistantMessage"),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "StopFailure" =>
@@ -243,7 +248,7 @@ object HookCallback:
           lastAssistantMessage = firstString(raw, "last_assistant_message", "lastAssistantMessage"),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "SubagentStart" =>
@@ -253,7 +258,7 @@ object HookCallback:
           transcriptPath = transcriptPath,
           agentId = SubagentId(firstString(raw, "agent_id", "agentId").getOrElse("")),
           agentType = firstString(raw, "agent_type", "agentType").getOrElse(""),
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "SubagentStop" =>
@@ -266,7 +271,7 @@ object HookCallback:
           agentTranscriptPath = firstString(raw, "agent_transcript_path", "agentTranscriptPath").getOrElse(""),
           agentType = firstString(raw, "agent_type", "agentType").getOrElse(""),
           lastAssistantMessage = firstString(raw, "last_assistant_message", "lastAssistantMessage"),
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "PostCompact" =>
@@ -280,7 +285,7 @@ object HookCallback:
           compactSummary = firstString(raw, "compact_summary", "compactSummary").getOrElse(""),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "PreCompact" =>
@@ -294,7 +299,7 @@ object HookCallback:
           customInstructions = firstString(raw, "custom_instructions", "customInstructions"),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "Setup" =>
@@ -307,7 +312,7 @@ object HookCallback:
           ),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "TeammateIdle" =>
@@ -319,7 +324,7 @@ object HookCallback:
           teamName = firstString(raw, "team_name", "teamName").getOrElse(""),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "TaskCompleted" =>
@@ -334,7 +339,7 @@ object HookCallback:
           teamName = firstString(raw, "team_name", "teamName"),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "Elicitation" =>
@@ -350,7 +355,7 @@ object HookCallback:
           requestedSchema = optionalJsValue(raw, "requested_schema").map(parseJson),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "ElicitationResult" =>
@@ -365,7 +370,7 @@ object HookCallback:
           content = optionalJsValue(raw, "content").map(parseJson),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "ConfigChange" =>
@@ -377,7 +382,7 @@ object HookCallback:
           filePath = firstString(raw, "file_path", "filePath"),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "WorktreeCreate" =>
@@ -388,7 +393,7 @@ object HookCallback:
           name = firstString(raw, "name").getOrElse(""),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "WorktreeRemove" =>
@@ -399,7 +404,7 @@ object HookCallback:
           worktreePath = firstString(raw, "worktree_path", "worktreePath").getOrElse(""),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "InstructionsLoaded" =>
@@ -421,7 +426,7 @@ object HookCallback:
           parentFilePath = firstString(raw, "parent_file_path", "parentFilePath"),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "PermissionDenied" =>
@@ -435,7 +440,7 @@ object HookCallback:
           reason = firstString(raw, "reason"),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "TaskCreated" =>
@@ -450,7 +455,7 @@ object HookCallback:
           teamName = firstString(raw, "team_name", "teamName"),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "CwdChanged" =>
@@ -462,7 +467,7 @@ object HookCallback:
           newCwd = firstString(raw, "new_cwd", "newCwd").getOrElse(""),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case "FileChanged" =>
@@ -474,7 +479,7 @@ object HookCallback:
           event = FileChangeEvent.fromString(firstString(raw, "event").getOrElse("change")),
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
 
       case other =>
@@ -486,8 +491,10 @@ object HookCallback:
           message = s"Unknown hook event: $other",
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
-          permissionMode = permissionMode
+          permissionMode = permissionMode,
         )
+    end match
+  end parseHookInput
 
   private def parseJson(value: js.Any): Json =
     import zio.json.*
@@ -527,89 +534,91 @@ object HookCallback:
       }
       .nextOption()
 
-
   // ============================================================================
   // Hook Combinator Extension Methods
   // ============================================================================
 
   extension (hook: HookCallback)
 
-    /** Only run this hook when the predicate matches, otherwise continue.
-      *
-      * Example:
-      * {{{
-      * val logOnlyBash = HookCallback.logging(println)
-      *   .when(_.isInstanceOf[HookInput.PreToolUse])
-      * }}}
-      */
-    def when(predicate: HookInput => Boolean): HookCallback = { input =>
+    /**
+     * Only run this hook when the predicate matches, otherwise continue.
+     *
+     * Example:
+     * {{{
+     * val logOnlyBash = HookCallback.logging(println)
+     *   .when(_.isInstanceOf[HookInput.PreToolUse])
+     * }}}
+     */
+    def when(predicate: HookInput => Boolean): HookCallback = input =>
       if predicate(input) then hook(input)
       else ZIO.succeed(HookOutput.continue)
-    }
 
-    /** Skip this hook when the predicate matches (inverse of when).
-      *
-      * Example:
-      * {{{
-      * val blockNonRead = HookCallback.blockTools(ToolName.Bash)
-      *   .unless(input => input.toolName == ToolName.Read)
-      * }}}
-      */
+    /**
+     * Skip this hook when the predicate matches (inverse of when).
+     *
+     * Example:
+     * {{{
+     * val blockNonRead = HookCallback.blockTools(ToolName.Bash)
+     *   .unless(input => input.toolName == ToolName.Read)
+     * }}}
+     */
     def unless(predicate: HookInput => Boolean): HookCallback =
       hook.when(input => !predicate(input))
 
-    /** Chain: run this hook first, if it continues then run the other hook.
-      *
-      * Example:
-      * {{{
-      * val pipeline = loggingHook.andThen(securityHook).andThen(rateLimitHook)
-      * }}}
-      */
-    def andThen(other: HookCallback): HookCallback = { input =>
+    /**
+     * Chain: run this hook first, if it continues then run the other hook.
+     *
+     * Example:
+     * {{{
+     * val pipeline = loggingHook.andThen(securityHook).andThen(rateLimitHook)
+     * }}}
+     */
+    def andThen(other: HookCallback): HookCallback = input =>
       hook(input).flatMap {
         case c: HookOutput.Continue => other(input)
         case nonContinue            => ZIO.succeed(nonContinue)
       }
-    }
 
-    /** Fallback: run this hook, if it blocks/denies then try the other hook.
-      *
-      * Example:
-      * {{{
-      * val lenientSecurity = strictHook.orElse(permissiveHook)
-      * }}}
-      */
-    def orElse(fallback: HookCallback): HookCallback = { input =>
+    /**
+     * Fallback: run this hook, if it blocks/denies then try the other hook.
+     *
+     * Example:
+     * {{{
+     * val lenientSecurity = strictHook.orElse(permissiveHook)
+     * }}}
+     */
+    def orElse(fallback: HookCallback): HookCallback = input =>
       hook(input).flatMap {
-        case _: HookOutput.Block    => fallback(input)
+        case _: HookOutput.Block                  => fallback(input)
         case d: HookOutput.Decision if !d.approve => fallback(input)
-        case other                  => ZIO.succeed(other)
+        case other                                => ZIO.succeed(other)
       }
-    }
 
-    /** Apply a transformation to the hook output.
-      *
-      * Example:
-      * {{{
-      * val withMessage = hook.mapOutput {
-      *   case c: HookOutput.Continue => c.copy(systemMessage = Some("Processed"))
-      *   case other => other
-      * }
-      * }}}
-      */
-    def mapOutput(f: HookOutput => HookOutput): HookCallback = { input =>
-      hook(input).map(f)
-    }
+    /**
+     * Apply a transformation to the hook output.
+     *
+     * Example:
+     * {{{
+     * val withMessage = hook.mapOutput {
+     *   case c: HookOutput.Continue => c.copy(systemMessage = Some("Processed"))
+     *   case other => other
+     * }
+     * }}}
+     */
+    def mapOutput(f: HookOutput => HookOutput): HookCallback = input => hook(input).map(f)
 
-    /** Filter inputs before passing to this hook.
-      *
-      * Example:
-      * {{{
-      * val onlyToolEvents = hook.filter {
-      *   case _: HookInput.PreToolUse | _: HookInput.PostToolUse => true
-      *   case _ => false
-      * }
-      * }}}
-      */
+    /**
+     * Filter inputs before passing to this hook.
+     *
+     * Example:
+     * {{{
+     * val onlyToolEvents = hook.filter {
+     *   case _: HookInput.PreToolUse | _: HookInput.PostToolUse => true
+     *   case _ => false
+     * }
+     * }}}
+     */
     def filter(predicate: HookInput => Boolean): HookCallback =
       hook.when(predicate)
+  end extension
+end HookCallback

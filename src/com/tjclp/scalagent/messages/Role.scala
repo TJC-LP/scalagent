@@ -3,10 +3,11 @@ package com.tjclp.scalagent.messages
 import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
-/** Message role in the conversation.
-  *
-  * Represents the role of a message sender (user, assistant, or system).
-  */
+/**
+ * Message role in the conversation.
+ *
+ * Represents the role of a message sender (user, assistant, or system).
+ */
 enum Role:
   /** User message */
   case User
@@ -22,10 +23,10 @@ enum Role:
 
   /** Convert to raw JavaScript string value */
   def toRaw: String = this match
-    case User       => "user"
-    case Assistant  => "assistant"
-    case System     => "system"
-    case Custom(v)  => v
+    case User      => "user"
+    case Assistant => "assistant"
+    case System    => "system"
+    case Custom(v) => v
 
 object Role:
   // JSON codecs

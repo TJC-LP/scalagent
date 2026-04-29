@@ -2,11 +2,12 @@ package com.tjclp.scalagent.core
 
 import zio.json.*
 
-/** Type-safe budget representation for agent execution.
-  *
-  * Prevents raw Double mistakes and supports budget arithmetic
-  * for delegation and slicing.
-  */
+/**
+ * Type-safe budget representation for agent execution.
+ *
+ * Prevents raw Double mistakes and supports budget arithmetic
+ * for delegation and slicing.
+ */
 enum Budget:
   case Unlimited
   case Usd(amount: Double)
@@ -15,20 +16,20 @@ enum Budget:
   def slice(fraction: Double): Budget =
     require(fraction >= 0 && fraction <= 1.0, s"Fraction must be in [0, 1]: $fraction")
     this match
-      case Unlimited    => Unlimited
-      case Usd(amount)  => Usd(amount * fraction)
+      case Unlimited   => Unlimited
+      case Usd(amount) => Usd(amount * fraction)
 
   /** Add two budgets. Unlimited absorbs anything. */
   def +(other: Budget): Budget = (this, other) match
     case (Unlimited, _) | (_, Unlimited) => Unlimited
-    case (Usd(a), Usd(b))               => Usd(a + b)
+    case (Usd(a), Usd(b))                => Usd(a + b)
 
   /** Subtract spent amount. Floors at zero. */
   def -(other: Budget): Budget = (this, other) match
     case (Unlimited, Unlimited) => Unlimited
     case (Unlimited, _)         => Unlimited
     case (_, Unlimited)         => Usd(0.0)
-    case (Usd(a), Usd(b))      => Usd(math.max(0, a - b))
+    case (Usd(a), Usd(b))       => Usd(math.max(0, a - b))
 
   /** Remaining budget after spending. */
   def remaining(spent: Double): Budget = this match
@@ -44,6 +45,7 @@ enum Budget:
   def toUsd: Option[Double] = this match
     case Unlimited   => None
     case Usd(amount) => Some(amount)
+end Budget
 
 object Budget:
   /** Create a USD budget. */

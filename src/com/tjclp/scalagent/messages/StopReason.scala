@@ -3,10 +3,11 @@ package com.tjclp.scalagent.messages
 import com.tjclp.scalagent.json.StringEnumJsonCodec
 import zio.json.*
 
-/** Reason why the assistant stopped generating a response.
-  *
-  * Indicates what caused Claude to stop producing output.
-  */
+/**
+ * Reason why the assistant stopped generating a response.
+ *
+ * Indicates what caused Claude to stop producing output.
+ */
 enum StopReason:
   /** Natural end of turn - Claude finished its response */
   case EndTurn
@@ -30,6 +31,7 @@ enum StopReason:
     case StopSequence => "stop_sequence"
     case ToolUse      => "tool_use"
     case Custom(v)    => v
+end StopReason
 
 object StopReason:
   // JSON codecs

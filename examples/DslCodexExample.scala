@@ -7,35 +7,38 @@ import com.tjclp.scalagent.core.*
 import com.tjclp.scalagent.codex.*
 import com.tjclp.scalagent.interop.codex.CodexInterpreter
 
-  /** DSL Codex example: same Agent trait, different provider.
-    *
-    * Demonstrates:
-    * - CodexClient.create() — wraps the OpenAI Codex SDK
-    * - CodexInterpreter.string() — Agent[Any, CodexInput, String] backed by Codex
-    * - CodexInterpreter.sandboxedBuilder() — explicit Codex sandbox builder
-    * - Same ExecutionPolicy, AgentEvent, TraceSummary, Evaluation pipeline
-    *
-    * Run with: ./mill examples.go --example dsl-codex
-  *
-  * Requires: codex CLI installed (brew install openai-codex or npm i -g @openai/codex)
-  * Requires: OPENAI_API_KEY environment variable
-  */
+/**
+ * DSL Codex example: same Agent trait, different provider.
+ *
+ * Demonstrates:
+ * - CodexClient.create() — wraps the OpenAI Codex SDK
+ * - CodexInterpreter.string() — Agent[Any, CodexInput, String] backed by Codex
+ * - CodexInterpreter.sandboxedBuilder() — explicit Codex sandbox builder
+ * - Same ExecutionPolicy, AgentEvent, TraceSummary, Evaluation pipeline
+ *
+ * Run with: ./mill examples.go --example dsl-codex
+ *
+ * Requires: codex CLI installed (brew install openai-codex or npm i -g @openai/codex)
+ * Requires: OPENAI_API_KEY environment variable
+ */
 object DslCodexExample extends ZIOAppDefault:
 
   val run: ZIO[Any, Any, Unit] =
-    val client = CodexClient.create(CodexClientOptions(
-      // Codex picks up OPENAI_API_KEY from env automatically
-    ))
+    val client = CodexClient.create(
+      CodexClientOptions(
+        // Codex picks up OPENAI_API_KEY from env automatically
+      )
+    )
 
     val threadOptions = CodexThreadOptions(
       sandboxMode = Some(SandboxMode.ReadOnly),
       approvalPolicy = Some(ApprovalMode.Never),
-      skipGitRepoCheck = true
+      skipGitRepoCheck = true,
     )
 
     val policy = ExecutionPolicy(
       maxTurns = Some(3),
-      stopStrategy = StopStrategy.FirstResponse
+      stopStrategy = StopStrategy.FirstResponse,
     )
 
     for
@@ -60,11 +63,11 @@ object DslCodexExample extends ZIOAppDefault:
 
       // --- TraceSummary + Evaluation (same pipeline as Claude) ---
       _ <- Console.printLine("\n=== Evaluation (same as Claude pipeline) ===").orDie
-      trace = TraceSummary.fromEvents(events)
+      trace   = TraceSummary.fromEvents(events)
       utility = Utility.weighted[String, String](
         Utility.reliability      -> 0.5,
         Utility.costMinimizing   -> 0.3,
-        Utility.simplicityBiased -> 0.2
+        Utility.simplicityBiased -> 0.2,
       )
       eval = Evaluation.fromTrace("user", answer, trace, utility)
       _ <- Console.printLine(s"  Score: ${eval.score}").orDie
@@ -76,9 +79,7 @@ object DslCodexExample extends ZIOAppDefault:
 
       // --- Builder with explicit read-only sandbox ---
       _ <- Console.printLine("\n=== Codex Builder (explicit ReadOnly sandbox) ===").orDie
-      readOnlyAgent = CodexInterpreter.sandboxedBuilder(client, SandboxMode.ReadOnly, threadOptions)
-        .withBudget
-        .build
+      readOnlyAgent = CodexInterpreter.sandboxedBuilder(client, SandboxMode.ReadOnly, threadOptions).withBudget.build
       // Type: TypedAgent[Any, CodexInput, String, HasBudget]
 
       builderResult <- ZIO.scoped {
@@ -93,6 +94,11 @@ object DslCodexExample extends ZIOAppDefault:
       _ <- Console.printLine("  Both agents can be used anywhere Agent[Any, String, String] is expected").orDie
       _ <- Console.printLine("  Codex also accepts multimodal CodexInput when you need images").orDie
       _ <- Console.printLine("  Same ExecutionPolicy, AgentEvent, TraceSummary, Evaluation").orDie
-      _ <- Console.printLine("  Explicit Codex sandbox selection avoids pretending there is per-tool allowlisting").orDie
+      _ <- Console
+        .printLine("  Explicit Codex sandbox selection avoids pretending there is per-tool allowlisting")
+        .orDie
       _ <- Console.printLine("  Zero changes to core/ — only interop/codex/ is new").orDie
     yield ()
+    end for
+  end run
+end DslCodexExample

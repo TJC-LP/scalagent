@@ -30,65 +30,65 @@ object PermissionDecisionClassification:
     case "user_reject"    => UserReject
     case other            => Custom(other)
 
-/** Result of a permission decision.
-  *
-  * Returned from canUseTool handler to allow or deny tool execution.
-  */
+/**
+ * Result of a permission decision.
+ *
+ * Returned from canUseTool handler to allow or deny tool execution.
+ */
 sealed trait PermissionResult:
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object
 
 object PermissionResult:
 
-  /** Allow the tool execution.
-    *
-    * @param updatedInput
-    *   Optional modified input to use instead of original
-    * @param updatedPermissions
-    *   Optional permission updates to apply
-    * @param toolUseId
-    *   Optional tool use ID this decision applies to
-    * @param decisionClassification
-    *   Optional classification of the permission decision
-    */
+  /**
+   * Allow the tool execution.
+   *
+   * @param updatedInput
+   *   Optional modified input to use instead of original
+   * @param updatedPermissions
+   *   Optional permission updates to apply
+   * @param toolUseId
+   *   Optional tool use ID this decision applies to
+   * @param decisionClassification
+   *   Optional classification of the permission decision
+   */
   final case class Allow(
-      updatedInput: Option[Json] = None,
-      updatedPermissions: List[PermissionUpdate] = Nil,
-      toolUseId: Option[ToolUseId] = None,
-      decisionClassification: Option[PermissionDecisionClassification] = None
-  ) extends PermissionResult:
+    updatedInput: Option[Json] = None,
+    updatedPermissions: List[PermissionUpdate] = Nil,
+    toolUseId: Option[ToolUseId] = None,
+    decisionClassification: Option[PermissionDecisionClassification] = None)
+      extends PermissionResult:
     def toRaw: js.Object =
       val obj = js.Dynamic.literal(behavior = "allow")
-      updatedInput.foreach { input =>
-        obj.updatedInput = js.JSON.parse(input.toJson)
-      }
-      if updatedPermissions.nonEmpty then
-        obj.updatedPermissions = updatedPermissions.map(_.toRaw).toJSArray
+      updatedInput.foreach { input => obj.updatedInput = js.JSON.parse(input.toJson) }
+      if updatedPermissions.nonEmpty then obj.updatedPermissions = updatedPermissions.map(_.toRaw).toJSArray
       toolUseId.foreach(id => obj.toolUseId = id.value)
       decisionClassification.foreach(dc => obj.decisionClassification = dc.toRaw)
       obj.asInstanceOf[js.Object]
 
-  /** Deny the tool execution.
-    *
-    * @param message
-    *   Message explaining why permission was denied
-    * @param interrupt
-    *   If true, stop the entire agent execution
-    * @param toolUseId
-    *   Optional tool use ID this decision applies to
-    * @param decisionClassification
-    *   Optional classification of the permission decision
-    */
+  /**
+   * Deny the tool execution.
+   *
+   * @param message
+   *   Message explaining why permission was denied
+   * @param interrupt
+   *   If true, stop the entire agent execution
+   * @param toolUseId
+   *   Optional tool use ID this decision applies to
+   * @param decisionClassification
+   *   Optional classification of the permission decision
+   */
   final case class Deny(
-      message: String,
-      interrupt: Boolean = false,
-      toolUseId: Option[ToolUseId] = None,
-      decisionClassification: Option[PermissionDecisionClassification] = None
-  ) extends PermissionResult:
+    message: String,
+    interrupt: Boolean = false,
+    toolUseId: Option[ToolUseId] = None,
+    decisionClassification: Option[PermissionDecisionClassification] = None)
+      extends PermissionResult:
     def toRaw: js.Object =
       val obj = js.Dynamic.literal(
         behavior = "deny",
-        message = message
+        message = message,
       )
       if interrupt then obj.interrupt = true
       toolUseId.foreach(id => obj.toolUseId = id.value)
@@ -114,3 +114,4 @@ object PermissionResult:
   /** Deny and stop entire agent */
   def denyAndInterrupt(message: String): PermissionResult =
     Deny(message, interrupt = true)
+end PermissionResult

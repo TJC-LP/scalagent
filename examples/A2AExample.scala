@@ -5,25 +5,26 @@ import zio.stream.*
 import zio.json.*
 import com.tjclp.scalagent.*
 
-/** Example demonstrating A2A (Agent-to-Agent) protocol communication.
-  *
-  * This example shows how to:
-  *   1. Create an A2A server that exposes a Claude agent
-  *   2. Create an A2A client that connects to the server
-  *   3. Use A2ATool to wrap the remote agent as a callable tool
-  *   4. Have two Claude instances communicate via A2A
-  *
-  * Architecture:
-  * ```
-  * Claude Writer (local) --> A2ATool --> A2A Client --> A2A Server --> Claude Researcher
-  * ```
-  *
-  * Run with: mill examples.runMain com.tjclp.scalagent.examples.A2AExample
-  *
-  * Requires:
-  *   - ANTHROPIC_API_KEY environment variable
-  *   - @a2a-js/sdk npm package installed
-  */
+/**
+ * Example demonstrating A2A (Agent-to-Agent) protocol communication.
+ *
+ * This example shows how to:
+ *   1. Create an A2A server that exposes a Claude agent
+ *   2. Create an A2A client that connects to the server
+ *   3. Use A2ATool to wrap the remote agent as a callable tool
+ *   4. Have two Claude instances communicate via A2A
+ *
+ * Architecture:
+ * ```
+ * Claude Writer (local) --> A2ATool --> A2A Client --> A2A Server --> Claude Researcher
+ * ```
+ *
+ * Run with: mill examples.runMain com.tjclp.scalagent.examples.A2AExample
+ *
+ * Requires:
+ *   - ANTHROPIC_API_KEY environment variable
+ *   - @a2a-js/sdk npm package installed
+ */
 object A2AExample extends ZIOAppDefault:
 
   val run: ZIO[Any, Throwable, Unit] =
@@ -35,7 +36,7 @@ object A2AExample extends ZIOAppDefault:
         runtime <- ZIO.runtime[Any]
 
         // Start the Researcher agent as an A2A server
-        _ <- Console.printLine("Starting Researcher agent on port 3001...")
+        _          <- Console.printLine("Starting Researcher agent on port 3001...")
         researcher <- startResearcherAgent
 
         // Give server time to start
@@ -73,25 +74,26 @@ object A2AExample extends ZIOAppDefault:
         AgentSkill(
           id = "research",
           name = "Research",
-          description = "Answer factual questions with detailed explanations"
+          description = "Answer factual questions with detailed explanations",
         )
-      )
+      ),
     )
 
     A2AServer.create(config)
+  end startResearcherAgent
 
   /** Run the Writer agent that uses Researcher via A2A */
   private def runWriterAgent(runtime: Runtime[Any], researcherUrl: String): ZIO[Any, Throwable, Unit] =
     for
       // Discover the Researcher agent and create a tool for it
       researchTool <- A2ATool.discover(researcherUrl, Some("ask_researcher"))
-      _ <- Console.printLine(s"Discovered Researcher agent, created ask_researcher tool")
+      _            <- Console.printLine(s"Discovered Researcher agent, created ask_researcher tool")
 
       // Create MCP server with the A2A tool
       mcpServer = McpServer.create(
         name = "a2a-research",
         tools = List(researchTool),
-        runtime = runtime
+        runtime = runtime,
       )
 
       // Configure Writer agent with access to Researcher
@@ -121,7 +123,7 @@ object A2AExample extends ZIOAppDefault:
             |3. Common use cases
             |
             |Then synthesize these facts into a well-written overview.""".stripMargin,
-          writerOptions
+          writerOptions,
         )
         .tap(handleMessage)
         .runDrain
@@ -134,7 +136,7 @@ object A2AExample extends ZIOAppDefault:
       // Create A2A client directly
       client <- A2AClient.discover("http://localhost:3001")
       card   <- client.agentCard
-      _ <- Console.printLine(s"Connected to: ${card.name} - ${card.description}")
+      _      <- Console.printLine(s"Connected to: ${card.name} - ${card.description}")
 
       // Send a message directly via A2A
       task <- client.sendText("What is the capital of France?")
@@ -165,9 +167,10 @@ object A2AExample extends ZIOAppDefault:
   private def handleMessage(msg: AgentMessage): Task[Unit] =
     msg match
       case AgentMessage.Assistant(message, _, _, _, _) =>
-        val text = message.content.collect { case ContentBlock.Text(t) => t }.mkString
-        val toolCalls = message.content.collect { case ContentBlock.ToolUse(id, name, _) =>
-          s"[Calling $name...]"
+        val text      = message.content.collect { case ContentBlock.Text(t) => t }.mkString
+        val toolCalls = message.content.collect {
+          case ContentBlock.ToolUse(id, name, _) =>
+            s"[Calling $name...]"
         }
         for
           _ <- ZIO.foreach(toolCalls)(call => Console.printLine(call))
@@ -177,9 +180,10 @@ object A2AExample extends ZIOAppDefault:
       case AgentMessage.User(message, _, _, toolResult, _, _, _) =>
         toolResult match
           case Some(_) =>
-            val results = message.content.collect { case ContentBlock.ToolResult(_, content, isError) =>
-              val preview = if content.length > 200 then content.take(200) + "..." else content
-              if isError then s"[Tool Error] $preview" else s"[Researcher Response] $preview"
+            val results = message.content.collect {
+              case ContentBlock.ToolResult(_, content, isError) =>
+                val preview = if content.length > 200 then content.take(200) + "..." else content
+                if isError then s"[Tool Error] $preview" else s"[Researcher Response] $preview"
             }
             ZIO.foreach(results)(r => Console.printLine(r)).unit
           case None => ZIO.unit
@@ -193,3 +197,4 @@ object A2AExample extends ZIOAppDefault:
 
       case _ =>
         ZIO.unit
+end A2AExample

@@ -2,11 +2,12 @@ package com.tjclp.scalagent.core
 
 import zio.json.ast.Json
 
-/** Normalized event ADT emitted during an agent run.
-  *
-  * Provider-independent. Provider-specific events pass through
-  * as `Native` with a tag and JSON payload, preserving lossless access.
-  */
+/**
+ * Normalized event ADT emitted during an agent run.
+ *
+ * Provider-independent. Provider-specific events pass through
+ * as `Native` with a tag and JSON payload, preserving lossless access.
+ */
 enum AgentEvent:
   /** Incremental or complete text output from the agent. */
   case TextDelta(value: String)
@@ -15,7 +16,10 @@ enum AgentEvent:
   case ToolCall(name: String, args: Json)
 
   /** Result of a tool invocation. */
-  case ToolResult(name: String, value: Json, isError: Boolean)
+  case ToolResult(
+    name: String,
+    value: Json,
+    isError: Boolean)
 
   /** A subagent or delegation has started. */
   case DelegationStarted(label: String, childId: String)
@@ -31,3 +35,4 @@ enum AgentEvent:
 
   /** Provider-specific event that does not normalize. Lossless escape hatch. */
   case Native(tag: String, payload: Json)
+end AgentEvent

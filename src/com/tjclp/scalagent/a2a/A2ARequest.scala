@@ -8,9 +8,8 @@ object A2ARequest:
 
   /** Parameters for message/send and message/stream */
   final case class MessageSend(
-      message: A2AMessage,
-      configuration: Option[MessageSendConfiguration] = None
-  )
+    message: A2AMessage,
+    configuration: Option[MessageSendConfiguration] = None)
   object MessageSend:
     given JsonEncoder[MessageSend] = DeriveJsonEncoder.gen[MessageSend]
     given JsonDecoder[MessageSend] = DeriveJsonDecoder.gen[MessageSend]
@@ -20,9 +19,8 @@ object A2ARequest:
 
   /** Parameters for tasks/get */
   final case class TasksGet(
-      id: TaskId,
-      historyLength: Option[Int] = None
-  )
+    id: TaskId,
+    historyLength: Option[Int] = None)
   object TasksGet:
     given JsonEncoder[TasksGet] = DeriveJsonEncoder.gen[TasksGet]
     given JsonDecoder[TasksGet] = DeriveJsonDecoder.gen[TasksGet]
@@ -41,27 +39,24 @@ object A2ARequest:
 
   /** Parameters for tasks/pushNotificationConfig/set */
   final case class PushNotificationConfigSet(
-      id: TaskId,
-      pushNotificationConfig: PushNotificationConfig
-  )
+    id: TaskId,
+    pushNotificationConfig: PushNotificationConfig)
   object PushNotificationConfigSet:
     given JsonEncoder[PushNotificationConfigSet] = DeriveJsonEncoder.gen[PushNotificationConfigSet]
     given JsonDecoder[PushNotificationConfigSet] = DeriveJsonDecoder.gen[PushNotificationConfigSet]
 
   /** Parameters for tasks/pushNotificationConfig/get */
   final case class PushNotificationConfigGet(
-      id: TaskId,
-      pushNotificationConfigId: Option[String] = None
-  )
+    id: TaskId,
+    pushNotificationConfigId: Option[String] = None)
   object PushNotificationConfigGet:
     given JsonEncoder[PushNotificationConfigGet] = DeriveJsonEncoder.gen[PushNotificationConfigGet]
     given JsonDecoder[PushNotificationConfigGet] = DeriveJsonDecoder.gen[PushNotificationConfigGet]
 
   /** Parameters for tasks/pushNotificationConfig/delete */
   final case class PushNotificationConfigDelete(
-      id: TaskId,
-      pushNotificationConfigId: String
-  )
+    id: TaskId,
+    pushNotificationConfigId: String)
   object PushNotificationConfigDelete:
     given JsonEncoder[PushNotificationConfigDelete] = DeriveJsonEncoder.gen[PushNotificationConfigDelete]
     given JsonDecoder[PushNotificationConfigDelete] = DeriveJsonDecoder.gen[PushNotificationConfigDelete]
@@ -71,14 +66,14 @@ object A2ARequest:
   object GetAuthenticatedExtendedCard:
     given JsonEncoder[GetAuthenticatedExtendedCard] = DeriveJsonEncoder.gen[GetAuthenticatedExtendedCard]
     given JsonDecoder[GetAuthenticatedExtendedCard] = DeriveJsonDecoder.gen[GetAuthenticatedExtendedCard]
+end A2ARequest
 
 /** Message send configuration (A2A spec: MessageSendConfiguration) */
 final case class MessageSendConfiguration(
-    acceptedOutputModes: List[String] = List("text/plain"),
-    blocking: Option[Boolean] = None,
-    historyLength: Option[Int] = None,
-    pushNotificationConfig: Option[PushNotificationConfig] = None
-)
+  acceptedOutputModes: List[String] = List("text/plain"),
+  blocking: Option[Boolean] = None,
+  historyLength: Option[Int] = None,
+  pushNotificationConfig: Option[PushNotificationConfig] = None)
 object MessageSendConfiguration:
   given JsonEncoder[MessageSendConfiguration] = DeriveJsonEncoder.gen[MessageSendConfiguration]
   given JsonDecoder[MessageSendConfiguration] = DeriveJsonDecoder.gen[MessageSendConfiguration]

@@ -3,22 +3,23 @@ package com.tjclp.scalagent.config
 import com.tjclp.scalagent.json.OpaqueStringJsonCodec
 import zio.json.{JsonDecoder, JsonEncoder}
 
-/** Type-safe wrapper for skill names.
-  *
-  * Skills follow the naming pattern: "plugin-name:skill-name" for plugin skills, or just "skill-name" for user/project
-  * skills.
-  *
-  * Example:
-  * {{{
-  * val pluginSkill = SkillName("document-skills:pdf")
-  * val userSkill = SkillName.userSkill("my-custom-skill")
-  *
-  * // Extract parts
-  * pluginSkill.isPluginSkill    // true
-  * pluginSkill.pluginName       // Some("document-skills")
-  * pluginSkill.baseName         // "pdf"
-  * }}}
-  */
+/**
+ * Type-safe wrapper for skill names.
+ *
+ * Skills follow the naming pattern: "plugin-name:skill-name" for plugin skills, or just "skill-name" for user/project
+ * skills.
+ *
+ * Example:
+ * {{{
+ * val pluginSkill = SkillName("document-skills:pdf")
+ * val userSkill = SkillName.userSkill("my-custom-skill")
+ *
+ * // Extract parts
+ * pluginSkill.isPluginSkill    // true
+ * pluginSkill.pluginName       // Some("document-skills")
+ * pluginSkill.baseName         // "pdf"
+ * }}}
+ */
 opaque type SkillName = String
 
 object SkillName:
@@ -49,3 +50,4 @@ object SkillName:
 
   given JsonEncoder[SkillName] = OpaqueStringJsonCodec.encoder(_.value)
   given JsonDecoder[SkillName] = OpaqueStringJsonCodec.decoder(apply)
+end SkillName

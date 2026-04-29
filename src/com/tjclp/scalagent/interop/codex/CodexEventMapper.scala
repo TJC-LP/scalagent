@@ -4,18 +4,19 @@ import zio.json.ast.Json
 import com.tjclp.scalagent.core.{AgentEvent, RunSummary}
 import com.tjclp.scalagent.codex.{CodexEvent, CodexItem, CodexUsage}
 
-/** Maps Codex events to the provider-independent AgentEvent ADT.
-  *
-  * Follows the same pattern as `interop/claude/EventMapper`: each provider
-  * event maps to zero or more `AgentEvent` values. Provider-specific data
-  * passes through as `AgentEvent.Native`.
-  */
+/**
+ * Maps Codex events to the provider-independent AgentEvent ADT.
+ *
+ * Follows the same pattern as `interop/claude/EventMapper`: each provider
+ * event maps to zero or more `AgentEvent` values. Provider-specific data
+ * passes through as `AgentEvent.Native`.
+ */
 object CodexEventMapper:
 
   /** State tracked across events to build the final RunSummary. */
   final class MapperState:
     var lastAgentMessage: Option[String] = None
-    var startTimeMs: Long = System.currentTimeMillis()
+    var startTimeMs: Long                = System.currentTimeMillis()
 
   def createState(): MapperState = MapperState()
 
@@ -31,39 +32,39 @@ object CodexEventMapper:
 
       case CodexEvent.TurnCompleted(usage) =>
         val durationMs = System.currentTimeMillis() - state.startTimeMs
-        val summary = RunSummary(
+        val summary    = RunSummary(
           durationMs = durationMs,
           numTurns = 1,
           costUsd = 0.0, // Codex doesn't report USD cost
           isSuccess = true,
           resultText = state.lastAgentMessage,
-          stopReason = Some("turn.completed")
+          stopReason = Some("turn.completed"),
         )
         // Also emit token usage as Native for observability
         val usageEvent = AgentEvent.Native(
           "codex.usage",
           Json.Obj(
-            "input_tokens" -> Json.Num(usage.inputTokens),
+            "input_tokens"        -> Json.Num(usage.inputTokens),
             "cached_input_tokens" -> Json.Num(usage.cachedInputTokens),
-            "output_tokens" -> Json.Num(usage.outputTokens)
-          )
+            "output_tokens"       -> Json.Num(usage.outputTokens),
+          ),
         )
         List(usageEvent, AgentEvent.Completed(summary))
 
       case CodexEvent.TurnFailed(message) =>
         val durationMs = System.currentTimeMillis() - state.startTimeMs
-        val summary = RunSummary(
+        val summary    = RunSummary(
           durationMs = durationMs,
           numTurns = 1,
           costUsd = 0.0,
           isSuccess = false,
           resultText = Some(message),
-          stopReason = Some("turn.failed")
+          stopReason = Some("turn.failed"),
         )
         List(AgentEvent.Completed(summary))
 
-      case CodexEvent.ItemStarted(item) => mapItemStarted(item, state)
-      case CodexEvent.ItemUpdated(item) => mapItemUpdated(item, state)
+      case CodexEvent.ItemStarted(item)   => mapItemStarted(item, state)
+      case CodexEvent.ItemUpdated(item)   => mapItemUpdated(item, state)
       case CodexEvent.ItemCompleted(item) => mapItemCompleted(item, state)
 
       case CodexEvent.Error(message) =>
@@ -93,9 +94,7 @@ object CodexEventMapper:
         List(AgentEvent.Status(s"todo: $summary"))
 
       case CodexItem.FileChange(_, changes, _) =>
-        val changesJson = Json.Arr(changes.map(c =>
-          Json.Obj("path" -> Json.Str(c.path), "kind" -> Json.Str(c.kind))
-        )*)
+        val changesJson = Json.Arr(changes.map(c => Json.Obj("path" -> Json.Str(c.path), "kind" -> Json.Str(c.kind)))*)
         List(AgentEvent.ToolCall("file_change", Json.Obj("changes" -> changesJson)))
 
       case CodexItem.ItemError(_, message) =>
@@ -123,32 +122,31 @@ object CodexEventMapper:
         Nil // Already streamed via started/updated
 
       case CodexItem.CommandExecution(_, _, output, exitCode, status) =>
-        val isError = status == "failed"
+        val isError    = status == "failed"
         val resultJson = Json.Obj(
-          "output" -> Json.Str(output),
-          "exit_code" -> exitCode.fold(Json.Null: Json)(c => Json.Num(c))
+          "output"    -> Json.Str(output),
+          "exit_code" -> exitCode.fold(Json.Null: Json)(c => Json.Num(c)),
         )
         List(AgentEvent.ToolResult("command", resultJson, isError))
 
       case CodexItem.McpToolCall(_, server, tool, _, result, error, status) =>
-        val name = s"mcp:$server:$tool"
-        val isError = status == "failed"
+        val name       = s"mcp:$server:$tool"
+        val isError    = status == "failed"
         val resultJson = error match
           case Some(msg) => Json.Obj("error" -> Json.Str(msg))
-          case None => result.getOrElse(Json.Null)
+          case None      => result.getOrElse(Json.Null)
         List(AgentEvent.ToolResult(name, resultJson, isError))
 
       case CodexItem.WebSearch(_, query) =>
         List(AgentEvent.ToolResult("web_search", Json.Obj("query" -> Json.Str(query)), false))
 
       case CodexItem.FileChange(_, changes, status) =>
-        val isError = status == "failed"
-        val changesJson = Json.Arr(changes.map(c =>
-          Json.Obj("path" -> Json.Str(c.path), "kind" -> Json.Str(c.kind))
-        )*)
+        val isError     = status == "failed"
+        val changesJson = Json.Arr(changes.map(c => Json.Obj("path" -> Json.Str(c.path), "kind" -> Json.Str(c.kind)))*)
         List(AgentEvent.ToolResult("file_change", changesJson, isError))
 
       case CodexItem.ItemError(_, message) =>
         List(AgentEvent.Status(s"error: $message"))
 
       case _ => Nil
+end CodexEventMapper

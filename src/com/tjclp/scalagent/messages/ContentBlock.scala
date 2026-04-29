@@ -11,34 +11,30 @@ enum ContentBlock:
 
   /** Tool use request from assistant */
   case ToolUse(
-      id: ToolUseId,
-      name: ToolName,
-      input: zio.json.ast.Json
-  )
+    id: ToolUseId,
+    name: ToolName,
+    input: zio.json.ast.Json)
 
   /** Tool result from user (typically synthetic) */
   case ToolResult(
-      toolUseId: ToolUseId,
-      content: String,
-      isError: Boolean = false
-  )
+    toolUseId: ToolUseId,
+    content: String,
+    isError: Boolean = false)
 
   /** Thinking block (extended thinking) */
   case Thinking(
-      thinking: String,
-      signature: Option[String] = None
-  )
+    thinking: String,
+    signature: Option[String] = None)
 
   /** Image content */
   case Image(
-      source: ImageSource,
-      mediaType: String
-  )
+    source: ImageSource,
+    mediaType: String)
 
   /** Forward-compatible fallback for unknown content blocks */
   case Unknown(
-      envelope: UnknownEnvelope
-  )
+    envelope: UnknownEnvelope)
+end ContentBlock
 
 object ContentBlock:
   given JsonDecoder[ContentBlock] = DeriveJsonDecoder.gen[ContentBlock]
