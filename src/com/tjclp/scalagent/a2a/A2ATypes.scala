@@ -62,8 +62,20 @@ object ContextId:
 
 /** A2A protocol version */
 object A2AProtocol:
-  val Version        = "0.3.0"
+  val Version        = "1.0"
   val JsonRpcVersion = "2.0"
+
+/** Standard A2A headers */
+object A2AHeader:
+  val Version            = "A2A-Version"
+  val Extensions         = "X-A2A-Extensions"
+  val StandardExtensions = "A2A-Extensions"
+
+/** Standard content types */
+object A2AContentType:
+  val Json    = "application/json"
+  val A2AJson = "application/a2a+json"
+  val Sse     = "text/event-stream"
 
 /** Standard A2A transport types */
 enum A2ATransport:

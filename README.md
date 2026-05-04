@@ -283,17 +283,35 @@ The low-level API supports all `AgentOptions` configuration (model selection, pe
 
 ## A2A Execution
 
-`A2AServer` defaults to async `message/send`: if a raw JSON-RPC caller omits
-`configuration.blocking`, the server returns a `working` task immediately and
-continues execution in the background. Poll `tasks/get` or subscribe via
-`message/stream`/`tasks/resubscribe` for updates. Set
-`executionMode = ExecutionMode.Synchronous` on `A2AServer.Config` or
-`A2AServerApp` to keep the server-side default blocking behavior.
+Scalagent's default A2A surface is native A2A v1. `A2AServer` serves the
+well-known agent card, JSON-RPC at `/`, and REST `application/a2a+json` routes
+such as `POST /message:send`, `POST /message:stream`, `GET /tasks`, and the
+task push notification config endpoints.
 
-Scalagent clients preserve the older convenience behavior for `send`: they set
-`blocking = true` unless you pass an explicit value. Use `submit` for an
-immediate task, or `sendAndPoll` to submit non-blocking and poll until the task
-reaches a terminal state.
+The v1 agent card advertises `JSONRPC` first and `HTTP+JSON` second, both with
+`protocolVersion = "1.0"`. `A2AClient.discover` fetches the well-known card and
+selects a JSON-RPC endpoint.
+
+`SendMessage` defaults to `returnImmediately = false`, so it waits until the
+task reaches a terminal or interrupted state. Use `client.submit(...)` or set
+`MessageSendConfiguration(returnImmediately = true)` to get the initial
+`working` task immediately, then continue with `getTask`, `listTasks`,
+`cancelTask`, or `resubscribe`.
+
+Streaming uses `SendStreamingMessage` or `POST /message:stream` and yields
+`A2AResponse.StreamResponse` events: task snapshots, status updates, artifact
+updates, and messages. Live progress includes text status plus structured
+tool-use and tool-result data.
+
+Push notifications are supported when
+`AgentCapabilities(pushNotifications = true)` is set. Supply inline config at
+`MessageSendConfiguration.taskPushNotificationConfig`, or manage configs with
+`createTaskPushNotificationConfig`, `getTaskPushNotificationConfig`,
+`listTaskPushNotificationConfigs`, and `deleteTaskPushNotificationConfig`.
+Callbacks POST a `StreamResponse` body as `application/a2a+json`.
+
+Legacy A2A 0.3 compatibility remains available explicitly as `A2AClientV03`,
+`A2AServerV03`, and `A2AServerAppV03`; `com.tjclp.scalagent.*` defaults to v1.
 
 ## Project Structure
 
@@ -316,7 +334,7 @@ scalagent/
 │   ├── streaming/                   # AsyncIterator → ZStream bridge
 │   ├── tools/                       # ToolDef, ToolName, ToolResult
 │   └── ClaudeAgent.scala            # Claude SDK facade
-└── test/src/                        # 48 test suites
+└── test/src/                        # MUnit test suites
 ```
 
 ## Building and Testing

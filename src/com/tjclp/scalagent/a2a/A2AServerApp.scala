@@ -1,7 +1,6 @@
 package com.tjclp.scalagent.a2a
 
 import com.tjclp.scalagent.config.AgentOptions
-import com.tjclp.scalagent.a2a.facade.{JsAgentExecutor, JsTaskStore}
 import zio.*
 
 /**
@@ -49,7 +48,7 @@ trait A2AServerApp[Self <: Singleton] extends ZIOAppDefault:
   def capabilities: AgentCapabilities                                             = AgentCapabilities.default
   def sessionLogDir: Option[String]                                               = None
   def invocationPreparer: Option[(A2AMessage, TaskId) => Task[InvocationContext]] = None
-  def executorFactory: Option[(JsTaskStore, Runtime[Any]) => JsAgentExecutor]     = None
+  def executionOverride: Option[(A2AMessage, TaskId, ContextId, A2AEventPublisher) => Task[Unit]] = None
 
   protected final def configWith(options: AgentOptions): A2AServer.Config =
     A2AServer.Config(
@@ -64,7 +63,7 @@ trait A2AServerApp[Self <: Singleton] extends ZIOAppDefault:
       skills = skills,
       sessionLogDir = sessionLogDir,
       invocationPreparer = invocationPreparer,
-      executorFactory = executorFactory,
+      executionOverride = executionOverride,
     )
 
   final def config: A2AServer.Config =

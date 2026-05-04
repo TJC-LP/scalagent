@@ -67,37 +67,43 @@ object A2AConverters:
   // ==================== AgentCard ====================
 
   def toScala(js: JsAgentCard): AgentCard =
+    val preferredTransport = js.preferredTransport.toOption
+      .flatMap(s =>
+        s match
+          case "JSONRPC"            => Some(A2ATransport.JSONRPC)
+          case "GRPC"               => Some(A2ATransport.GRPC)
+          case "HTTP+JSON" | "REST" => Some(A2ATransport.HTTP_JSON)
+          case _                    => None
+      )
+      .getOrElse(A2ATransport.JSONRPC)
+    val primaryInterface = AgentInterface(
+      url = js.url,
+      protocolBinding = preferredTransport,
+      protocolVersion = js.protocolVersion.getOrElse(A2AProtocol.Version),
+    )
+    val additionalInterfaces = js.additionalInterfaces.toOption.map(_.toList.map(toScala)).getOrElse(Nil)
+    val capabilities = js.capabilities.toOption.map(toScala).getOrElse(AgentCapabilities.default).copy(
+      extendedAgentCard = js.supportsAuthenticatedExtendedCard.getOrElse(false)
+    )
     AgentCard(
       name = js.name,
       description = js.description,
-      url = js.url,
+      supportedInterfaces = primaryInterface :: additionalInterfaces,
       version = js.version.getOrElse("1.0.0"),
-      protocolVersion = js.protocolVersion.getOrElse(A2AProtocol.Version),
       provider = js.provider.toOption.map(toScala),
       documentationUrl = js.documentationUrl.toOption,
       iconUrl = js.iconUrl.toOption,
-      capabilities = js.capabilities.toOption.map(toScala).getOrElse(AgentCapabilities.default),
-      preferredTransport = js.preferredTransport.toOption
-        .flatMap(s =>
-          s match
-            case "JSONRPC"            => Some(A2ATransport.JSONRPC)
-            case "GRPC"               => Some(A2ATransport.GRPC)
-            case "HTTP+JSON" | "REST" => Some(A2ATransport.HTTP_JSON)
-            case _                    => None
-        )
-        .getOrElse(A2ATransport.JSONRPC),
-      additionalInterfaces = js.additionalInterfaces.toOption.map(_.toList.map(toScala)).getOrElse(Nil),
+      capabilities = capabilities,
       defaultInputModes = js.defaultInputModes.toOption.map(_.toList).getOrElse(List("text/plain")),
       defaultOutputModes = js.defaultOutputModes.toOption.map(_.toList).getOrElse(List("text/plain")),
       skills = js.skills.toOption.map(_.toList.map(toScala)).getOrElse(Nil),
-      security = js.security.toOption
+      securityRequirements = js.security.toOption
         .map(_.toList.map(toScalaSecurityRequirement))
         .getOrElse(Nil),
       securitySchemes = js.securitySchemes.toOption
         .map(toScalaSecuritySchemes)
         .getOrElse(Map.empty),
       signatures = js.signatures.toOption.map(_.toList.map(toScala)).getOrElse(Nil),
-      supportsAuthenticatedExtendedCard = js.supportsAuthenticatedExtendedCard.getOrElse(false),
     )
 
   def toJs(card: AgentCard): JsAgentCard =
@@ -106,21 +112,22 @@ object A2AConverters:
       description = card.description,
       url = card.url,
       version = card.version,
-      protocolVersion = card.protocolVersion,
+      protocolVersion = card.supportedInterfaces.headOption.map(_.protocolVersion).getOrElse(A2AProtocol.Version),
     )
     card.provider.foreach(p => obj.provider = toJs(p))
     card.documentationUrl.foreach(u => obj.documentationUrl = u)
     card.iconUrl.foreach(u => obj.iconUrl = u)
     obj.capabilities = toJs(card.capabilities)
-    obj.preferredTransport = card.preferredTransport.toRaw
-    if card.additionalInterfaces.nonEmpty then obj.additionalInterfaces = card.additionalInterfaces.map(toJs).toJSArray
+    obj.preferredTransport = card.supportedInterfaces.headOption.map(_.protocolBinding.toRaw).getOrElse(A2ATransport.JSONRPC.toRaw)
+    obj.supportedInterfaces = card.supportedInterfaces.map(toJs).toJSArray
+    if card.supportedInterfaces.drop(1).nonEmpty then obj.additionalInterfaces = card.supportedInterfaces.drop(1).map(toJs).toJSArray
     obj.defaultInputModes = card.defaultInputModes.toJSArray
     obj.defaultOutputModes = card.defaultOutputModes.toJSArray
     if card.skills.nonEmpty then obj.skills = card.skills.map(toJs).toJSArray
-    if card.security.nonEmpty then obj.security = card.security.map(toJsSecurityRequirement).toJSArray
+    if card.securityRequirements.nonEmpty then obj.security = card.securityRequirements.map(toJsSecurityRequirement).toJSArray
     if card.securitySchemes.nonEmpty then obj.securitySchemes = toJsSecuritySchemes(card.securitySchemes)
     if card.signatures.nonEmpty then obj.signatures = card.signatures.map(toJs).toJSArray
-    if card.supportsAuthenticatedExtendedCard then obj.supportsAuthenticatedExtendedCard = true
+    if card.capabilities.extendedAgentCard then obj.supportsAuthenticatedExtendedCard = true
     obj.asInstanceOf[JsAgentCard]
   end toJs
 
@@ -136,7 +143,6 @@ object A2AConverters:
     AgentCapabilities(
       streaming = js.streaming.getOrElse(true),
       pushNotifications = js.pushNotifications.getOrElse(false),
-      stateTransitionHistory = js.stateTransitionHistory.getOrElse(false),
       extensions = js.extensions.toOption.map(_.toList.map(toScala)).getOrElse(Nil),
     )
 
@@ -144,7 +150,7 @@ object A2AConverters:
     val obj = js.Dynamic.literal(
       streaming = c.streaming,
       pushNotifications = c.pushNotifications,
-      stateTransitionHistory = c.stateTransitionHistory,
+      extendedAgentCard = c.extendedAgentCard,
     )
     if c.extensions.nonEmpty then obj.extensions = c.extensions.map(toJs).toJSArray
     obj.asInstanceOf[JsAgentCapabilities]
@@ -152,14 +158,14 @@ object A2AConverters:
   def toScala(js: JsAgentExtension): AgentExtension =
     AgentExtension(
       uri = js.uri,
-      description = js.description.toOption,
+      description = js.description.toOption.getOrElse(""),
       params = js.params.toOption.flatMap(decodeDynamicJson),
       required = js.required.getOrElse(false),
     )
 
   def toJs(e: AgentExtension): JsAgentExtension =
     val obj = js.Dynamic.literal(uri = e.uri)
-    e.description.foreach(d => obj.description = d)
+    if e.description.nonEmpty then obj.description = e.description
     e.params.foreach(p => obj.params = JsJSON.parse(p.toString))
     if e.required then obj.required = true
     obj.asInstanceOf[JsAgentExtension]
@@ -173,7 +179,7 @@ object A2AConverters:
       examples = js.examples.toOption.map(_.toList).getOrElse(Nil),
       inputModes = js.inputModes.toOption.map(_.toList).getOrElse(Nil),
       outputModes = js.outputModes.toOption.map(_.toList).getOrElse(Nil),
-      security = js.security.toOption
+      securityRequirements = js.security.toOption
         .map(_.toList.map(toScalaSecurityRequirement))
         .getOrElse(Nil),
     )
@@ -184,7 +190,7 @@ object A2AConverters:
     if s.examples.nonEmpty then obj.examples = s.examples.toJSArray
     if s.inputModes.nonEmpty then obj.inputModes = s.inputModes.toJSArray
     if s.outputModes.nonEmpty then obj.outputModes = s.outputModes.toJSArray
-    if s.security.nonEmpty then obj.security = s.security.map(toJsSecurityRequirement).toJSArray
+    if s.securityRequirements.nonEmpty then obj.security = s.securityRequirements.map(toJsSecurityRequirement).toJSArray
     obj.asInstanceOf[JsAgentSkill]
 
   def toScala(js: JsAgentInterface): AgentInterface =
@@ -193,7 +199,7 @@ object A2AConverters:
       case "GRPC"               => A2ATransport.GRPC
       case "HTTP+JSON" | "REST" => A2ATransport.HTTP_JSON
       case _                    => A2ATransport.JSONRPC
-    AgentInterface(transport = transport, url = js.url)
+    AgentInterface(url = js.url, protocolBinding = transport)
 
   def toJs(i: AgentInterface): JsAgentInterface =
     js.Dynamic
@@ -250,7 +256,7 @@ object A2AConverters:
               )
             )
           case Some("mutualTLS") =>
-            Some(SecurityScheme.MutualTLS)
+            Some(SecurityScheme.MutualTLS())
           case Some("openIdConnect") =>
             Some(
               SecurityScheme.OpenIdConnect(
@@ -271,19 +277,19 @@ object A2AConverters:
     schemes.foreach {
       case (name, scheme) =>
         val schemeObj = scheme match
-          case SecurityScheme.ApiKey(apiName, in) =>
+          case SecurityScheme.ApiKey(apiName, in, _) =>
             js.Dynamic.literal(`type` = "apiKey", name = apiName, in = in)
-          case SecurityScheme.Http(httpScheme, bearerFormat) =>
+          case SecurityScheme.Http(httpScheme, bearerFormat, _) =>
             val o = js.Dynamic.literal(`type` = "http", scheme = httpScheme)
             bearerFormat.foreach(b => o.bearerFormat = b)
             o
-          case SecurityScheme.OAuth2(flows, metadataUrl) =>
+          case SecurityScheme.OAuth2(flows, metadataUrl, _) =>
             val o = js.Dynamic.literal(`type` = "oauth2", flows = toJsOAuth2Flows(flows))
             metadataUrl.foreach(u => o.oauth2MetadataUrl = u)
             o
-          case SecurityScheme.OpenIdConnect(url) =>
+          case SecurityScheme.OpenIdConnect(url, _) =>
             js.Dynamic.literal(`type` = "openIdConnect", openIdConnectUrl = url)
-          case SecurityScheme.MutualTLS =>
+          case SecurityScheme.MutualTLS(_) =>
             js.Dynamic.literal(`type` = "mutualTLS")
         obj.updateDynamic(name)(schemeObj)
     }
@@ -490,6 +496,11 @@ object A2AConverters:
       schemes = js.schemes.toList,
       credentials = js.credentials.toOption,
     )
+
+  def toJs(a: AuthenticationInfo): JsPushNotificationAuth =
+    js.Dynamic
+      .literal(schemes = js.Array(a.scheme), credentials = a.credentials)
+      .asInstanceOf[JsPushNotificationAuth]
 
   def toJs(a: PushNotificationAuth): JsPushNotificationAuth =
     val obj = js.Dynamic.literal(schemes = a.schemes.toJSArray)
