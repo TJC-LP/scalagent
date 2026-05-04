@@ -973,7 +973,7 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         ,
         cancel = (_: js.Any) =>
           canceled = true
-          if fiber != null then Unsafe.unsafe { implicit unsafe => runtime.unsafe.run(fiber.interrupt).getOrThrowFiberFailure() }
+          if fiber != null then Unsafe.unsafe { implicit unsafe => runtime.unsafe.fork(fiber.interrupt) }
           (),
       )
     )
