@@ -555,6 +555,7 @@ package object scalagent:
 
   // --- interop package ---
   val ClaudeInterpreter = interop.claude.ClaudeInterpreter
+  val ClaudeEventMapper = interop.claude.EventMapper
   val A2AInterpreter    = interop.a2a.A2AInterpreter
   val A2AServerAdapter  = interop.a2a.A2AServerAdapter
   val McpToolLoader     = interop.mcp.McpToolLoader

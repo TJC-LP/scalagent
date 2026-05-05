@@ -103,7 +103,8 @@ object A2AServer:
     sessionLogDir: Option[String] = None,
     invocationPreparer: Option[(A2AMessage, TaskId) => Task[InvocationContext]] = None,
     executionOverride: Option[(A2AMessage, TaskId, ContextId, A2AEventPublisher) => Task[Unit]] = None,
-    pushNotificationStore: Option[A2APushNotificationStore] = None):
+    pushNotificationStore: Option[A2APushNotificationStore] = None,
+    taskStore: Option[A2ATaskStore] = None):
     def url: String = s"http://$host:$port"
 
     def toAgentCard: AgentCard =
@@ -148,23 +149,60 @@ private type TaskRuntimeKey = (String, String)
 private def taskRuntimeKey(taskId: TaskId, context: ServerCallContext): TaskRuntimeKey =
   (context.tenant.getOrElse(""), taskId.value)
 
-private final class InMemoryTaskStore:
+/**
+ * Pluggable A2A task store.
+ *
+ * The default `A2ATaskStore.inMemory` keeps tasks in a process-local map,
+ * which is fine for in-process tests but loses everything when the host
+ * scales to zero (e.g. Modal `@web_server` containers idle out, restart
+ * with empty state, and `tasks/get` for a previously-accepted id returns
+ * "task not found"). Production hosts should plug a durable backend
+ * (Modal Dict, Redis, etc.) via [[A2AServer.Config.taskStore]] so the
+ * task lifecycle survives container restarts and follow-up A2A messages
+ * can find their context's prior tasks.
+ *
+ * Eviction is the implementation's call: the protocol does not GC tasks
+ * implicitly. Callers decide when (and whether) to drop entries via
+ * [[delete]].
+ */
+trait A2ATaskStore:
+  def save(task: A2ATask, tenant: Option[String]): UIO[Unit]
+  def load(taskId: TaskId, tenant: Option[String]): UIO[Option[A2ATask]]
+  def list(params: A2ARequest.TasksList, tenant: Option[String]): UIO[A2AResponse.ListTasksResult]
+  def delete(taskId: TaskId, tenant: Option[String]): UIO[Unit]
+end A2ATaskStore
+
+object A2ATaskStore:
+  /** Default in-process store; non-persistent. */
+  def inMemory: A2ATaskStore = new InMemoryTaskStoreImpl
+
+  private[a2a] def applyHistoryLength(task: A2ATask, historyLength: Option[Int]): A2ATask =
+    historyLength match
+      case Some(length) if length <= 0 => task.copy(history = Nil)
+      case Some(length)               => task.copy(history = task.history.takeRight(length))
+      case None                       => task
+end A2ATaskStore
+
+private final class InMemoryTaskStoreImpl extends A2ATaskStore:
   private val tasks = mutable.Map.empty[(String, String), A2ATask]
 
   private def key(id: TaskId, tenant: Option[String]): (String, String) =
     (tenant.getOrElse(""), id.value)
 
-  def save(task: A2ATask, context: ServerCallContext): UIO[Unit] =
-    ZIO.succeed(tasks.update(key(task.id, context.tenant), task))
+  def save(task: A2ATask, tenant: Option[String]): UIO[Unit] =
+    ZIO.succeed(tasks.update(key(task.id, tenant), task))
 
-  def load(taskId: TaskId, context: ServerCallContext): UIO[Option[A2ATask]] =
-    ZIO.succeed(tasks.get(key(taskId, context.tenant)))
+  def load(taskId: TaskId, tenant: Option[String]): UIO[Option[A2ATask]] =
+    ZIO.succeed(tasks.get(key(taskId, tenant)))
 
-  def list(params: A2ARequest.TasksList, context: ServerCallContext): UIO[A2AResponse.ListTasksResult] =
+  def delete(taskId: TaskId, tenant: Option[String]): UIO[Unit] =
+    ZIO.succeed { tasks.remove(key(taskId, tenant)); () }
+
+  def list(params: A2ARequest.TasksList, tenant: Option[String]): UIO[A2AResponse.ListTasksResult] =
     ZIO.succeed {
       val pageSize = params.pageSize.getOrElse(50).max(1).min(100)
       val all = tasks.collect {
-        case ((tenant, _), task) if tenant == context.tenant.getOrElse("") => task
+        case ((t, _), task) if t == tenant.getOrElse("") => task
       }.toList
       val filtered = all
         .filter(task => params.contextId.forall(_ == task.contextId))
@@ -181,7 +219,7 @@ private final class InMemoryTaskStore:
       val next   = Option.when(offset + pageSize < filtered.length)((offset + pageSize).toString)
       A2AResponse.ListTasksResult(
         tasks = page.map { task =>
-          val withHistory = applyHistoryLength(task, params.historyLength)
+          val withHistory = A2ATaskStore.applyHistoryLength(task, params.historyLength)
           if params.includeArtifacts.getOrElse(false) then withHistory else withHistory.copy(artifacts = Nil)
         },
         nextPageToken = next,
@@ -189,13 +227,7 @@ private final class InMemoryTaskStore:
         totalSize = filtered.length,
       )
     }
-
-  private def applyHistoryLength(task: A2ATask, historyLength: Option[Int]): A2ATask =
-    historyLength match
-      case Some(length) if length <= 0 => task.copy(history = Nil)
-      case Some(length)               => task.copy(history = task.history.takeRight(length))
-      case None                       => task
-end InMemoryTaskStore
+end InMemoryTaskStoreImpl
 
 private final class A2AEventBus:
   private val subscribers = mutable.Set.empty[Queue[Take[Throwable, A2AResponse.StreamEvent]]]
@@ -283,7 +315,7 @@ private final class PushNotificationSender(store: A2APushNotificationStore):
 end PushNotificationSender
 
 private final class ResultManager(
-  taskStore: InMemoryTaskStore,
+  taskStore: A2ATaskStore,
   pushSender: PushNotificationSender,
   bus: A2AEventBus,
   context: ServerCallContext,
@@ -299,19 +331,19 @@ private final class ResultManager(
   private def applyEvent(event: A2AResponse.StreamEvent): UIO[Unit] =
     event match
       case A2AResponse.StreamEvent.TaskSnapshot(task) =>
-        taskStore.save(ensureHistory(task), context)
+        taskStore.save(ensureHistory(task), context.tenant)
       case A2AResponse.StreamEvent.TaskStatusUpdate(taskId, _, status, _, _) =>
-        taskStore.load(taskId, context).flatMap {
+        taskStore.load(taskId, context.tenant).flatMap {
           case Some(task) =>
             val history = status.message match
               case Some(message) if !task.history.exists(_.messageId == message.messageId) => task.history :+ message
               case _                                                                        => task.history
-            taskStore.save(task.copy(status = status, history = history), context)
+            taskStore.save(task.copy(status = status, history = history), context.tenant)
           case None =>
             ZIO.unit
         }
       case A2AResponse.StreamEvent.TaskArtifactUpdate(taskId, _, artifact, append, _, _) =>
-        taskStore.load(taskId, context).flatMap {
+        taskStore.load(taskId, context.tenant).flatMap {
           case Some(task) =>
             val existingIndex = task.artifacts.indexWhere(_.artifactId == artifact.artifactId)
             val artifacts =
@@ -322,14 +354,14 @@ private final class ResultManager(
                   task.artifacts(existingIndex).copy(parts = task.artifacts(existingIndex).parts ++ artifact.parts),
                 )
               else task.artifacts.updated(existingIndex, artifact)
-            taskStore.save(task.copy(artifacts = artifacts), context)
+            taskStore.save(task.copy(artifacts = artifacts), context.tenant)
           case None =>
             ZIO.unit
         }
       case A2AResponse.StreamEvent.TaskMessage(taskId, _, message) =>
-        taskStore.load(taskId, context).flatMap {
+        taskStore.load(taskId, context.tenant).flatMap {
           case Some(task) if !task.history.exists(_.messageId == message.messageId) =>
-            taskStore.save(task.copy(history = task.history :+ message), context)
+            taskStore.save(task.copy(history = task.history :+ message), context.tenant)
           case _ =>
             ZIO.unit
         }
@@ -342,7 +374,7 @@ end ResultManager
 private final class A2ARequestHandler(
   config: A2AServer.Config,
   runtime: Runtime[Any],
-  taskStore: InMemoryTaskStore,
+  taskStore: A2ATaskStore,
   pushStore: A2APushNotificationStore,
   buses: mutable.Map[TaskRuntimeKey, A2AEventBus],
   activeRuns: mutable.Map[TaskRuntimeKey, Fiber.Runtime[Throwable, Unit]]):
@@ -379,16 +411,16 @@ private final class A2ARequestHandler(
     }
 
   def getTask(params: A2ARequest.TasksGet, context: ServerCallContext): Task[A2ATask] =
-    taskStore.load(params.id, context).flatMap {
+    taskStore.load(params.id, context.tenant).flatMap {
       case Some(task) => ZIO.succeed(applyHistoryLength(task, params.historyLength))
       case None       => ZIO.fail(A2AError.taskNotFound(params.id))
     }
 
   def listTasks(params: A2ARequest.TasksList, context: ServerCallContext): Task[A2AResponse.ListTasksResult] =
-    taskStore.list(params, context)
+    taskStore.list(params, context.tenant)
 
   def cancelTask(params: A2ARequest.TasksCancel, context: ServerCallContext): Task[A2ATask] =
-    taskStore.load(params.id, context).flatMap {
+    taskStore.load(params.id, context.tenant).flatMap {
       case Some(task) if task.isTerminal =>
         ZIO.fail(A2AError.taskNotCancelable(params.id))
       case Some(task) =>
@@ -411,13 +443,13 @@ private final class A2ARequestHandler(
           buses.get(key) match
             case Some(bus) => bus.publish(event) *> bus.finish
             case None      => ZIO.unit
-        interruptActiveRun *> taskStore.save(canceled, context) *> closeBus *> pushSender.send(event, context).as(canceled)
+        interruptActiveRun *> taskStore.save(canceled, context.tenant) *> closeBus *> pushSender.send(event, context).as(canceled)
       case None =>
         ZIO.fail(A2AError.taskNotFound(params.id))
     }
 
   def resubscribe(params: A2ARequest.TasksResubscribe, context: ServerCallContext): Task[ZStream[Any, Throwable, A2AResponse.StreamEvent]] =
-    requireStreaming *> taskStore.load(params.id, context).flatMap {
+    requireStreaming *> taskStore.load(params.id, context.tenant).flatMap {
       case Some(task) if task.isTerminal =>
         ZIO.fail(A2AError.unsupportedOperation(s"Task ${params.id.value} is terminal"))
       case Some(task) =>
@@ -463,7 +495,7 @@ private final class A2ARequestHandler(
     val incoming = params.message
     val taskId   = incoming.taskId.getOrElse(TaskId.generate)
     for
-      existing <- taskStore.load(taskId, context)
+      existing <- taskStore.load(taskId, context.tenant)
       _        <- existing match
         case Some(task) if task.isTerminal =>
           ZIO.fail(A2AError.unsupportedOperation(s"Task ${task.id.value} is terminal and cannot be modified"))
@@ -477,7 +509,7 @@ private final class A2ARequestHandler(
         .map(task => task.copy(status = TaskStatus.working(), history = task.history :+ message))
         .getOrElse(A2ATask(id = taskId, contextId = contextId, status = TaskStatus.working(), history = List(message)))
       bus = buses.getOrElseUpdate(taskRuntimeKey(taskId, context), A2AEventBus())
-      _  <- taskStore.save(task, context)
+      _  <- taskStore.save(task, context.tenant)
     yield PreparedRun(message, task, bus)
 
   private def startExecution(prepared: PreparedRun, context: ServerCallContext): UIO[Unit] =
@@ -598,7 +630,7 @@ private final class A2ARequestHandler(
     stream
       .filter(_.isFinal)
       .runHead
-      .flatMap(_ => taskStore.load(taskId, context).someOrFail(A2AError.taskNotFound(taskId)))
+      .flatMap(_ => taskStore.load(taskId, context.tenant).someOrFail(A2AError.taskNotFound(taskId)))
 
   private def applyHistoryLength(task: A2ATask, historyLength: Option[Int]): A2ATask =
     historyLength match
@@ -626,7 +658,7 @@ private final class A2ARequestHandler(
     ZIO.fail(A2AError.unsupportedOperation("Streaming not supported")).unless(agentCard.capabilities.streaming).unit
 
   private def ensureTask(taskId: TaskId, context: ServerCallContext): Task[Unit] =
-    taskStore.load(taskId, context).flatMap {
+    taskStore.load(taskId, context.tenant).flatMap {
       case Some(_) => ZIO.unit
       case None    => ZIO.fail(A2AError.taskNotFound(taskId))
     }
@@ -638,7 +670,7 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
   private var bunServer: js.Dynamic = null
   private val activeRuns            = mutable.Map.empty[TaskRuntimeKey, Fiber.Runtime[Throwable, Unit]]
   private val buses                 = mutable.Map.empty[TaskRuntimeKey, A2AEventBus]
-  private val taskStore             = InMemoryTaskStore()
+  private val taskStore             = config.taskStore.getOrElse(A2ATaskStore.inMemory)
   private val pushStore             = config.pushNotificationStore.getOrElse(A2APushNotificationStore.inMemory)
   private val requestHandler        = A2ARequestHandler(config, runtime, taskStore, pushStore, buses, activeRuns)
 
