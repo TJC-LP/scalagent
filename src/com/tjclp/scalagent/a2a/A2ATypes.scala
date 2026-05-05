@@ -31,6 +31,8 @@ object TaskId:
 
   given JsonEncoder[TaskId] = OpaqueStringJsonCodec.encoder(_.value)
   given JsonDecoder[TaskId] = OpaqueStringJsonCodec.decoder(apply)
+  // Same-type equality for callers compiled with `-language:strictEquality`.
+  given CanEqual[TaskId, TaskId] = CanEqual.derived
 
 /** Unique identifier for an A2A message */
 opaque type MessageId = String
@@ -45,6 +47,7 @@ object MessageId:
 
   given JsonEncoder[MessageId] = OpaqueStringJsonCodec.encoder(_.value)
   given JsonDecoder[MessageId] = OpaqueStringJsonCodec.decoder(apply)
+  given CanEqual[MessageId, MessageId] = CanEqual.derived
 
 /** Unique identifier for a conversation context */
 opaque type ContextId = String
@@ -59,6 +62,7 @@ object ContextId:
 
   given JsonEncoder[ContextId] = OpaqueStringJsonCodec.encoder(_.value)
   given JsonDecoder[ContextId] = OpaqueStringJsonCodec.decoder(apply)
+  given CanEqual[ContextId, ContextId] = CanEqual.derived
 
 /** A2A protocol version */
 object A2AProtocol:

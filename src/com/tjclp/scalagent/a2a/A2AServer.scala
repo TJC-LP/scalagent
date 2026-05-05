@@ -176,7 +176,12 @@ object A2ATaskStore:
   /** Default in-process store; non-persistent. */
   def inMemory: A2ATaskStore = new InMemoryTaskStoreImpl
 
-  private[a2a] def applyHistoryLength(task: A2ATask, historyLength: Option[Int]): A2ATask =
+  /**
+   * Truncate `task.history` to the requested length (matches the A2A
+   * `historyLength` semantic). Public so durable [[A2ATaskStore]] impls
+   * can stay byte-identical with the in-memory default's projection.
+   */
+  def applyHistoryLength(task: A2ATask, historyLength: Option[Int]): A2ATask =
     historyLength match
       case Some(length) if length <= 0 => task.copy(history = Nil)
       case Some(length)               => task.copy(history = task.history.takeRight(length))

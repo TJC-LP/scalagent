@@ -92,7 +92,7 @@ object TaskStatus:
 end TaskStatus
 
 /** Task state enumeration (A2A spec) */
-enum TaskState:
+enum TaskState derives CanEqual:
   case Submitted
   case Working
   case InputRequired
