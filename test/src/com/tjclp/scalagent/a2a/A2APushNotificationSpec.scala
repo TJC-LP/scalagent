@@ -9,6 +9,7 @@ import scala.scalajs.js.annotation.*
 import scala.util.Random
 import zio.*
 import zio.json.*
+import zio.json.ast.Json
 
 class A2APushNotificationSpec extends FunSuite:
   private val runtime = Runtime.default
@@ -53,6 +54,26 @@ class A2APushNotificationSpec extends FunSuite:
       )
     }
 
+  private def postJsonRpc(url: String, request: JsonRpcRequest): Task[JsonRpcResponse] =
+    ZIO
+      .fromPromiseJS {
+        js.Dynamic.global
+          .fetch(
+            url,
+            js.Dynamic.literal(
+              method = "POST",
+              headers = js.Dynamic.literal(
+                `Content-Type` = A2AContentType.Json,
+                `A2A-Version` = A2AProtocol.Version,
+              ),
+              body = request.toJson,
+            ),
+          )
+          .asInstanceOf[js.Promise[js.Dynamic]]
+      }
+      .flatMap(response => ZIO.fromPromiseJS(response.text().asInstanceOf[js.Promise[String]]))
+      .flatMap(body => ZIO.fromEither(body.fromJson[JsonRpcResponse].left.map(new RuntimeException(_))))
+
   private def completeImmediately(
     message: A2AMessage,
     taskId: TaskId,
@@ -86,6 +107,7 @@ class A2APushNotificationSpec extends FunSuite:
       port = serverPort,
       capabilities = AgentCapabilities.default.copy(pushNotifications = true),
       executionOverride = Some(completeImmediately),
+      pushNotificationUrlPolicy = PushNotificationUrlPolicy.allowAll,
     )
 
     val program =
@@ -125,6 +147,46 @@ class A2APushNotificationSpec extends FunSuite:
       })
     }
 
+  test("inline push notifications reject localhost URLs by default"):
+    val port = 49500 + Random.nextInt(1000)
+    val config = A2AServer.Config(
+      name = "PushSsrfTest",
+      description = "Push SSRF test server",
+      host = "127.0.0.1",
+      port = port,
+      capabilities = AgentCapabilities.default.copy(pushNotifications = true),
+      executionOverride = Some(completeImmediately),
+    )
+
+    val program =
+      ZIO.scoped {
+        for
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          result <- client
+            .send(
+              A2AMessage.userText("do not notify"),
+              Some(
+                MessageSendConfiguration(
+                  taskPushNotificationConfig = Some(TaskPushNotificationConfig(url = "http://127.0.0.1:6379"))
+                )
+              ),
+            )
+            .either
+          listed <- client.listTasks()
+        yield (result, listed)
+      }
+
+    runTask(program).map { case (result, listed) =>
+      assert(result.left.exists {
+        case error: A2AError =>
+          error.code == A2AErrorCode.InvalidParams && error.message.contains("not allowed")
+        case _ =>
+          false
+      })
+      assertEquals(listed.tasks, Nil)
+    }
+
   test("out-of-band push config create/get/list/delete uses v1 client names"):
     val port = 47500 + Random.nextInt(1000)
     val config = A2AServer.Config(
@@ -145,15 +207,23 @@ class A2APushNotificationSpec extends FunSuite:
           created <- client.createTaskPushNotificationConfig(task.id, TaskPushNotificationConfig(url = "http://callback.test", id = Some("cfg-1")))
           fetched <- client.getTaskPushNotificationConfig(task.id, "cfg-1")
           listed  <- client.listTaskPushNotificationConfigs(task.id)
-          _       <- client.deleteTaskPushNotificationConfig(task.id, "cfg-1")
-          after   <- client.listTaskPushNotificationConfigs(task.id)
-        yield (created, fetched, listed, after)
+          deleted <- postJsonRpc(
+            server.url,
+            JsonRpcRequest(
+              method = A2AMethod.PushNotificationConfigDelete,
+              params = A2ARequest.PushNotificationConfigDelete(task.id, "cfg-1").toJsonAST.toOption,
+              id = Some(JsonRpcId.Num(99)),
+            ),
+          )
+          after <- client.listTaskPushNotificationConfigs(task.id)
+        yield (created, fetched, listed, deleted, after)
       }
 
-    runTask(program).map { case (created, fetched, listed, after) =>
+    runTask(program).map { case (created, fetched, listed, deleted, after) =>
       assertEquals(created.id, Some("cfg-1"))
       assertEquals(fetched, created)
       assertEquals(listed, List(created))
+      assertEquals(deleted.result, Some(Json.Obj()))
       assertEquals(after, Nil)
     }
 

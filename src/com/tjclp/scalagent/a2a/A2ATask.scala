@@ -40,8 +40,56 @@ final case class A2ATask(
   def finalMessage: Option[A2AMessage] = status.message
 
 object A2ATask:
-  given JsonEncoder[A2ATask] = DeriveJsonEncoder.gen[A2ATask]
-  given JsonDecoder[A2ATask] = DeriveJsonDecoder.gen[A2ATask]
+  given JsonEncoder[A2ATask] = JsonEncoder[Json].contramap { task =>
+    var obj = Json.Obj(
+      "id"        -> Json.Str(task.id.value),
+      "contextId" -> Json.Str(task.contextId.value),
+      "status"    -> task.status.toJsonAST.toOption.get,
+    )
+    if task.artifacts.nonEmpty then obj = obj.add("artifacts", Json.Arr(task.artifacts.map(_.toJsonAST.toOption.get)*))
+    if task.history.nonEmpty then obj = obj.add("history", Json.Arr(task.history.map(_.toJsonAST.toOption.get)*))
+    task.metadata.foreach(metadata => obj = obj.add("metadata", metadata))
+    obj
+  }
+
+  given JsonDecoder[A2ATask] = JsonDecoder[Json].mapOrFail { json =>
+    json.asObject.toRight("Task must be an object").flatMap { obj =>
+      val fields = obj.toMap
+      def decodeList[A: JsonDecoder](field: String): Either[String, List[A]] =
+        fields
+          .get(field)
+          .flatMap(_.asArray)
+          .map(values =>
+            values.toList.map(_.as[A]).foldRight[Either[String, List[A]]](Right(Nil)) {
+              case (Right(value), Right(values)) => Right(value :: values)
+              case (Left(error), _)              => Left(error)
+              case (_, Left(error))              => Left(error)
+            }
+          )
+          .getOrElse(Right(Nil))
+
+      for
+        id <- fields.get("id").flatMap(_.asString).filter(_.nonEmpty).map(TaskId(_)).toRight("Missing id")
+        contextId <- fields
+          .get("contextId")
+          .orElse(fields.get("context_id"))
+          .flatMap(_.asString)
+          .filter(_.nonEmpty)
+          .map(ContextId(_))
+          .fold[Either[String, ContextId]](Right(ContextId(id.value)))(Right(_))
+        status    <- fields.get("status").toRight("Missing status").flatMap(_.as[TaskStatus])
+        artifacts <- decodeList[Artifact]("artifacts")
+        history   <- decodeList[A2AMessage]("history")
+      yield A2ATask(
+        id = id,
+        contextId = contextId,
+        status = status,
+        artifacts = artifacts,
+        history = history,
+        metadata = fields.get("metadata"),
+      )
+    }
+  }
 
   /** Create a new task in submitted state */
   def submitted(contextId: ContextId = ContextId.generate): A2ATask =

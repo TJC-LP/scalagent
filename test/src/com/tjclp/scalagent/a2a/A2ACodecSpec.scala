@@ -85,6 +85,15 @@ class A2ACodecSpec extends FunSuite:
     roundTrip(task)
     assert(task.toJson.contains("TASK_STATE_COMPLETED"))
 
+  test("task decoder accepts omitted optional context and repeated fields"):
+    val decoded =
+      """{
+        |  "id": "task-no-context",
+        |  "status": {"state": "TASK_STATE_WORKING"}
+        |}""".stripMargin.fromJson[A2ATask]
+
+    assertEquals(decoded.map(task => (task.contextId, task.artifacts, task.history)), Right((ContextId("task-no-context"), Nil, Nil)))
+
   test("request and response model groups round-trip"):
     roundTrip(A2ARequest.MessageSend(message, Some(MessageSendConfiguration(taskPushNotificationConfig = Some(pushConfig), historyLength = Some(1)))))
     roundTrip(A2ARequest.TasksGet(taskId, historyLength = Some(1), tenant = Some("tenant-codec")))
@@ -105,6 +114,49 @@ class A2ACodecSpec extends FunSuite:
     )
     roundTrip[A2AResponse.StreamResponse](A2AResponse.StreamEvent.TaskArtifactUpdate(taskId, contextId, artifact, append = true, lastChunk = false))
     roundTrip[A2AResponse.StreamResponse](A2AResponse.StreamEvent.TaskMessage(taskId, contextId, message))
+
+  test("task message stream encoding preserves wrapper task and context ids"):
+    val event = A2AResponse.StreamEvent.TaskMessage(taskId, contextId, message.copy(taskId = None, contextId = None))
+    val json  = event.toJson
+
+    assert(json.contains(""""taskId":"task-codec""""))
+    assert(json.contains(""""contextId":"ctx-codec""""))
+    assertEquals(json.fromJson[A2AResponse.StreamEvent].map(_.taskId), Right(taskId))
+
+  test("v1 artifact updates default omitted lastChunk to false"):
+    val decoded =
+      """{
+        |  "artifactUpdate": {
+        |    "taskId": "task-codec",
+        |    "contextId": "ctx-codec",
+        |    "artifact": {
+        |      "artifactId": "artifact-codec",
+        |      "parts": [{"text": "chunk"}]
+        |    }
+        |  }
+        |}""".stripMargin.fromJson[A2AResponse.StreamEvent]
+
+    assert(decoded.exists {
+      case A2AResponse.StreamEvent.TaskArtifactUpdate(_, _, _, _, lastChunk, _) => !lastChunk
+      case _                                                                   => false
+    })
+
+  test("legacy artifact updates preserve omitted lastChunk as final"):
+    val decoded =
+      """{
+        |  "kind": "artifact",
+        |  "taskId": "task-codec",
+        |  "contextId": "ctx-codec",
+        |  "artifact": {
+        |    "artifactId": "artifact-codec",
+        |    "parts": [{"text": "chunk"}]
+        |  }
+        |}""".stripMargin.fromJson[A2AResponse.StreamEvent]
+
+    assert(decoded.exists {
+      case A2AResponse.StreamEvent.TaskArtifactUpdate(_, _, _, _, lastChunk, _) => lastChunk
+      case _                                                                   => false
+    })
 
   test("snake_case aliases decode for interop"):
     val decoded =

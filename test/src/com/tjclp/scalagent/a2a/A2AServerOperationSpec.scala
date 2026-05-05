@@ -108,6 +108,45 @@ class A2AServerOperationSpec extends FunSuite:
       assertEquals(finalTask.status.state, TaskState.Completed)
     }
 
+  test("send message applies historyLength to immediate and blocking responses"):
+    val port = 55500 + Random.nextInt(1000)
+    val config = A2AServer.Config(
+      name = "HistoryProjectionTest",
+      description = "History projection test server",
+      host = "127.0.0.1",
+      port = port,
+      executionOverride = Some(completedExecution),
+    )
+
+    val program =
+      ZIO.scoped {
+        for
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          zero <- client.send(
+            A2AMessage.userText("blocking zero"),
+            Some(MessageSendConfiguration(historyLength = Some(0))),
+          )
+          one <- client.send(
+            A2AMessage.userText("blocking one"),
+            Some(MessageSendConfiguration(historyLength = Some(1))),
+          )
+          immediate <- client.submit(
+            A2AMessage.userText("immediate zero"),
+            Some(MessageSendConfiguration(historyLength = Some(0))),
+          )
+          full <- client.awaitTask(immediate.id, pollEvery = 10.millis, timeout = Some(2.seconds))
+        yield (zero, one, immediate, full)
+      }
+
+    runTask(program).map { case (zero, one, immediate, full) =>
+      assertEquals(zero.history, Nil)
+      assertEquals(one.history.length, 1)
+      assertEquals(one.history.head.role, A2ARole.Agent)
+      assertEquals(immediate.history, Nil)
+      assert(full.history.nonEmpty)
+    }
+
   test("cancel interrupts an active task and persists canceled state"):
     val port = 51500 + Random.nextInt(1000)
     val neverComplete =
@@ -147,6 +186,112 @@ class A2AServerOperationSpec extends FunSuite:
         case A2AResponse.StreamEvent.TaskStatusUpdate(_, _, status, _, _) => status.state == TaskState.Canceled
         case _                                                           => false
       })
+    }
+
+  test("cancel awaits uninterruptible execution and prevents late completion from winning"):
+    val port = 56500 + Random.nextInt(1000)
+
+    val program =
+      ZIO.scoped {
+        for
+          started <- Promise.make[Nothing, Unit]
+          runOverride =
+            (message: A2AMessage, taskId: TaskId, contextId: ContextId, publisher: A2AEventPublisher) =>
+              started.succeed(()).unit *>
+                ZIO.uninterruptible(ZIO.sleep(100.millis) *> completedExecution(message, taskId, contextId, publisher))
+          config = A2AServer.Config(
+            name = "CancelLateCompletionTest",
+            description = "Cancel late completion test server",
+            host = "127.0.0.1",
+            port = port,
+            executionOverride = Some(runOverride),
+          )
+          server   <- A2AServer.create(config)
+          client   <- A2AClient.discover(server.url)
+          task     <- client.submit(A2AMessage.userText("cancel during finalization"))
+          _        <- started.await
+          canceled <- client.cancelTask(task.id)
+          loaded   <- client.getTask(task.id)
+        yield (canceled, loaded)
+      }
+
+    runTask(program).map { case (canceled, loaded) =>
+      assertEquals(canceled.status.state, TaskState.Canceled)
+      assertEquals(loaded.status.state, TaskState.Canceled)
+    }
+
+  test("concurrent sends with the same task id reject the duplicate active run"):
+    val port     = 57500 + Random.nextInt(1000)
+    val sharedId = TaskId("duplicate-active-run")
+    val neverComplete =
+      (_: A2AMessage, _: TaskId, _: ContextId, _: A2AEventPublisher) => ZIO.never
+    val config = A2AServer.Config(
+      name = "DuplicateActiveRunTest",
+      description = "Duplicate active run test server",
+      host = "127.0.0.1",
+      port = port,
+      executionOverride = Some(neverComplete),
+    )
+
+    val program =
+      ZIO.scoped {
+        for
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          _      <- client.submit(A2AMessage.userText("first").copy(taskId = Some(sharedId)))
+          second <- client.submit(A2AMessage.userText("second").copy(taskId = Some(sharedId))).either
+          _      <- client.cancelTask(sharedId).either
+        yield second
+      }
+
+    runTask(program).map { second =>
+      assert(second.left.exists {
+        case error: A2AError => error.code == A2AErrorCode.UnsupportedOperation
+        case _               => false
+      })
+    }
+
+  test("event bus replay is capped to the configured limit"):
+    val port = 58500 + Random.nextInt(1000)
+
+    val program =
+      ZIO.scoped {
+        for
+          published <- Promise.make[Nothing, Unit]
+          runOverride =
+            (_: A2AMessage, taskId: TaskId, contextId: ContextId, publisher: A2AEventPublisher) =>
+              def update(text: String) =
+                val msg = A2AMessage.agentText(text, Some(contextId)).copy(taskId = Some(taskId))
+                A2AResponse.StreamEvent.TaskStatusUpdate(taskId, contextId, TaskStatus.working(Some(msg)))
+              publisher.publish(update("one")) *>
+                publisher.publish(update("two")) *>
+                publisher.publish(update("three")) *>
+                published.succeed(()).unit *>
+                ZIO.never
+          config = A2AServer.Config(
+            name = "ReplayLimitTest",
+            description = "Replay limit test server",
+            host = "127.0.0.1",
+            port = port,
+            capabilities = AgentCapabilities.default.copy(streaming = true),
+            executionOverride = Some(runOverride),
+            eventReplayLimit = 2,
+          )
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          task   <- client.submit(A2AMessage.userText("replay"))
+          _      <- published.await
+          events <- client.resubscribe(task.id).take(3).runCollect
+          _      <- client.cancelTask(task.id).either
+        yield events.toList
+      }
+
+    runTask(program).map { events =>
+      assert(events.headOption.exists(_.isInstanceOf[A2AResponse.StreamEvent.TaskSnapshot]))
+      val replayed = events.collect {
+        case A2AResponse.StreamEvent.TaskStatusUpdate(_, _, status, _, _) => status.message.map(_.text).getOrElse("")
+      }
+      assertEquals(replayed, List("two", "three"))
     }
 
   test("resubscribe starts with a task snapshot and rejects terminal tasks"):

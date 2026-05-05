@@ -40,8 +40,42 @@ object A2AResponse:
     pageSize: Int = 0,
     totalSize: Int = 0)
   object ListTasksResult:
-    given JsonEncoder[ListTasksResult] = DeriveJsonEncoder.gen[ListTasksResult]
-    given JsonDecoder[ListTasksResult] = DeriveJsonDecoder.gen[ListTasksResult]
+    given JsonEncoder[ListTasksResult] = JsonEncoder[Json].contramap { result =>
+      Json.Obj(
+        "tasks"         -> Json.Arr(result.tasks.map(_.toJsonAST.toOption.get)*),
+        "nextPageToken" -> Json.Str(result.nextPageToken.getOrElse("")),
+        "pageSize"      -> Json.Num(java.math.BigDecimal.valueOf(result.pageSize.toLong)),
+        "totalSize"     -> Json.Num(java.math.BigDecimal.valueOf(result.totalSize.toLong)),
+      )
+    }
+
+    given JsonDecoder[ListTasksResult] = JsonDecoder[Json].mapOrFail { json =>
+      json.asObject.toRight("ListTasksResult must be an object").flatMap { obj =>
+        val fields = obj.toMap
+        for
+          tasks <- fields
+            .get("tasks")
+            .flatMap(_.asArray)
+            .map(values =>
+              values.toList.map(_.as[A2ATask]).foldRight[Either[String, List[A2ATask]]](Right(Nil)) {
+                case (Right(task), Right(tasks)) => Right(task :: tasks)
+                case (Left(error), _)            => Left(error)
+                case (_, Left(error))            => Left(error)
+              }
+            )
+            .getOrElse(Right(Nil))
+        yield ListTasksResult(
+          tasks = tasks,
+          nextPageToken = fields
+            .get("nextPageToken")
+            .orElse(fields.get("next_page_token"))
+            .flatMap(_.asString)
+            .filter(_.nonEmpty),
+          pageSize = fields.get("pageSize").orElse(fields.get("page_size")).flatMap(_.asNumber).map(_.value.intValue).getOrElse(0),
+          totalSize = fields.get("totalSize").orElse(fields.get("total_size")).flatMap(_.asNumber).map(_.value.intValue).getOrElse(0),
+        )
+      }
+    }
   type ListTasksResponse = ListTasksResult
 
   /** Result for ListTaskPushNotificationConfigs. */
@@ -49,8 +83,38 @@ object A2AResponse:
     configs: List[TaskPushNotificationConfig],
     nextPageToken: Option[String] = None)
   object PushNotificationConfigListResult:
-    given JsonEncoder[PushNotificationConfigListResult] = DeriveJsonEncoder.gen[PushNotificationConfigListResult]
-    given JsonDecoder[PushNotificationConfigListResult] = DeriveJsonDecoder.gen[PushNotificationConfigListResult]
+    given JsonEncoder[PushNotificationConfigListResult] = JsonEncoder[Json].contramap { result =>
+      Json.Obj(
+        "configs"       -> Json.Arr(result.configs.map(_.toJsonAST.toOption.get)*),
+        "nextPageToken" -> Json.Str(result.nextPageToken.getOrElse("")),
+      )
+    }
+
+    given JsonDecoder[PushNotificationConfigListResult] = JsonDecoder[Json].mapOrFail { json =>
+      json.asObject.toRight("PushNotificationConfigListResult must be an object").flatMap { obj =>
+        val fields = obj.toMap
+        for
+          configs <- fields
+            .get("configs")
+            .flatMap(_.asArray)
+            .map(values =>
+              values.toList.map(_.as[TaskPushNotificationConfig]).foldRight[Either[String, List[TaskPushNotificationConfig]]](Right(Nil)) {
+                case (Right(config), Right(configs)) => Right(config :: configs)
+                case (Left(error), _)                => Left(error)
+                case (_, Left(error))                => Left(error)
+              }
+            )
+            .getOrElse(Right(Nil))
+        yield PushNotificationConfigListResult(
+          configs = configs,
+          nextPageToken = fields
+            .get("nextPageToken")
+            .orElse(fields.get("next_page_token"))
+            .flatMap(_.asString)
+            .filter(_.nonEmpty),
+        )
+      }
+    }
   type ListTaskPushNotificationConfigsResponse = PushNotificationConfigListResult
 
   /** Stream event for SendStreamingMessage and SubscribeToTask. */
@@ -119,8 +183,12 @@ object A2AResponse:
         )
         metadata.foreach(value => update = update.add("metadata", value))
         Json.Obj("artifactUpdate" -> update)
-      case TaskMessage(_, _, message) =>
-        Json.Obj("message" -> message.toJsonAST.toOption.get)
+      case TaskMessage(id, contextId, message) =>
+        val messageWithIds = message.copy(
+          taskId = message.taskId.orElse(Some(id)),
+          contextId = message.contextId.orElse(Some(contextId)),
+        )
+        Json.Obj("message" -> messageWithIds.toJsonAST.toOption.get)
     }
 
     given JsonDecoder[StreamEvent] = JsonDecoder[Json].mapOrFail { json =>
@@ -140,7 +208,7 @@ object A2AResponse:
                   decodeStatusUpdate(updateJson)
                 case None =>
                   fields.get("artifactUpdate").orElse(fields.get("artifact_update")) match
-                    case Some(updateJson) => decodeArtifactUpdate(updateJson)
+                    case Some(updateJson) => decodeArtifactUpdate(updateJson, legacyDefaultLastChunk = false)
                     case None             => decodeLegacy(json, fields)
     }
 
@@ -159,7 +227,7 @@ object A2AResponse:
         metadata = fields.get("metadata")
       yield TaskStatusUpdate(taskId, contextId, status, isFinal, metadata)
 
-    private def decodeArtifactUpdate(json: Json): Either[String, StreamEvent] =
+    private def decodeArtifactUpdate(json: Json, legacyDefaultLastChunk: Boolean): Either[String, StreamEvent] =
       val fields = json.asObject.map(_.toMap).getOrElse(Map.empty)
       for
         taskId       <- fields.get("taskId").orElse(fields.get("task_id")).flatMap(_.asString).map(TaskId(_)).toRight("Missing taskId")
@@ -172,7 +240,7 @@ object A2AResponse:
           .flatMap(_.asBoolean)
           .orElse(nestedBooleanField(artifactJson, "lastChunk"))
           .orElse(nestedBooleanField(artifactJson, "last_chunk"))
-          .getOrElse(true)
+          .getOrElse(legacyDefaultLastChunk)
         contextId = fields
           .get("contextId")
           .orElse(fields.get("context_id"))
@@ -191,7 +259,7 @@ object A2AResponse:
         case "status-update" | "status" =>
           decodeStatusUpdate(json)
         case "artifact-update" | "artifact" =>
-          decodeArtifactUpdate(json)
+          decodeArtifactUpdate(json, legacyDefaultLastChunk = true)
         case "message" =>
           for
             message <- fields.get("message").toRight("Missing message").flatMap(_.as[A2AMessage])
@@ -207,7 +275,8 @@ object A2AResponse:
               .map(ContextId(_))
               .getOrElse(A2AEventIds.contextIdFor(message))
           yield TaskMessage(id, contextId, message)
-    case other => Left(s"Unknown stream event kind: $other")
+        case other =>
+          Left(s"Unknown stream event kind: $other")
       }
   end StreamEvent
   type StreamResponse = StreamEvent

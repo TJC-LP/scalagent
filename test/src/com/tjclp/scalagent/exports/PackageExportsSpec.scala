@@ -67,6 +67,7 @@ class PackageExportsSpec extends FunSuite:
 
     assertEquals(card.supportedInterfaces.head.protocolVersion, A2AProtocol.Version)
     assertEquals(pushConfig.authentication.map(_.scheme), Some("Bearer"))
+    assert(PushNotificationUrlPolicy.externalOnly != null)
 
   test("A2A v0.3 compatibility entry points are available from package object"):
     val legacyClient = A2AClientV03

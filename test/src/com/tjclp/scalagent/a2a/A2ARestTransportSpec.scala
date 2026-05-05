@@ -215,4 +215,60 @@ class A2ARestTransportSpec extends FunSuite:
       assert(body.contains(""""status":"NOT_FOUND""""))
       assert(body.contains(""""details""""))
     }
+
+  test("REST rejects empty task ids and malformed push config ids"):
+    val port = 58500 + Random.nextInt(1000)
+    val config = A2AServer.Config(
+      name = "RestMalformedPathTest",
+      description = "REST malformed path test server",
+      host = "127.0.0.1",
+      port = port,
+      capabilities = AgentCapabilities.default.copy(pushNotifications = true),
+    )
+    val headers = Map(A2AHeader.Version -> A2AProtocol.Version)
+
+    val program =
+      ZIO.scoped {
+        for
+          server      <- A2AServer.create(config)
+          emptyTask   <- fetchText(server.url + "/tasks/", headers = headers)
+          emptyTenant <- fetchText(server.url + "/tenant-a/tasks/", headers = headers)
+          emptyConfig <- fetchText(server.url + "/tasks/task-1/pushNotificationConfigs/", headers = headers)
+        yield (emptyTask, emptyTenant, emptyConfig)
+      }
+
+    runTask(program).map { case ((taskStatus, _, taskBody), (tenantStatus, _, tenantBody), (configStatus, _, configBody)) =>
+      assertEquals(taskStatus, 400)
+      assert(taskBody.contains("Missing task ID"))
+      assertEquals(tenantStatus, 400)
+      assert(tenantBody.contains("Missing task ID"))
+      assertEquals(configStatus, 400)
+      assert(configBody.contains("Missing push notification config ID"))
+    }
+
+  test("REST list rejects invalid pagination tokens"):
+    val port = 59500 + Random.nextInt(1000)
+    val config = A2AServer.Config(
+      name = "RestPaginationTest",
+      description = "REST pagination test server",
+      host = "127.0.0.1",
+      port = port,
+    )
+
+    val program =
+      ZIO.scoped {
+        for
+          server <- A2AServer.create(config)
+          result <- fetchText(
+            server.url + "/tasks?pageToken=not-a-number",
+            headers = Map(A2AHeader.Version -> A2AProtocol.Version),
+          )
+        yield result
+      }
+
+    runTask(program).map { case (status, contentType, body) =>
+      assertEquals(status, 400)
+      assert(contentType.startsWith(A2AContentType.A2AJson))
+      assert(body.contains("Invalid pageToken"))
+    }
 end A2ARestTransportSpec

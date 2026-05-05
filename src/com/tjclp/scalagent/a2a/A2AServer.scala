@@ -87,6 +87,72 @@ object SessionLogger:
     catch case _: Throwable => ()
 end SessionLogger
 
+/** Validation policy for server-side push notification callback URLs. */
+trait PushNotificationUrlPolicy:
+  def validate(url: String): Task[Unit]
+
+object PushNotificationUrlPolicy:
+  val allowAll: PushNotificationUrlPolicy =
+    (_: String) => ZIO.unit
+
+  val externalOnly: PushNotificationUrlPolicy =
+    (url: String) =>
+      ZIO
+        .attempt {
+          val parsed   = js.Dynamic.newInstance(js.Dynamic.global.URL)(url)
+          val protocol = parsed.protocol.asInstanceOf[String].toLowerCase
+          val hostname = parsed.hostname.asInstanceOf[String].stripPrefix("[").stripSuffix("]").toLowerCase
+          if protocol != "http:" && protocol != "https:" then
+            Left("Push notification URL must use http or https")
+          else if isBlockedHost(hostname) then
+            Left(s"Push notification URL host is not allowed: $hostname")
+          else Right(())
+        }
+        .catchAll(_ => ZIO.succeed(Left("Push notification URL is invalid")))
+        .flatMap {
+          case Right(()) => ZIO.unit
+          case Left(msg) => ZIO.fail(A2AError.invalidParams(msg))
+        }
+
+  private def isBlockedHost(hostname: String): Boolean =
+    hostname.isEmpty ||
+      hostname == "localhost" ||
+      hostname.endsWith(".localhost") ||
+      isBlockedIpv4(hostname) ||
+      isBlockedIpv6(hostname)
+
+  private def isBlockedIpv4(hostname: String): Boolean =
+    val parts = hostname.split("\\.", -1).toList
+    val nums  = parts.flatMap(_.toIntOption)
+    parts.length == 4 && nums.length == 4 && parts.forall(_.forall(_.isDigit)) && parts.forall(_.nonEmpty) &&
+      nums.forall(value => value >= 0 && value <= 255) && {
+        val a :: b :: _ = nums: @unchecked
+        a == 0 ||
+        a == 10 ||
+        a == 127 ||
+        (a == 100 && b >= 64 && b <= 127) ||
+        (a == 169 && b == 254) ||
+        (a == 172 && b >= 16 && b <= 31) ||
+        (a == 192 && b == 168) ||
+        (a == 198 && (b == 18 || b == 19)) ||
+        a >= 224
+      }
+
+  private def isBlockedIpv6(hostname: String): Boolean =
+    val host = hostname.toLowerCase
+    host.contains(":") && {
+      host == "::" ||
+      host == "::1" ||
+      host == "0:0:0:0:0:0:0:0" ||
+      host == "0:0:0:0:0:0:0:1" ||
+      host.startsWith("fe80:") ||
+      host.startsWith("fc") ||
+      host.startsWith("fd") ||
+      host.startsWith("ff") ||
+      (host.startsWith("::ffff:") && isBlockedIpv4(host.stripPrefix("::ffff:")))
+    }
+end PushNotificationUrlPolicy
+
 object A2AServer:
 
   /** Server configuration. */
@@ -104,7 +170,10 @@ object A2AServer:
     invocationPreparer: Option[(A2AMessage, TaskId) => Task[InvocationContext]] = None,
     executionOverride: Option[(A2AMessage, TaskId, ContextId, A2AEventPublisher) => Task[Unit]] = None,
     pushNotificationStore: Option[A2APushNotificationStore] = None,
-    taskStore: Option[A2ATaskStore] = None):
+    taskStore: Option[A2ATaskStore] = None,
+    eventReplayLimit: Int = 1000,
+    maxRequestBodyBytes: Int = 1024 * 1024,
+    pushNotificationUrlPolicy: PushNotificationUrlPolicy = PushNotificationUrlPolicy.externalOnly):
     def url: String = s"http://$host:$port"
 
     def toAgentCard: AgentCard =
@@ -132,7 +201,11 @@ object A2AServer:
 
   /** Start server without scope management. */
   def start(config: Config, runtime: Runtime[Any]): Task[A2AServer] =
-    ZIO.attempt(A2AServerLive(config, runtime)).tap(_.start)
+    for
+      registry <- A2ARuntimeRegistry.make
+      server   <- ZIO.attempt(A2AServerLive(config, runtime, registry))
+      _        <- server.start
+    yield server
 
   /** Create a server layer. */
   def live(config: Config): ZLayer[Scope, Throwable, A2AServer] =
@@ -164,11 +237,15 @@ private def taskRuntimeKey(taskId: TaskId, context: ServerCallContext): TaskRunt
  * Eviction is the implementation's call: the protocol does not GC tasks
  * implicitly. Callers decide when (and whether) to drop entries via
  * [[delete]].
+ *
+ * Durable implementations that map task/config IDs into external storage keys
+ * must validate or escape those IDs before using them in backend-specific paths,
+ * SQL, keys, or document identifiers.
  */
 trait A2ATaskStore:
   def save(task: A2ATask, tenant: Option[String]): UIO[Unit]
   def load(taskId: TaskId, tenant: Option[String]): UIO[Option[A2ATask]]
-  def list(params: A2ARequest.TasksList, tenant: Option[String]): UIO[A2AResponse.ListTasksResult]
+  def list(params: A2ARequest.TasksList, tenant: Option[String]): Task[A2AResponse.ListTasksResult]
   def delete(taskId: TaskId, tenant: Option[String]): UIO[Unit]
 end A2ATaskStore
 
@@ -203,9 +280,9 @@ private final class InMemoryTaskStoreImpl extends A2ATaskStore:
   def delete(taskId: TaskId, tenant: Option[String]): UIO[Unit] =
     ZIO.succeed { tasks.remove(key(taskId, tenant)); () }
 
-  def list(params: A2ARequest.TasksList, tenant: Option[String]): UIO[A2AResponse.ListTasksResult] =
-    ZIO.succeed {
-      val pageSize = params.pageSize.getOrElse(50).max(1).min(100)
+  def list(params: A2ARequest.TasksList, tenant: Option[String]): Task[A2AResponse.ListTasksResult] =
+    validateListParams(params) *> ZIO.succeed {
+      val pageSize = params.pageSize.getOrElse(50)
       val all = tasks.collect {
         case ((t, _), task) if t == tenant.getOrElse("") => task
       }.toList
@@ -232,9 +309,24 @@ private final class InMemoryTaskStoreImpl extends A2ATaskStore:
         totalSize = filtered.length,
       )
     }
+
+  private def validateListParams(params: A2ARequest.TasksList): Task[Unit] =
+    params.pageSize match
+      case Some(size) if size < 1 || size > 100 =>
+        ZIO.fail(A2AError.invalidParams(s"pageSize must be between 1 and 100 inclusive, got $size"))
+      case _ =>
+        params.historyLength match
+          case Some(length) if length < 0 =>
+            ZIO.fail(A2AError.invalidParams(s"historyLength must be non-negative integer, got $length"))
+          case _ =>
+            params.pageToken match
+              case Some(token) if token.nonEmpty && token.toIntOption.isEmpty =>
+                ZIO.fail(A2AError.invalidParams("Invalid pageToken"))
+              case _ =>
+                ZIO.unit
 end InMemoryTaskStoreImpl
 
-private final class A2AEventBus:
+private final class A2AEventBus(replayLimit: Int):
   private val subscribers = mutable.Set.empty[Queue[Take[Throwable, A2AResponse.StreamEvent]]]
   private var history     = Vector.empty[A2AResponse.StreamEvent]
   private var closed      = false
@@ -242,7 +334,9 @@ private final class A2AEventBus:
   def publish(event: A2AResponse.StreamEvent): UIO[Unit] =
     if closed then ZIO.unit
     else
-      history = history :+ event
+      history =
+        if replayLimit <= 0 then Vector.empty
+        else (history :+ event).takeRight(replayLimit)
       ZIO.foreachDiscard(subscribers.toList)(_.offer(Take.single(event))).unit
 
   def finish: UIO[Unit] =
@@ -270,7 +364,59 @@ private final class A2AEventBus:
     }
 end A2AEventBus
 
-private final class PushNotificationSender(store: A2APushNotificationStore):
+private final case class A2ARuntimeEntry(
+  bus: A2AEventBus,
+  fiber: Option[Fiber.Runtime[Throwable, Unit]] = None,
+  canceled: Boolean = false)
+
+private final class A2ARuntimeRegistry private (
+  ref: Ref.Synchronized[Map[TaskRuntimeKey, A2ARuntimeEntry]]):
+
+  def reserve(key: TaskRuntimeKey, replayLimit: Int): UIO[Option[A2AEventBus]] =
+    ref.modify { entries =>
+      entries.get(key) match
+        case Some(_) =>
+          None -> entries
+        case None =>
+          val bus = A2AEventBus(replayLimit)
+          Some(bus) -> entries.updated(key, A2ARuntimeEntry(bus))
+    }
+
+  def attachFiber(key: TaskRuntimeKey, fiber: Fiber.Runtime[Throwable, Unit]): UIO[Unit] =
+    ref.update(entries => entries.updatedWith(key)(_.map(_.copy(fiber = Some(fiber))))).unit
+
+  def markCanceled(key: TaskRuntimeKey): UIO[Option[(A2AEventBus, Option[Fiber.Runtime[Throwable, Unit]])]] =
+    ref.modify { entries =>
+      entries.get(key) match
+        case Some(entry) =>
+          Some((entry.bus, entry.fiber)) -> entries.updated(key, entry.copy(canceled = true))
+        case None =>
+          None -> entries
+    }
+
+  def isCanceled(key: TaskRuntimeKey): UIO[Boolean] =
+    ref.get.map(_.get(key).exists(_.canceled))
+
+  def bus(key: TaskRuntimeKey): UIO[Option[A2AEventBus]] =
+    ref.get.map(_.get(key).map(_.bus))
+
+  def remove(key: TaskRuntimeKey): UIO[Unit] =
+    ref.update(_ - key).unit
+
+  def interruptAll: UIO[Unit] =
+    for
+      entries <- ref.getAndSet(Map.empty)
+      _       <- ZIO.foreachDiscard(entries.values.flatMap(_.fiber).toList)(_.interrupt).ignore
+    yield ()
+end A2ARuntimeRegistry
+
+private object A2ARuntimeRegistry:
+  def make: UIO[A2ARuntimeRegistry] =
+    Ref.Synchronized.make(Map.empty[TaskRuntimeKey, A2ARuntimeEntry]).map(A2ARuntimeRegistry(_))
+
+private final class PushNotificationSender(
+  store: A2APushNotificationStore,
+  urlPolicy: PushNotificationUrlPolicy):
   private val deliveryChains = mutable.Map.empty[(String, String), Promise[Nothing, Unit]]
 
   def send(event: A2AResponse.StreamEvent, context: ServerCallContext): UIO[Unit] =
@@ -297,38 +443,43 @@ private final class PushNotificationSender(store: A2APushNotificationStore):
       .flatMap(configs => ZIO.foreachDiscard(configs)(sendOne(event, _)))
 
   private def sendOne(event: A2AResponse.StreamEvent, config: TaskPushNotificationConfig): Task[Unit] =
-    ZIO.fromPromiseJS {
-      val headers = js.Dynamic.literal(`Content-Type` = A2AContentType.A2AJson)
-      config.authentication match
-        case Some(auth) if auth.scheme.nonEmpty && auth.credentials.nonEmpty =>
-          headers.updateDynamic("Authorization")(s"${auth.scheme} ${auth.credentials}")
-        case _ =>
-          config.token.foreach(token => headers.updateDynamic("X-A2A-Notification-Token")(token))
-      val init = js.Dynamic.literal(
-        method = "POST",
-        headers = headers,
-        body = event.toJson,
-      )
-      js.Dynamic.global.fetch(config.url, init).asInstanceOf[js.Promise[js.Dynamic]]
-    }.flatMap { response =>
-      val ok = response.selectDynamic("ok").asInstanceOf[Boolean]
-      if ok then ZIO.unit
-      else
-        val status = response.selectDynamic("status").asInstanceOf[Int]
-        ZIO.fail(new RuntimeException(s"Push callback ${config.url} returned HTTP $status"))
-    }
+    urlPolicy.validate(config.url) *>
+      ZIO.fromPromiseJS {
+        val headers = js.Dynamic.literal(`Content-Type` = A2AContentType.A2AJson)
+        config.authentication match
+          case Some(auth) if auth.scheme.nonEmpty && auth.credentials.nonEmpty =>
+            headers.updateDynamic("Authorization")(s"${auth.scheme} ${auth.credentials}")
+          case _ =>
+            config.token.foreach(token => headers.updateDynamic("X-A2A-Notification-Token")(token))
+        val init = js.Dynamic.literal(
+          method = "POST",
+          headers = headers,
+          body = event.toJson,
+        )
+        js.Dynamic.global.fetch(config.url, init).asInstanceOf[js.Promise[js.Dynamic]]
+      }.flatMap { response =>
+        val ok = response.selectDynamic("ok").asInstanceOf[Boolean]
+        if ok then ZIO.unit
+        else
+          val status = response.selectDynamic("status").asInstanceOf[Int]
+          ZIO.fail(new RuntimeException(s"Push callback ${config.url} returned HTTP $status"))
+      }
 end PushNotificationSender
 
 private final class ResultManager(
   taskStore: A2ATaskStore,
   pushSender: PushNotificationSender,
   bus: A2AEventBus,
+  runtimeRegistry: A2ARuntimeRegistry,
   context: ServerCallContext,
   userMessage: A2AMessage)
     extends A2AEventPublisher:
 
   override def publish(event: A2AResponse.StreamEvent): UIO[Unit] =
-    applyEvent(event) *> bus.publish(event) *> pushSender.send(event, context)
+    runtimeRegistry.isCanceled(taskRuntimeKey(event.taskId, context)).flatMap { canceled =>
+      if canceled then ZIO.unit
+      else applyEvent(event) *> bus.publish(event) *> pushSender.send(event, context)
+    }
 
   override def finish: UIO[Unit] =
     bus.finish
@@ -336,9 +487,16 @@ private final class ResultManager(
   private def applyEvent(event: A2AResponse.StreamEvent): UIO[Unit] =
     event match
       case A2AResponse.StreamEvent.TaskSnapshot(task) =>
-        taskStore.save(ensureHistory(task), context.tenant)
+        taskStore.load(task.id, context.tenant).flatMap {
+          case Some(existing) if existing.status.state == TaskState.Canceled && task.status.state != TaskState.Canceled =>
+            ZIO.unit
+          case _ =>
+            taskStore.save(ensureHistory(task), context.tenant)
+        }
       case A2AResponse.StreamEvent.TaskStatusUpdate(taskId, _, status, _, _) =>
         taskStore.load(taskId, context.tenant).flatMap {
+          case Some(task) if task.status.state == TaskState.Canceled && status.state != TaskState.Canceled =>
+            ZIO.unit
           case Some(task) =>
             val history = status.message match
               case Some(message) if !task.history.exists(_.messageId == message.messageId) => task.history :+ message
@@ -349,6 +507,8 @@ private final class ResultManager(
         }
       case A2AResponse.StreamEvent.TaskArtifactUpdate(taskId, _, artifact, append, _, _) =>
         taskStore.load(taskId, context.tenant).flatMap {
+          case Some(task) if task.status.state == TaskState.Canceled =>
+            ZIO.unit
           case Some(task) =>
             val existingIndex = task.artifacts.indexWhere(_.artifactId == artifact.artifactId)
             val artifacts =
@@ -365,6 +525,8 @@ private final class ResultManager(
         }
       case A2AResponse.StreamEvent.TaskMessage(taskId, _, message) =>
         taskStore.load(taskId, context.tenant).flatMap {
+          case Some(task) if task.status.state == TaskState.Canceled =>
+            ZIO.unit
           case Some(task) if !task.history.exists(_.messageId == message.messageId) =>
             taskStore.save(task.copy(history = task.history :+ message), context.tenant)
           case _ =>
@@ -381,10 +543,9 @@ private final class A2ARequestHandler(
   runtime: Runtime[Any],
   taskStore: A2ATaskStore,
   pushStore: A2APushNotificationStore,
-  buses: mutable.Map[TaskRuntimeKey, A2AEventBus],
-  activeRuns: mutable.Map[TaskRuntimeKey, Fiber.Runtime[Throwable, Unit]]):
+  runtimeRegistry: A2ARuntimeRegistry):
 
-  private val pushSender = PushNotificationSender(pushStore)
+  private val pushSender = PushNotificationSender(pushStore, config.pushNotificationUrlPolicy)
 
   def agentCard: AgentCard = config.toAgentCard
 
@@ -394,12 +555,21 @@ private final class A2ARequestHandler(
   ): Task[A2AResponse.SendMessageResult] =
     for
       prepared <- prepare(params, context)
-      _        <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
-      stream    = prepared.bus.stream
-      _        <- startExecution(prepared, context)
-      result   <-
-        if params.configuration.exists(_.returnImmediately) then ZIO.succeed(A2AResponse.SendMessageResult.TaskResult(prepared.task))
-        else waitForFinal(prepared.task.id, stream, context).map(A2AResponse.SendMessageResult.TaskResult(_))
+      result <- {
+        val historyLength = params.configuration.flatMap(_.historyLength)
+        val project       = (task: A2ATask) => A2ATaskStore.applyHistoryLength(task, historyLength)
+        val run =
+          for
+            _      <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
+            stream  = prepared.bus.stream
+            _      <- startExecution(prepared, context)
+            result <-
+              if params.configuration.exists(_.returnImmediately) then
+                ZIO.succeed(A2AResponse.SendMessageResult.TaskResult(project(prepared.task)))
+              else waitForFinal(prepared.task.id, stream, context).map(task => A2AResponse.SendMessageResult.TaskResult(project(task)))
+          yield result
+        run.onError(_ => cleanupPrepared(prepared, context))
+      }
     yield result
 
   def sendMessageStream(
@@ -409,15 +579,22 @@ private final class A2ARequestHandler(
     requireStreaming *> {
       for
         prepared <- prepare(params, context)
-        _        <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
-        stream    = prepared.bus.stream
-        _        <- startExecution(prepared, context)
+        stream <- {
+          val run =
+            for
+              _ <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
+              stream = prepared.bus.stream
+              _ <- startExecution(prepared, context)
+            yield stream
+          run.onError(_ => cleanupPrepared(prepared, context))
+        }
       yield stream
     }
 
   def getTask(params: A2ARequest.TasksGet, context: ServerCallContext): Task[A2ATask] =
+    validateHistoryLength(params.historyLength) *>
     taskStore.load(params.id, context.tenant).flatMap {
-      case Some(task) => ZIO.succeed(applyHistoryLength(task, params.historyLength))
+      case Some(task) => ZIO.succeed(A2ATaskStore.applyHistoryLength(task, params.historyLength))
       case None       => ZIO.fail(A2AError.taskNotFound(params.id))
     }
 
@@ -437,18 +614,18 @@ private final class A2ARequestHandler(
           `final` = true,
         )
         val key = taskRuntimeKey(params.id, context)
-        val interruptActiveRun = ZIO.succeed {
-          activeRuns.remove(key).foreach { fiber =>
-            Unsafe.unsafe { implicit unsafe =>
-              runtime.unsafe.fork(fiber.interrupt.unit)
-            }
-          }
-        }
-        val closeBus =
-          buses.get(key) match
+        for
+          runtimeEntry <- runtimeRegistry.markCanceled(key)
+          _ <- runtimeEntry.flatMap(_._2) match
+            case Some(fiber) => fiber.interrupt.unit
+            case None        => ZIO.unit
+          _ <- taskStore.save(canceled, context.tenant)
+          _ <- runtimeEntry.map(_._1) match
             case Some(bus) => bus.publish(event) *> bus.finish
             case None      => ZIO.unit
-        interruptActiveRun *> taskStore.save(canceled, context.tenant) *> closeBus *> pushSender.send(event, context).as(canceled)
+          _ <- pushSender.send(event, context)
+          _ <- runtimeRegistry.remove(key)
+        yield canceled
       case None =>
         ZIO.fail(A2AError.taskNotFound(params.id))
     }
@@ -458,9 +635,10 @@ private final class A2ARequestHandler(
       case Some(task) if task.isTerminal =>
         ZIO.fail(A2AError.unsupportedOperation(s"Task ${params.id.value} is terminal"))
       case Some(task) =>
-        buses.get(taskRuntimeKey(params.id, context)) match
+        runtimeRegistry.bus(taskRuntimeKey(params.id, context)).flatMap {
           case Some(bus) => ZIO.succeed(ZStream.succeed(A2AResponse.StreamEvent.TaskSnapshot(task)) ++ bus.stream)
           case None      => ZIO.fail(A2AError.unsupportedOperation(s"No active stream for task ${params.id.value}"))
+        }
       case None =>
         ZIO.fail(A2AError.taskNotFound(params.id))
     }
@@ -469,7 +647,7 @@ private final class A2ARequestHandler(
     requirePush *> {
       val taskId = configParam.taskId.getOrElse(TaskId(""))
       if taskId.isEmpty then ZIO.fail(A2AError.invalidParams("taskId is required"))
-      else ensureTask(taskId, context) *> pushStore.save(taskId, context.tenant, configParam)
+      else ensureTask(taskId, context) *> config.pushNotificationUrlPolicy.validate(configParam.url) *> pushStore.save(taskId, context.tenant, configParam)
     }
 
   def getPushConfig(params: A2ARequest.PushNotificationConfigGet, context: ServerCallContext): Task[TaskPushNotificationConfig] =
@@ -499,7 +677,10 @@ private final class A2ARequestHandler(
   private def prepare(params: A2ARequest.MessageSend, context: ServerCallContext): Task[PreparedRun] =
     val incoming = params.message
     val taskId   = incoming.taskId.getOrElse(TaskId.generate)
+    val key      = taskRuntimeKey(taskId, context)
     for
+      _        <- validateHistoryLength(params.configuration.flatMap(_.historyLength))
+      _        <- validateInlinePushConfig(params.configuration)
       existing <- taskStore.load(taskId, context.tenant)
       _        <- existing match
         case Some(task) if task.isTerminal =>
@@ -508,17 +689,20 @@ private final class A2ARequestHandler(
           ZIO.fail(A2AError.invalidParams("contextId does not match task contextId"))
         case _ =>
           ZIO.unit
+      maybeBus <- runtimeRegistry.reserve(key, config.eventReplayLimit)
+      bus <- maybeBus match
+        case Some(bus) => ZIO.succeed(bus)
+        case None      => ZIO.fail(A2AError.unsupportedOperation(s"Task ${taskId.value} already has an active run"))
       contextId = incoming.contextId.orElse(existing.map(_.contextId)).getOrElse(ContextId.generate)
       message   = incoming.copy(taskId = Some(taskId), contextId = Some(contextId))
       task = existing
         .map(task => task.copy(status = TaskStatus.working(), history = task.history :+ message))
         .getOrElse(A2ATask(id = taskId, contextId = contextId, status = TaskStatus.working(), history = List(message)))
-      bus = buses.getOrElseUpdate(taskRuntimeKey(taskId, context), A2AEventBus())
       _  <- taskStore.save(task, context.tenant)
     yield PreparedRun(message, task, bus)
 
   private def startExecution(prepared: PreparedRun, context: ServerCallContext): UIO[Unit] =
-    val manager = ResultManager(taskStore, pushSender, prepared.bus, context, prepared.message)
+    val manager = ResultManager(taskStore, pushSender, prepared.bus, runtimeRegistry, context, prepared.message)
     val key     = taskRuntimeKey(prepared.task.id, context)
     val run =
       manager.publish(A2AResponse.StreamEvent.TaskSnapshot(prepared.task)) *>
@@ -535,17 +719,15 @@ private final class A2ARequestHandler(
             )
           )
         }.ensuring(
-          manager.finish *>
-            ZIO.succeed {
-              activeRuns.remove(key)
-              buses.remove(key)
-            }.unit
+          runtimeRegistry.isCanceled(key).flatMap { canceled =>
+            if canceled then ZIO.unit else manager.finish
+          } *> runtimeRegistry.remove(key)
         )
     ZIO.succeed {
       Unsafe.unsafe { implicit unsafe =>
-        activeRuns.update(key, runtime.unsafe.fork(run))
+        runtime.unsafe.fork(run)
       }
-    }
+    }.flatMap(fiber => runtimeRegistry.attachFiber(key, fiber))
 
   private def execute(prepared: PreparedRun, publisher: A2AEventPublisher): Task[Unit] =
     config.executionOverride match
@@ -635,22 +817,29 @@ private final class A2ARequestHandler(
     stream
       .filter(_.isFinal)
       .runHead
-      .flatMap(_ => taskStore.load(taskId, context.tenant).someOrFail(A2AError.taskNotFound(taskId)))
+      .flatMap {
+        case Some(_) => taskStore.load(taskId, context.tenant).someOrFail(A2AError.taskNotFound(taskId))
+        case None    => ZIO.fail(A2AError.internalError(s"Terminal event never received for task ${taskId.value}"))
+      }
 
-  private def applyHistoryLength(task: A2ATask, historyLength: Option[Int]): A2ATask =
-    historyLength match
-      case Some(length) if length <= 0 => task.copy(history = Nil)
-      case Some(length)               => task.copy(history = task.history.takeRight(length))
-      case None                       => task
+  private def cleanupPrepared(prepared: PreparedRun, context: ServerCallContext): UIO[Unit] =
+    runtimeRegistry.remove(taskRuntimeKey(prepared.task.id, context)) *> prepared.bus.finish
 
   private def saveInlinePushConfig(
-    config: Option[MessageSendConfiguration],
+    messageConfig: Option[MessageSendConfiguration],
     taskId: TaskId,
     context: ServerCallContext,
   ): Task[Unit] =
-    config.flatMap(_.taskPushNotificationConfig) match
+    messageConfig.flatMap(_.taskPushNotificationConfig) match
+      case Some(pushConfig) =>
+        validateInlinePushConfig(messageConfig) *> pushStore.save(taskId, context.tenant, pushConfig).unit
+      case None =>
+        ZIO.unit
+
+  private def validateInlinePushConfig(messageConfig: Option[MessageSendConfiguration]): Task[Unit] =
+    messageConfig.flatMap(_.taskPushNotificationConfig) match
       case Some(pushConfig) if agentCard.capabilities.pushNotifications =>
-        pushStore.save(taskId, context.tenant, pushConfig).unit
+        config.pushNotificationUrlPolicy.validate(pushConfig.url)
       case Some(_) =>
         ZIO.fail(A2AError.pushNotificationNotSupported)
       case None =>
@@ -662,6 +851,13 @@ private final class A2ARequestHandler(
   private def requireStreaming: Task[Unit] =
     ZIO.fail(A2AError.unsupportedOperation("Streaming not supported")).unless(agentCard.capabilities.streaming).unit
 
+  private def validateHistoryLength(historyLength: Option[Int]): Task[Unit] =
+    historyLength match
+      case Some(length) if length < 0 =>
+        ZIO.fail(A2AError.invalidParams(s"historyLength must be non-negative integer, got $length"))
+      case _ =>
+        ZIO.unit
+
   private def ensureTask(taskId: TaskId, context: ServerCallContext): Task[Unit] =
     taskStore.load(taskId, context.tenant).flatMap {
       case Some(_) => ZIO.unit
@@ -670,14 +866,16 @@ private final class A2ARequestHandler(
 end A2ARequestHandler
 
 /** Live implementation of A2A Server. */
-private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any]) extends A2AServer:
+private final class A2AServerLive(
+  config: A2AServer.Config,
+  runtime: Runtime[Any],
+  runtimeRegistry: A2ARuntimeRegistry)
+    extends A2AServer:
 
   private var bunServer: js.Dynamic = null
-  private val activeRuns            = mutable.Map.empty[TaskRuntimeKey, Fiber.Runtime[Throwable, Unit]]
-  private val buses                 = mutable.Map.empty[TaskRuntimeKey, A2AEventBus]
   private val taskStore             = config.taskStore.getOrElse(A2ATaskStore.inMemory)
   private val pushStore             = config.pushNotificationStore.getOrElse(A2APushNotificationStore.inMemory)
-  private val requestHandler        = A2ARequestHandler(config, runtime, taskStore, pushStore, buses, activeRuns)
+  private val requestHandler        = A2ARequestHandler(config, runtime, taskStore, pushStore, runtimeRegistry)
 
   override def agentCard: AgentCard = config.toAgentCard
 
@@ -697,10 +895,8 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
     }
 
   override def stop: Task[Unit] =
-    ZIO.foreachDiscard(activeRuns.values.toList)(_.interrupt).ignore *>
+    runtimeRegistry.interruptAll *>
       ZIO.attempt {
-        activeRuns.clear()
-        buses.clear()
         if bunServer != null then bunServer.stop()
         ()
       }
@@ -714,10 +910,11 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
       if pathname == A2APaths.AgentCard && method == "GET" then
         js.Promise.resolve(jsonResponse(agentCard))
       else if pathname == "/" && method == "POST" then
-        req
-          .text()
-          .asInstanceOf[js.Promise[String]]
-          .`then`[js.Dynamic](body => runToPromise(handleJsonRpc(body, contextFrom(req, None))))
+        runToPromise(
+          readBody(req)
+            .flatMap(body => handleJsonRpc(body, contextFrom(req, None)))
+            .catchAll(error => ZIO.succeed(jsonResponse(JsonRpcResponse.fromA2AError(None, toA2AError(error)))))
+        )
       else
         routeRest(method, pathname, urlObj, req) match
           case Some(effect) => runToPromise(effect)
@@ -739,6 +936,31 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         .toList
         .flatMap(_.split(",").map(_.trim).filter(_.nonEmpty)),
     )
+
+  private def readBody(req: js.Dynamic): Task[String] =
+    val headers = req.selectDynamic("headers")
+    def header(name: String): Option[String] =
+      if js.isUndefined(headers) || headers == null then None
+      else
+        val value = headers.asInstanceOf[js.Dynamic].get(name)
+        if js.isUndefined(value) || value == null then None
+        else Some(value.asInstanceOf[String])
+    val maxBytes = config.maxRequestBodyBytes
+    header("content-length").flatMap(_.toIntOption) match
+      case Some(length) if maxBytes > 0 && length > maxBytes =>
+        ZIO.fail(A2AError.invalidRequest(s"Request body exceeds ${maxBytes} byte limit"))
+      case _ =>
+        ZIO.fromPromiseJS(req.text().asInstanceOf[js.Promise[String]]).flatMap { body =>
+          if maxBytes > 0 && utf8ByteLength(body) > maxBytes then ZIO.fail(A2AError.invalidRequest(s"Request body exceeds ${maxBytes} byte limit"))
+          else ZIO.succeed(body)
+        }
+
+  private def utf8ByteLength(body: String): Int =
+    js.Dynamic
+      .newInstance(js.Dynamic.global.TextEncoder)()
+      .encode(body)
+      .length
+      .asInstanceOf[Int]
 
   private def validateServiceParameters(context: ServerCallContext, binding: A2ATransport): Task[Unit] =
     validateVersion(context, binding) *> validateRequiredExtensions(context)
@@ -786,7 +1008,9 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
       case A2AMethod.PushNotificationConfigList =>
         paramsAs[A2ARequest.PushNotificationConfigList](request).flatMap(requestHandler.listPushConfigs(_, withTenantFromParams(context, request.params))).map(JsonRpcResponse.success(request.id, _))
       case A2AMethod.PushNotificationConfigDelete =>
-        paramsAs[A2ARequest.PushNotificationConfigDelete](request).flatMap(requestHandler.deletePushConfig(_, withTenantFromParams(context, request.params))).as(JsonRpcResponse.success(request.id, Json.Null))
+        paramsAs[A2ARequest.PushNotificationConfigDelete](request)
+          .flatMap(requestHandler.deletePushConfig(_, withTenantFromParams(context, request.params)))
+          .as(JsonRpcResponse.success(request.id, Json.Obj()))
       case A2AMethod.GetAuthenticatedExtendedCard =>
         requestHandler.getExtendedAgentCard(context).map(JsonRpcResponse.success(request.id, _))
       case other =>
@@ -831,6 +1055,37 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
       val value = query.get(name)
       if js.isUndefined(value) || value == null then None
       else Some(value.asInstanceOf[String])
+    def queryInt(name: String): Task[Option[Int]] =
+      queryString(name) match
+        case Some(value) =>
+          value.toIntOption match
+            case Some(parsed) => ZIO.succeed(Some(parsed))
+            case None         => ZIO.fail(A2AError.invalidParams(s"$name must be a valid integer"))
+        case None =>
+          ZIO.succeed(None)
+    def queryBool(name: String): Task[Option[Boolean]] =
+      queryString(name) match
+        case Some(value) =>
+          value.toBooleanOption match
+            case Some(parsed) => ZIO.succeed(Some(parsed))
+            case None         => ZIO.fail(A2AError.invalidParams(s"$name must be a valid boolean"))
+        case None =>
+          ZIO.succeed(None)
+    def queryStatus(name: String): Task[Option[TaskState]] =
+      queryString(name) match
+        case Some(value) =>
+          ZIO.fromEither(Json.Str(value).as[TaskState].left.map(error => A2AError.invalidParams(s"Invalid $name: $error"))).map(Some(_))
+        case None =>
+          ZIO.succeed(None)
+    def rawSegments(value: String): List[String] =
+      val stripped = value.stripPrefix("/")
+      if stripped.isEmpty then Nil else stripped.split("/", -1).toList
+    def nonEmptyTaskId(raw: String): Task[TaskId] =
+      if raw.isEmpty then ZIO.fail(A2AError.invalidParams("Missing task ID"))
+      else ZIO.succeed(TaskId(raw))
+    def nonEmptyConfigId(raw: String): Task[String] =
+      if raw.isEmpty then ZIO.fail(A2AError.invalidParams("Missing push notification config ID"))
+      else ZIO.succeed(raw)
     val baseContext = contextFrom(req, tenant)
     val context = baseContext.copy(
       requestedVersion = baseContext.requestedVersion
@@ -838,7 +1093,7 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         .orElse(queryString("a2aVersion")),
     )
     def bodyAs[A: JsonDecoder]: Task[A] =
-      ZIO.fromPromiseJS(req.text().asInstanceOf[js.Promise[String]]).flatMap { body =>
+      readBody(req).flatMap { body =>
         ZIO.fromEither(body.fromJson[A].left.map(A2AError.invalidRequest))
       }
     def json[A: JsonEncoder](effect: Task[A], status: Int = 200): Task[js.Dynamic] =
@@ -846,10 +1101,12 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
         .map(value => jsonResponse(value, status, A2AContentType.A2AJson))
         .catchAll(error => ZIO.succeed(restErrorResponse(toA2AError(error))))
 
-    (method, path) match
-      case ("POST", "/message:send") =>
+    val segments = rawSegments(path)
+
+    (method, segments) match
+      case ("POST", List("message:send")) =>
         Some(json(bodyAs[A2ARequest.MessageSend].flatMap(requestHandler.sendMessage(_, context))))
-      case ("POST", "/message:stream") =>
+      case ("POST", List("message:stream")) =>
         Some(
           (validateServiceParameters(context, A2ATransport.HTTP_JSON) *>
             bodyAs[A2ARequest.MessageSend]
@@ -857,61 +1114,104 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
               .map(stream => sseResponse(stream.map(_.toJson), isJsonRpc = false)))
             .catchAll(error => ZIO.succeed(restErrorResponse(toA2AError(error))))
         )
-      case ("GET", "/tasks") =>
-        val params = A2ARequest.TasksList(
-          contextId = queryString("contextId").map(ContextId(_)),
-          status = queryString("status").flatMap(value => Json.Str(value).as[TaskState].toOption),
-          pageSize = queryString("pageSize").flatMap(_.toIntOption),
-          pageToken = queryString("pageToken"),
-          historyLength = queryString("historyLength").flatMap(_.toIntOption),
-          statusTimestampAfter = queryString("statusTimestampAfter"),
-          includeArtifacts = queryString("includeArtifacts").flatMap(_.toBooleanOption),
-          tenant = tenant,
+      case ("GET", List("tasks")) =>
+        val params =
+          for
+            status           <- queryStatus("status")
+            pageSize         <- queryInt("pageSize")
+            historyLength    <- queryInt("historyLength")
+            includeArtifacts <- queryBool("includeArtifacts")
+          yield A2ARequest.TasksList(
+            contextId = queryString("contextId").filter(_.nonEmpty).map(ContextId(_)),
+            status = status,
+            pageSize = pageSize,
+            pageToken = queryString("pageToken"),
+            historyLength = historyLength,
+            statusTimestampAfter = queryString("statusTimestampAfter"),
+            includeArtifacts = includeArtifacts,
+            tenant = tenant,
+          )
+        Some(json(params.flatMap(requestHandler.listTasks(_, context))))
+      case ("GET", List("tasks", rawTaskId)) =>
+        Some(
+          json(
+            nonEmptyTaskId(rawTaskId).flatMap { taskId =>
+              queryInt("historyLength").flatMap(historyLength =>
+                requestHandler.getTask(A2ARequest.TasksGet(taskId, historyLength, tenant), context)
+              )
+            }
+          )
         )
-        Some(json(requestHandler.listTasks(params, context)))
-      case ("GET", taskPath) if taskPath.startsWith("/tasks/") && !taskPath.contains(":") && !taskPath.contains("/pushNotificationConfigs") =>
-        val taskId = TaskId(taskPath.stripPrefix("/tasks/"))
-        Some(json(requestHandler.getTask(A2ARequest.TasksGet(taskId, queryString("historyLength").flatMap(_.toIntOption), tenant), context)))
-      case ("POST", taskPath) if taskPath.startsWith("/tasks/") && taskPath.endsWith(":cancel") =>
-        val taskId = TaskId(taskPath.stripPrefix("/tasks/").stripSuffix(":cancel"))
-        Some(json(requestHandler.cancelTask(A2ARequest.TasksCancel(taskId, tenant = tenant), context), status = 202))
-      case (verb, taskPath) if (verb == "GET" || verb == "POST") && taskPath.startsWith("/tasks/") && taskPath.endsWith(":subscribe") =>
-        val taskId = TaskId(taskPath.stripPrefix("/tasks/").stripSuffix(":subscribe"))
+      case ("POST", List("tasks", rawTaskAction)) if rawTaskAction.endsWith(":cancel") =>
+        Some(
+          json(
+            nonEmptyTaskId(rawTaskAction.stripSuffix(":cancel")).flatMap(taskId =>
+              requestHandler.cancelTask(A2ARequest.TasksCancel(taskId, tenant = tenant), context)
+            ),
+            status = 202,
+          )
+        )
+      case (verb, List("tasks", rawTaskAction)) if (verb == "GET" || verb == "POST") && rawTaskAction.endsWith(":subscribe") =>
         Some(
           (validateServiceParameters(context, A2ATransport.HTTP_JSON) *>
-            requestHandler
-              .resubscribe(A2ARequest.TasksResubscribe(taskId, tenant), context)
+            nonEmptyTaskId(rawTaskAction.stripSuffix(":subscribe"))
+              .flatMap(taskId => requestHandler.resubscribe(A2ARequest.TasksResubscribe(taskId, tenant), context))
               .map(stream => sseResponse(stream.map(_.toJson), isJsonRpc = false)))
             .catchAll(error => ZIO.succeed(restErrorResponse(toA2AError(error))))
         )
-      case ("POST", pushPath) if pushPath.startsWith("/tasks/") && pushPath.endsWith("/pushNotificationConfigs") =>
-        val taskId = TaskId(pushPath.stripPrefix("/tasks/").stripSuffix("/pushNotificationConfigs"))
-        Some(json(bodyAs[TaskPushNotificationConfig].map(_.copy(taskId = Some(taskId), tenant = tenant)).flatMap(requestHandler.createPushConfig(_, context)), status = 201))
-      case ("GET", pushPath) if pushPath.startsWith("/tasks/") && pushPath.endsWith("/pushNotificationConfigs") =>
-        val taskId = TaskId(pushPath.stripPrefix("/tasks/").stripSuffix("/pushNotificationConfigs"))
-        Some(json(requestHandler.listPushConfigs(A2ARequest.PushNotificationConfigList(taskId, tenant = tenant), context)))
-      case ("GET", pushPath) if pushPath.startsWith("/tasks/") && pushPath.contains("/pushNotificationConfigs/") =>
-        val parts = pushPath.stripPrefix("/tasks/").split("/pushNotificationConfigs/", 2)
-        Some(json(requestHandler.getPushConfig(A2ARequest.PushNotificationConfigGet(TaskId(parts(0)), parts(1), tenant), context)))
-      case ("DELETE", pushPath) if pushPath.startsWith("/tasks/") && pushPath.contains("/pushNotificationConfigs/") =>
-        val parts = pushPath.stripPrefix("/tasks/").split("/pushNotificationConfigs/", 2)
+      case ("POST", List("tasks", rawTaskId, "pushNotificationConfigs")) =>
+        Some(
+          json(
+            nonEmptyTaskId(rawTaskId).flatMap(taskId =>
+              bodyAs[TaskPushNotificationConfig]
+                .map(_.copy(taskId = Some(taskId), tenant = tenant))
+                .flatMap(requestHandler.createPushConfig(_, context))
+            ),
+            status = 201,
+          )
+        )
+      case ("GET", List("tasks", rawTaskId, "pushNotificationConfigs")) =>
+        Some(
+          json(
+            nonEmptyTaskId(rawTaskId).flatMap(taskId =>
+              requestHandler.listPushConfigs(A2ARequest.PushNotificationConfigList(taskId, tenant = tenant), context)
+            )
+          )
+        )
+      case ("GET", List("tasks", rawTaskId, "pushNotificationConfigs", rawConfigId)) =>
+        Some(
+          json(
+            for
+              taskId   <- nonEmptyTaskId(rawTaskId)
+              configId <- nonEmptyConfigId(rawConfigId)
+              config   <- requestHandler.getPushConfig(A2ARequest.PushNotificationConfigGet(taskId, configId, tenant), context)
+            yield config
+          )
+        )
+      case ("DELETE", List("tasks", rawTaskId, "pushNotificationConfigs", rawConfigId)) =>
         Some(
           (validateServiceParameters(context, A2ATransport.HTTP_JSON) *>
-            requestHandler
-              .deletePushConfig(A2ARequest.PushNotificationConfigDelete(TaskId(parts(0)), parts(1), tenant), context)
+            (for
+              taskId   <- nonEmptyTaskId(rawTaskId)
+              configId <- nonEmptyConfigId(rawConfigId)
+              _        <- requestHandler.deletePushConfig(A2ARequest.PushNotificationConfigDelete(taskId, configId, tenant), context)
+            yield ())
               .as(emptyResponse(204)))
             .catchAll(error => ZIO.succeed(restErrorResponse(toA2AError(error))))
         )
-      case ("GET", "/extendedAgentCard") =>
+      case ("GET", List("extendedAgentCard")) =>
         Some(json(requestHandler.getExtendedAgentCard(context)))
+      case (_, "tasks" :: "" :: _) =>
+        Some(json[A2ATask](ZIO.fail(A2AError.invalidParams("Missing task ID"))))
       case _ =>
         None
 
   private def splitTenant(pathname: String): (Option[String], String) =
     val knownPrefixes = Set("message:send", "message:stream", "tasks", "extendedAgentCard")
-    val segments      = pathname.stripPrefix("/").split("/").filter(_.nonEmpty).toList
+    val stripped      = pathname.stripPrefix("/")
+    val segments      = if stripped.isEmpty then Nil else stripped.split("/", -1).toList
     segments match
-      case first :: rest if !knownPrefixes.contains(first) =>
+      case first :: rest if first.nonEmpty && !knownPrefixes.contains(first) =>
         Some(first) -> ("/" + rest.mkString("/"))
       case _ =>
         None -> pathname
@@ -986,8 +1286,8 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
     isJsonRpc: Boolean,
   ): js.Dynamic =
     val encoder = js.Dynamic.newInstance(js.Dynamic.global.TextEncoder)()
-    var fiber: Fiber.Runtime[Throwable, Unit] = null
-    var canceled = false
+    var fiber: Option[Fiber.Runtime[Throwable, Unit]] = None
+    var canceled                                = false
     val readable = js.Dynamic.newInstance(js.Dynamic.global.ReadableStream)(
       js.Dynamic.literal(
         start = (controller: js.Dynamic) =>
@@ -1005,12 +1305,12 @@ private final class A2AServerLive(config: A2AServer.Config, runtime: Runtime[Any
               }
               .ensuring(ZIO.attempt(if !canceled then controller.close()).ignore)
           Unsafe.unsafe { implicit unsafe =>
-            fiber = runtime.unsafe.fork(run)
+            fiber = Some(runtime.unsafe.fork(run))
           }
         ,
         cancel = (_: js.Any) =>
           canceled = true
-          if fiber != null then Unsafe.unsafe { implicit unsafe => runtime.unsafe.fork(fiber.interrupt) }
+          fiber.foreach(active => Unsafe.unsafe { implicit unsafe => runtime.unsafe.fork(active.interrupt) })
           (),
       )
     )

@@ -308,7 +308,16 @@ Push notifications are supported when
 `MessageSendConfiguration.taskPushNotificationConfig`, or manage configs with
 `createTaskPushNotificationConfig`, `getTaskPushNotificationConfig`,
 `listTaskPushNotificationConfigs`, and `deleteTaskPushNotificationConfig`.
-Callbacks POST a `StreamResponse` body as `application/a2a+json`.
+Callbacks POST a `StreamResponse` body as `application/a2a+json`. Callback URLs
+use `PushNotificationUrlPolicy.externalOnly` by default, rejecting localhost and
+private network targets; use `PushNotificationUrlPolicy.allowAll` only behind a
+trusted boundary or in local tests.
+
+`A2AServer.Config` also exposes `eventReplayLimit` and `maxRequestBodyBytes`.
+`/extendedAgentCard` and any public A2A deployment should sit behind your
+authenticating edge. Durable `A2ATaskStore` implementations are responsible for
+escaping or validating task/config IDs before using them in external storage
+keys, paths, or queries.
 
 Legacy A2A 0.3 compatibility remains available explicitly as `A2AClientV03`,
 `A2AServerV03`, and `A2AServerAppV03`; `com.tjclp.scalagent.*` defaults to v1.

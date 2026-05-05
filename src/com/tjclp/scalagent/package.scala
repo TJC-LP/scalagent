@@ -369,6 +369,9 @@ package object scalagent:
   type A2APushNotificationStore = a2a.A2APushNotificationStore
   val A2APushNotificationStore = a2a.A2APushNotificationStore
 
+  type PushNotificationUrlPolicy = a2a.PushNotificationUrlPolicy
+  val PushNotificationUrlPolicy = a2a.PushNotificationUrlPolicy
+
   type AuthenticationInfo = a2a.AuthenticationInfo
   val AuthenticationInfo = a2a.AuthenticationInfo
 
