@@ -33,6 +33,9 @@ class A2AInterpreterSpec extends FunSuite:
     override def getTask(taskId: TaskId, historyLength: Option[Int]): Task[A2ATask] =
       ZIO.dieMessage("unused in test")
 
+    override def listTasks(params: A2ARequest.TasksList): Task[A2AResponse.ListTasksResult] =
+      ZIO.dieMessage("unused in test")
+
     override def cancelTask(taskId: TaskId): Task[A2ATask] =
       ZIO.dieMessage("unused in test")
 
@@ -42,16 +45,19 @@ class A2AInterpreterSpec extends FunSuite:
     override def getAgentCard: Task[AgentCard] =
       agentCard
 
-    override def setPushNotificationConfig(taskId: TaskId, config: PushNotificationConfig): Task[PushNotificationConfig] =
+    override def createTaskPushNotificationConfig(
+      taskId: TaskId,
+      config: TaskPushNotificationConfig,
+    ): Task[TaskPushNotificationConfig] =
       ZIO.dieMessage("unused in test")
 
-    override def getPushNotificationConfig(taskId: TaskId, configId: Option[String]): Task[PushNotificationConfig] =
+    override def getTaskPushNotificationConfig(taskId: TaskId, configId: String): Task[TaskPushNotificationConfig] =
       ZIO.dieMessage("unused in test")
 
-    override def listPushNotificationConfigs(taskId: TaskId): Task[List[PushNotificationConfig]] =
+    override def listTaskPushNotificationConfigs(taskId: TaskId): Task[List[TaskPushNotificationConfig]] =
       ZIO.dieMessage("unused in test")
 
-    override def deletePushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
+    override def deleteTaskPushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
       ZIO.dieMessage("unused in test")
 
   private final class InterruptibleA2AClient(
@@ -74,6 +80,9 @@ class A2AInterpreterSpec extends FunSuite:
     override def getTask(taskId: TaskId, historyLength: Option[Int]): Task[A2ATask] =
       ZIO.dieMessage("unused in test")
 
+    override def listTasks(params: A2ARequest.TasksList): Task[A2AResponse.ListTasksResult] =
+      ZIO.dieMessage("unused in test")
+
     override def cancelTask(taskId: TaskId): Task[A2ATask] =
       ZIO.dieMessage("unused in test")
 
@@ -83,16 +92,19 @@ class A2AInterpreterSpec extends FunSuite:
     override def getAgentCard: Task[AgentCard] =
       agentCard
 
-    override def setPushNotificationConfig(taskId: TaskId, config: PushNotificationConfig): Task[PushNotificationConfig] =
+    override def createTaskPushNotificationConfig(
+      taskId: TaskId,
+      config: TaskPushNotificationConfig,
+    ): Task[TaskPushNotificationConfig] =
       ZIO.dieMessage("unused in test")
 
-    override def getPushNotificationConfig(taskId: TaskId, configId: Option[String]): Task[PushNotificationConfig] =
+    override def getTaskPushNotificationConfig(taskId: TaskId, configId: String): Task[TaskPushNotificationConfig] =
       ZIO.dieMessage("unused in test")
 
-    override def listPushNotificationConfigs(taskId: TaskId): Task[List[PushNotificationConfig]] =
+    override def listTaskPushNotificationConfigs(taskId: TaskId): Task[List[TaskPushNotificationConfig]] =
       ZIO.dieMessage("unused in test")
 
-    override def deletePushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
+    override def deleteTaskPushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
       ZIO.dieMessage("unused in test")
 
   test("events and result share one underlying remote stream"):

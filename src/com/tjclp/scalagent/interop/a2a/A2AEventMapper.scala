@@ -15,14 +15,14 @@ import com.tjclp.scalagent.a2a.*
 private[a2a] object A2AEventMapper:
 
   def mapStreamEvent(event: A2AResponse.StreamEvent): List[AgentEvent] = event match
-    case A2AResponse.StreamEvent.TaskStatusUpdate(_, _, status, isFinal) =>
+    case A2AResponse.StreamEvent.TaskStatusUpdate(_, _, status, isFinal, _) =>
       mapTaskStatus(status, isFinal)
 
     case A2AResponse.StreamEvent.TaskMessage(_, _, message) =>
       if message.hasText then List(AgentEvent.TextDelta(message.text))
       else List(nativeEvent("a2a.message", event))
 
-    case A2AResponse.StreamEvent.TaskArtifactUpdate(_, _, artifact, _, _) =>
+    case A2AResponse.StreamEvent.TaskArtifactUpdate(_, _, artifact, _, _, _) =>
       List(nativeEvent("a2a.artifact", event))
 
     case A2AResponse.StreamEvent.TaskSnapshot(task) =>

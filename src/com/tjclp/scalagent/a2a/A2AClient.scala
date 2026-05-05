@@ -1,30 +1,27 @@
 package com.tjclp.scalagent.a2a
 
 import scala.scalajs.js
+import scala.scalajs.js.JSON as JsJSON
 import scala.scalajs.js.JSConverters.*
 import java.util.concurrent.TimeoutException
 import zio.*
 import zio.stream.*
-import com.tjclp.scalagent.a2a.facade.*
-import com.tjclp.scalagent.streaming.{AsyncIteratorOps, AsyncIterator}
+import zio.json.*
+import zio.json.ast.Json
 
-/**
- * Type-safe Scala client for A2A protocol.
- *
- * Wraps the @a2a-js/sdk Client with ZIO effects and Scala types.
- */
+/** Type-safe native Scala client for A2A v1 JSON-RPC/SSE. */
 trait A2AClient:
-  /** Get the agent card for this client's target agent */
+  /** Get the agent card for this client's target agent. */
   def agentCard: Task[AgentCard]
 
-  /** Send a message and wait for complete response */
+  /** Send a message and wait for complete response. */
   def send(message: A2AMessage, config: Option[MessageSendConfiguration] = None): Task[A2ATask]
 
   /** Submit a message without holding the HTTP request until terminal state. */
   def submit(message: A2AMessage, config: Option[MessageSendConfiguration] = None): Task[A2ATask] =
     val asyncConfig = config
       .getOrElse(MessageSendConfiguration.default)
-      .copy(blocking = Some(false))
+      .copy(returnImmediately = true)
     send(message, Some(asyncConfig))
 
   /** Poll a task until it reaches a terminal state. */
@@ -46,7 +43,7 @@ trait A2AClient:
       case None =>
         loop
 
-  /** Submit a message and poll `tasks/get` until the task reaches a terminal state. */
+  /** Submit a message and poll `GetTask` until the task reaches a terminal state. */
   def sendAndPoll(
     message: A2AMessage,
     config: Option[MessageSendConfiguration] = None,
@@ -59,46 +56,63 @@ trait A2AClient:
       else awaitTask(task.id, pollEvery, timeout, historyLength)
     }
 
-  /** Send a message and stream responses */
+  /** Send a message and stream responses. */
   def stream(message: A2AMessage, config: Option[MessageSendConfiguration] = None)
     : ZStream[Any, Throwable, A2AResponse.StreamEvent]
 
-  /** Get task by ID */
+  /** Get task by ID. */
   def getTask(taskId: TaskId, historyLength: Option[Int] = None): Task[A2ATask]
 
-  /** Cancel a running task */
+  /** List tasks. */
+  def listTasks(params: A2ARequest.TasksList = A2ARequest.TasksList()): Task[A2AResponse.ListTasksResult]
+
+  /** Cancel a running task. */
   def cancelTask(taskId: TaskId): Task[A2ATask]
 
-  /** Re-subscribe to task updates */
+  /** Re-subscribe to task updates. */
   def resubscribe(taskId: TaskId): ZStream[Any, Throwable, A2AResponse.StreamEvent]
 
-  /** Get agent card (fetches extended card if supported) */
+  /** Get agent card. */
   def getAgentCard: Task[AgentCard]
 
-  /** Set push notification config for a task */
-  def setPushNotificationConfig(taskId: TaskId, config: PushNotificationConfig): Task[PushNotificationConfig]
+  /** Create push notification config for a task. */
+  def createTaskPushNotificationConfig(taskId: TaskId, config: TaskPushNotificationConfig): Task[TaskPushNotificationConfig]
 
-  /**
-   * Get push notification config for a task.
-   * @param taskId The task identifier
-   * @param configId Optional push notification configuration identifier for non-default configs
-   */
-  def getPushNotificationConfig(taskId: TaskId, configId: Option[String] = None): Task[PushNotificationConfig]
+  /** Backwards-compatible method name for createTaskPushNotificationConfig. */
+  def setPushNotificationConfig(taskId: TaskId, config: PushNotificationConfig): Task[PushNotificationConfig] =
+    createTaskPushNotificationConfig(taskId, config)
 
-  /** List push notification configs for a task */
-  def listPushNotificationConfigs(taskId: TaskId): Task[List[PushNotificationConfig]]
+  /** Get push notification config for a task. */
+  def getTaskPushNotificationConfig(taskId: TaskId, configId: String): Task[TaskPushNotificationConfig]
 
-  /**
-   * Delete push notification config for a task.
-   * @param taskId The task identifier (passed as `id` per SDK 0.3.12 DeleteTaskPushNotificationConfigParams)
-   * @param configId The push notification configuration identifier
-   */
-  def deletePushNotificationConfig(taskId: TaskId, configId: String): Task[Unit]
+  /** Backwards-compatible method name for getTaskPushNotificationConfig. */
+  def getPushNotificationConfig(taskId: TaskId, configId: Option[String] = None): Task[PushNotificationConfig] =
+    configId match
+      case Some(id) => getTaskPushNotificationConfig(taskId, id)
+      case None =>
+        listTaskPushNotificationConfigs(taskId).flatMap {
+          case head :: _ => ZIO.succeed(head)
+          case Nil      => ZIO.fail(A2AError.invalidParams(s"No push notification config for task ${taskId.value}"))
+        }
+
+  /** List push notification configs for a task. */
+  def listTaskPushNotificationConfigs(taskId: TaskId): Task[List[TaskPushNotificationConfig]]
+
+  /** Backwards-compatible method name for listTaskPushNotificationConfigs. */
+  def listPushNotificationConfigs(taskId: TaskId): Task[List[PushNotificationConfig]] =
+    listTaskPushNotificationConfigs(taskId)
+
+  /** Delete push notification config for a task. */
+  def deleteTaskPushNotificationConfig(taskId: TaskId, configId: String): Task[Unit]
+
+  /** Backwards-compatible method name for deleteTaskPushNotificationConfig. */
+  def deletePushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
+    deleteTaskPushNotificationConfig(taskId, configId)
 end A2AClient
 
 object A2AClient:
 
-  /** Configuration for A2A client */
+  /** Configuration for A2A client. */
   final case class Config(
     url: String,
     headers: Map[String, String] = Map.empty)
@@ -109,150 +123,299 @@ object A2AClient:
       .fail(new IllegalArgumentException(s"Invalid URL scheme. Must be http:// or https://: $url"))
       .when(!url.startsWith("http://") && !url.startsWith("https://"))
       .zipRight {
-        ZIO
-          .fromPromiseJS {
-            val factory = new JsClientFactory()
-            factory.createFromUrl(url)
-          }
-          .map(jsClient => A2AClientLive(jsClient))
+        val cardUrl = url.stripSuffix("/") + A2APaths.AgentCard
+        Http.fetchJson[AgentCard](cardUrl, headers).flatMap(fromCard(_, headers))
       }
 
-  /** Create a client from an existing agent card */
+  /** Create a client from an existing agent card. */
   def fromCard(card: AgentCard, headers: Map[String, String] = Map.empty): Task[A2AClient] =
-    ZIO
-      .fromPromiseJS {
-        val factory = new JsClientFactory()
-        val jsCard  = A2AConverters.toJs(card)
-        factory.createFromAgentCard(jsCard)
-      }
-      .map(jsClient => A2AClientLive(jsClient))
+    card.supportedInterfaces.find(_.protocolBinding == A2ATransport.JSONRPC) match
+      case Some(iface) =>
+        ZIO.succeed(A2AClientLive(card, iface, headers))
+      case None =>
+        ZIO.fail(new IllegalArgumentException("Agent card does not advertise a JSONRPC interface"))
 
-  /** Create a client from config */
+  /** Create a client from config. */
   def fromConfig(config: Config): Task[A2AClient] =
     discover(config.url, config.headers)
 
-  /** ZLayer for A2AClient */
+  /** ZLayer for A2AClient. */
   def live(url: String): ZLayer[Any, Throwable, A2AClient] =
     ZLayer.fromZIO(discover(url))
 
-  /** ZLayer for A2AClient with config */
+  /** ZLayer for A2AClient with config. */
   def live(config: Config): ZLayer[Any, Throwable, A2AClient] =
     ZLayer.fromZIO(fromConfig(config))
 end A2AClient
 
-/** Live implementation wrapping the JS client */
-private final class A2AClientLive(jsClient: JsA2AClient) extends A2AClient:
+private final class A2AClientLive(
+  initialCard: AgentCard,
+  iface: AgentInterface,
+  headers: Map[String, String])
+    extends A2AClient:
 
-  private def toJsConfig(config: MessageSendConfiguration): JsMessageSendConfiguration =
-    JsBuilders.messageSendConfiguration(
-      acceptedOutputModes = Some(config.acceptedOutputModes),
-      blocking = config.blocking,
-      historyLength = config.historyLength,
-      pushNotificationConfig = config.pushNotificationConfig.map(A2AConverters.toJs),
-    )
+  private var currentCard = initialCard
+  private var requestId   = 0L
 
   override def agentCard: Task[AgentCard] =
     getAgentCard
 
+  override def getAgentCard: Task[AgentCard] =
+    ZIO.succeed(currentCard)
+
   override def send(message: A2AMessage, config: Option[MessageSendConfiguration]): Task[A2ATask] =
-    ZIO
-      .fromPromiseJS {
-        val jsMessage       = A2AConverters.toJs(message)
-        val effectiveConfig = config match
-          case Some(value) if value.blocking.isDefined => Some(value)
-          case Some(value)                             => Some(value.copy(blocking = Some(true)))
-          case None => Some(MessageSendConfiguration.default.copy(blocking = Some(true)))
-        val jsConfig = effectiveConfig.map(toJsConfig)
-        val params   = JsBuilders.sendMessageParams(jsMessage, jsConfig)
-        jsClient.sendMessage(params)
-      }
-      .flatMap { result =>
-        val dyn = result.asInstanceOf[js.Dynamic]
-        dyn.kind.asInstanceOf[js.UndefOr[String]].toOption match
-          case Some("task") =>
-            ZIO.succeed(A2AConverters.toScala(result.asInstanceOf[JsTask]))
-          case Some("message") =>
-            val msg = A2AConverters.toScala(result.asInstanceOf[JsMessage])
-            ZIO.succeed(A2AStreamEventParser.taskFromMessage(message, msg))
-          case other =>
-            ZIO.fail(new IllegalArgumentException(s"Unexpected A2A send result kind: ${other.getOrElse("<missing>")}"))
-      }
+    val effective = config.getOrElse(MessageSendConfiguration.default.copy(returnImmediately = false))
+    rpc[A2ARequest.MessageSend, A2AResponse.SendMessageResult](
+      A2AMethod.MessageSend,
+      A2ARequest.MessageSend(message = message, configuration = Some(effective), tenant = iface.tenant),
+    ).map {
+      case A2AResponse.SendMessageResult.TaskResult(task)              => task
+      case A2AResponse.SendMessageResult.MessageResult(responseMessage) => A2AStreamEventParser.taskFromMessage(message, responseMessage)
+    }
 
   override def stream(
     message: A2AMessage,
     config: Option[MessageSendConfiguration],
   ): ZStream[Any, Throwable, A2AResponse.StreamEvent] =
-    ZStream.unwrap {
-      ZIO.attempt {
-        val jsMessage = A2AConverters.toJs(message)
-        val jsConfig  = config.map(toJsConfig)
-        val params    = JsBuilders.sendMessageParams(jsMessage, jsConfig)
-        val asyncGen  = jsClient.sendMessageStream(params)
-        AsyncIteratorOps
-          .toZStream(asyncGen.asInstanceOf[AsyncIterator[js.Any]])
-          .mapZIO(A2AStreamEventParser.parse)
-      }
-    }
+    val effective = config.getOrElse(MessageSendConfiguration.default.copy(returnImmediately = false))
+    rpcStream[A2ARequest.MessageSend](
+      A2AMethod.MessageStream,
+      A2ARequest.MessageSend(message = message, configuration = Some(effective), tenant = iface.tenant),
+    )
 
   override def getTask(taskId: TaskId, historyLength: Option[Int]): Task[A2ATask] =
-    ZIO
-      .fromPromiseJS {
-        jsClient.getTask(JsBuilders.taskQueryParams(taskId.value, historyLength))
-      }
-      .map(A2AConverters.toScala)
+    rpc[A2ARequest.TasksGet, A2ATask](
+      A2AMethod.TasksGet,
+      A2ARequest.TasksGet(id = taskId, historyLength = historyLength, tenant = iface.tenant),
+    )
+
+  override def listTasks(params: A2ARequest.TasksList): Task[A2AResponse.ListTasksResult] =
+    rpc[A2ARequest.TasksList, A2AResponse.ListTasksResult](
+      A2AMethod.TasksList,
+      params.copy(tenant = params.tenant.orElse(iface.tenant)),
+    )
 
   override def cancelTask(taskId: TaskId): Task[A2ATask] =
-    ZIO
-      .fromPromiseJS {
-        jsClient.cancelTask(JsBuilders.taskIdParams(taskId.value))
-      }
-      .map(A2AConverters.toScala)
+    rpc[A2ARequest.TasksCancel, A2ATask](
+      A2AMethod.TasksCancel,
+      A2ARequest.TasksCancel(id = taskId, tenant = iface.tenant),
+    )
 
   override def resubscribe(taskId: TaskId): ZStream[Any, Throwable, A2AResponse.StreamEvent] =
-    ZStream.unwrap {
-      ZIO.attempt {
-        val asyncGen = jsClient.resubscribeTask(JsBuilders.taskIdParams(taskId.value))
-        AsyncIteratorOps
-          .toZStream(asyncGen.asInstanceOf[AsyncIterator[js.Any]])
-          .mapZIO(A2AStreamEventParser.parse)
+    rpcStream[A2ARequest.TasksResubscribe](
+      A2AMethod.TasksResubscribe,
+      A2ARequest.TasksResubscribe(id = taskId, tenant = iface.tenant),
+    )
+
+  override def createTaskPushNotificationConfig(
+    taskId: TaskId,
+    config: TaskPushNotificationConfig,
+  ): Task[TaskPushNotificationConfig] =
+    if !currentCard.capabilities.pushNotifications then ZIO.fail(A2AError.pushNotificationNotSupported)
+    else
+      rpc[TaskPushNotificationConfig, TaskPushNotificationConfig](
+        A2AMethod.PushNotificationConfigSet,
+        config.copy(taskId = Some(taskId), tenant = iface.tenant.orElse(config.tenant)),
+      )
+
+  override def getTaskPushNotificationConfig(taskId: TaskId, configId: String): Task[TaskPushNotificationConfig] =
+    if !currentCard.capabilities.pushNotifications then ZIO.fail(A2AError.pushNotificationNotSupported)
+    else
+      rpc[A2ARequest.PushNotificationConfigGet, TaskPushNotificationConfig](
+        A2AMethod.PushNotificationConfigGet,
+        A2ARequest.PushNotificationConfigGet(taskId = taskId, id = configId, tenant = iface.tenant),
+      )
+
+  override def listTaskPushNotificationConfigs(taskId: TaskId): Task[List[TaskPushNotificationConfig]] =
+    if !currentCard.capabilities.pushNotifications then ZIO.fail(A2AError.pushNotificationNotSupported)
+    else
+      rpc[A2ARequest.PushNotificationConfigList, A2AResponse.PushNotificationConfigListResult](
+        A2AMethod.PushNotificationConfigList,
+        A2ARequest.PushNotificationConfigList(taskId = taskId, tenant = iface.tenant),
+      ).map(_.configs)
+
+  override def deleteTaskPushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
+    if !currentCard.capabilities.pushNotifications then ZIO.fail(A2AError.pushNotificationNotSupported)
+    else
+      rpcUnit[A2ARequest.PushNotificationConfigDelete](
+        A2AMethod.PushNotificationConfigDelete,
+        A2ARequest.PushNotificationConfigDelete(taskId = taskId, id = configId, tenant = iface.tenant),
+      )
+
+  private def nextRequestId(): JsonRpcId =
+    requestId += 1
+    JsonRpcId.Num(requestId)
+
+  private def rpc[A: JsonEncoder, B: JsonDecoder](method: String, params: A): Task[B] =
+    val id      = nextRequestId()
+    val request = JsonRpcRequest(method = method, params = params.toJsonAST.toOption, id = Some(id))
+    Http
+      .postJson(iface.url, request.toJson, requestHeaders(A2AContentType.Json))
+      .flatMap { body =>
+        ZIO.fromEither(body.fromJson[JsonRpcResponse].left.map(A2AError.invalidRequest)).flatMap { response =>
+          ensureResponseId(response, id, method) *> (response.error match
+            case Some(error) => ZIO.fail(error.toA2AError)
+            case None =>
+              response.result match
+                case Some(result) => ZIO.fromEither(result.as[B].left.map(A2AError.invalidAgentResponse))
+                case None         => ZIO.fail(A2AError.invalidAgentResponse(s"Missing result for $method"))
+          )
+        }
       }
-    }
 
-  override def getAgentCard: Task[AgentCard] =
-    ZIO.fromPromiseJS(jsClient.getAgentCard()).map(A2AConverters.toScala)
-
-  override def setPushNotificationConfig(taskId: TaskId, config: PushNotificationConfig): Task[PushNotificationConfig] =
-    ZIO
-      .fromPromiseJS {
-        val params = JsBuilders.taskPushNotificationConfigParams(taskId.value, A2AConverters.toJs(config))
-        jsClient.setTaskPushNotificationConfig(params)
+  private def rpcUnit[A: JsonEncoder](method: String, params: A): Task[Unit] =
+    val id      = nextRequestId()
+    val request = JsonRpcRequest(method = method, params = params.toJsonAST.toOption, id = Some(id))
+    Http
+      .postJson(iface.url, request.toJson, requestHeaders(A2AContentType.Json))
+      .flatMap { body =>
+        ZIO.fromEither(body.fromJson[JsonRpcResponse].left.map(A2AError.invalidRequest)).flatMap { response =>
+          ensureResponseId(response, id, method) *> (response.error match
+            case Some(error) => ZIO.fail(error.toA2AError)
+            case None        => ZIO.unit
+          )
+        }
       }
-      .map(A2AConverters.toScalaPushNotificationConfigResult)
 
-  override def getPushNotificationConfig(taskId: TaskId, configId: Option[String]): Task[PushNotificationConfig] =
-    ZIO
-      .fromPromiseJS {
-        jsClient.getTaskPushNotificationConfig(JsBuilders.getPushNotificationConfigParams(taskId.value, configId))
+  private def rpcStream[A: JsonEncoder](
+    method: String,
+    params: A,
+  ): ZStream[Any, Throwable, A2AResponse.StreamEvent] =
+    val id      = nextRequestId()
+    val request = JsonRpcRequest(method = method, params = params.toJsonAST.toOption, id = Some(id))
+    Http
+      .sse(iface.url, Some(request.toJson), requestHeaders(A2AContentType.Json) + ("Accept" -> A2AContentType.Sse))
+      .mapZIO { data =>
+        ZIO.fromEither(data.fromJson[JsonRpcResponse].left.map(A2AError.invalidRequest)).flatMap { response =>
+          ensureResponseId(response, id, method) *> (response.error match
+            case Some(error) => ZIO.fail(error.toA2AError)
+            case None =>
+              response.result match
+                case Some(result) => ZIO.fromEither(result.as[A2AResponse.StreamEvent].left.map(A2AError.invalidAgentResponse))
+                case None         => ZIO.fail(A2AError.invalidAgentResponse(s"Missing stream result for $method"))
+          )
+        }
       }
-      .map(A2AConverters.toScalaPushNotificationConfigResult)
 
-  override def listPushNotificationConfigs(taskId: TaskId): Task[List[PushNotificationConfig]] =
-    ZIO
-      .fromPromiseJS {
-        jsClient.listTaskPushNotificationConfig(JsBuilders.taskIdParams(taskId.value))
-      }
-      .map { result => A2AConverters.toScalaPushNotificationConfigResults(result.asInstanceOf[js.Array[js.Any]]) }
+  private def ensureResponseId(response: JsonRpcResponse, expected: JsonRpcId, method: String): Task[Unit] =
+    response.id match
+      case Some(actual) if actual == expected =>
+        ZIO.unit
+      case Some(actual) =>
+        ZIO.fail(A2AError.invalidAgentResponse(s"JSON-RPC response id mismatch for $method: expected $expected, got $actual"))
+      case None =>
+        ZIO.fail(A2AError.invalidAgentResponse(s"Missing JSON-RPC response id for $method"))
 
-  override def deletePushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
-    ZIO.fromPromiseJS {
-      val params = JsBuilders.deletePushNotificationConfigParams(taskId.value, configId)
-      jsClient.deleteTaskPushNotificationConfig(params)
-    }.unit
+  private def requestHeaders(contentType: String): Map[String, String] =
+    headers ++ Map(
+      "Content-Type"   -> contentType,
+      A2AHeader.Version -> iface.protocolVersion,
+    )
 end A2AClientLive
 
-/** Extension methods for convenient message sending */
+private object Http:
+  def fetchJson[A: JsonDecoder](url: String, headers: Map[String, String]): Task[A] =
+    get(url, headers).flatMap(body => ZIO.fromEither(body.fromJson[A].left.map(A2AError.invalidAgentResponse)))
+
+  def get(url: String, headers: Map[String, String]): Task[String] =
+    fetchText(url, js.Dynamic.literal(method = "GET", headers = toJsHeaders(headers)))
+
+  def postJson(url: String, body: String, headers: Map[String, String]): Task[String] =
+    fetchText(url, js.Dynamic.literal(method = "POST", headers = toJsHeaders(headers), body = body))
+
+  def sse(
+    url: String,
+    body: Option[String],
+    headers: Map[String, String],
+  ): ZStream[Any, Throwable, String] =
+    ZStream.unwrapScoped {
+      for
+        queue <- Queue.unbounded[Take[Throwable, String]]
+        init = js.Dynamic.literal(
+          method = body.fold("GET")(_ => "POST"),
+          headers = toJsHeaders(headers),
+        )
+        _ = body.foreach(value => init.body = value)
+        response <- ZIO.fromPromiseJS(js.Dynamic.global.fetch(url, init).asInstanceOf[js.Promise[js.Dynamic]])
+        _        <- failIfHttpError(response)
+        contentType = Option(response.headers.get("content-type")).filter(value => !js.isUndefined(value) && value != null).map(_.asInstanceOf[String]).getOrElse("")
+        stream <-
+          if contentType.startsWith(A2AContentType.Sse) then
+            val reader  = response.body.getReader().asInstanceOf[js.Dynamic]
+            val decoder = js.Dynamic.newInstance(js.Dynamic.global.TextDecoder)()
+            pumpSse(reader, decoder, "", queue).forkScoped.as(ZStream.fromQueue(queue).flattenTake)
+          else
+            ZIO
+              .fromPromiseJS(response.text().asInstanceOf[js.Promise[String]])
+              .map(body => ZStream.succeed(body))
+      yield stream
+    }
+
+  private def fetchText(url: String, init: js.Dynamic): Task[String] =
+    ZIO
+      .fromPromiseJS(js.Dynamic.global.fetch(url, init).asInstanceOf[js.Promise[js.Dynamic]])
+      .flatMap(response => failIfHttpError(response) *> ZIO.fromPromiseJS(response.text().asInstanceOf[js.Promise[String]]))
+
+  private def failIfHttpError(response: js.Dynamic): Task[Unit] =
+    val ok = response.ok.asInstanceOf[Boolean]
+    if ok then ZIO.unit
+    else
+      ZIO
+        .fromPromiseJS(response.text().asInstanceOf[js.Promise[String]])
+        .flatMap(body => ZIO.fail(A2AError.invalidAgentResponse(s"HTTP ${response.status}: $body")))
+
+  private def pumpSse(
+    reader: js.Dynamic,
+    decoder: js.Dynamic,
+    buffer: String,
+    queue: Queue[Take[Throwable, String]],
+  ): UIO[Unit] =
+    ZIO
+      .fromPromiseJS(reader.read().asInstanceOf[js.Promise[js.Dynamic]])
+      .flatMap { step =>
+        if step.done.asInstanceOf[Boolean] then
+          emitEvents(buffer, queue).ignore *> queue.offer(Take.end).unit
+        else
+          val chunk = decoder.decode(step.value).asInstanceOf[String]
+          val (events, rest) = splitEvents(buffer + chunk)
+          ZIO.foreachDiscard(events)(event => queue.offer(Take.single(event)).unit) *> pumpSse(reader, decoder, rest, queue)
+      }
+      .catchAll(error => queue.offer(Take.fail(error)).unit)
+
+  private def emitEvents(buffer: String, queue: Queue[Take[Throwable, String]]): UIO[Unit] =
+    val trimmed = buffer.trim
+    if trimmed.isEmpty then ZIO.unit
+    else parseEvent(trimmed).fold(ZIO.unit)(data => queue.offer(Take.single(data)).unit)
+
+  private def splitEvents(buffer: String): (List[String], String) =
+    val normalized = buffer.replace("\r\n", "\n")
+    val parts      = normalized.split("\n\n", -1).toList
+    val complete   = parts.dropRight(1).flatMap(parseEvent)
+    val rest       = parts.lastOption.getOrElse("")
+    (complete, rest)
+
+  private def parseEvent(raw: String): Option[String] =
+    val lines = raw.linesIterator.toList
+    val eventType = lines
+      .find(_.startsWith("event:"))
+      .map(_.drop("event:".length).trim)
+      .getOrElse("message")
+    val data = lines
+      .filter(_.startsWith("data:"))
+      .map(_.drop("data:".length).trim)
+      .mkString("\n")
+    if eventType == "error" then Some(data)
+    else Option.when(data.nonEmpty)(data)
+
+  private def toJsHeaders(headers: Map[String, String]): js.Dynamic =
+    val obj = js.Dynamic.literal()
+    headers.foreach { case (key, value) => obj.updateDynamic(key)(value) }
+    obj
+end Http
+
+/** Extension methods for convenient message sending. */
 extension (client: A2AClient)
-  /** Send a text message */
+  /** Send a text message. */
   def sendText(text: String, contextId: Option[ContextId] = None): Task[A2ATask] =
     client.send(A2AMessage.userText(text, contextId))
 
@@ -269,11 +432,11 @@ extension (client: A2AClient)
   ): Task[A2ATask] =
     client.sendAndPoll(A2AMessage.userText(text, contextId), pollEvery = pollEvery, timeout = timeout)
 
-  /** Stream a text message */
+  /** Stream a text message. */
   def streamText(text: String, contextId: Option[ContextId] = None): ZStream[Any, Throwable, A2AResponse.StreamEvent] =
     client.stream(A2AMessage.userText(text, contextId))
 
-  /** Send and wait for text response */
+  /** Send and wait for text response. */
   def askText(text: String, contextId: Option[ContextId] = None): Task[String] =
     client.sendAndPollText(text, contextId).map { task => task.status.message.map(_.text).getOrElse("") }
 end extension

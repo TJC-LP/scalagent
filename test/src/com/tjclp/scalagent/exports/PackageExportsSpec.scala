@@ -50,3 +50,28 @@ class PackageExportsSpec extends FunSuite:
   test("ClaudeInterpreter is available from package object"):
     val interpreter = ClaudeInterpreter
     assert(interpreter != null)
+
+  test("A2A v1 types are available from package object"):
+    val iface: AgentInterface = AgentInterface.jsonRpc("http://example.test")
+    val card: AgentCard = AgentCard(
+      name = "Remote",
+      description = "Remote agent",
+      supportedInterfaces = List(iface),
+      capabilities = AgentCapabilities.default.copy(pushNotifications = true),
+    )
+    val pushConfig: TaskPushNotificationConfig =
+      TaskPushNotificationConfig(
+        url = "http://callback.test",
+        authentication = Some(AuthenticationInfo("Bearer", "token")),
+      )
+
+    assertEquals(card.supportedInterfaces.head.protocolVersion, A2AProtocol.Version)
+    assertEquals(pushConfig.authentication.map(_.scheme), Some("Bearer"))
+    assert(PushNotificationUrlPolicy.externalOnly != null)
+
+  test("A2A v0.3 compatibility entry points are available from package object"):
+    val legacyClient = A2AClientV03
+    val legacyServer = A2AServerV03
+
+    assert(legacyClient != null)
+    assert(legacyServer != null)

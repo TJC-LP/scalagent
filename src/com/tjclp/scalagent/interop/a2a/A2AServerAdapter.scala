@@ -35,10 +35,14 @@ object A2AServerAdapter:
     capabilities: AgentCapabilities = AgentCapabilities.default,
     skills: List[AgentSkill] = Nil):
     def toAgentCard: AgentCard =
+      val url = s"http://$host:$port"
       AgentCard(
         name = name,
         description = description,
-        url = s"http://$host:$port",
+        supportedInterfaces = List(
+          AgentInterface.jsonRpc(url),
+          AgentInterface.rest(url),
+        ),
         capabilities = capabilities,
         skills = skills,
       )

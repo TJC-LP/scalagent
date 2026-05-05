@@ -23,6 +23,8 @@ object A2AErrorCode:
   val ContentTypeNotSupported: Int                = -32005
   val InvalidAgentResponse: Int                   = -32006
   val AuthenticatedExtendedCardNotConfigured: Int = -32007
+  val ExtensionSupportRequired: Int               = -32008
+  val VersionNotSupported: Int                    = -32009
 
   def message(code: Int): String = code match
     case ParseError                             => "Parse error"
@@ -37,6 +39,8 @@ object A2AErrorCode:
     case ContentTypeNotSupported                => "Content type not supported"
     case InvalidAgentResponse                   => "Invalid agent response"
     case AuthenticatedExtendedCardNotConfigured => "Authenticated extended card not configured"
+    case VersionNotSupported                    => "Version not supported"
+    case ExtensionSupportRequired               => "Extension support required"
     case _                                      => "Unknown error"
 end A2AErrorCode
 
@@ -89,4 +93,10 @@ object A2AError:
 
   def authenticatedExtendedCardNotConfigured: A2AError =
     A2AError(A2AErrorCode.AuthenticatedExtendedCardNotConfigured, "Authenticated extended card not configured")
+
+  def versionNotSupported(version: String): A2AError =
+    A2AError(A2AErrorCode.VersionNotSupported, s"Version not supported: $version")
+
+  def extensionSupportRequired(extension: String): A2AError =
+    A2AError(A2AErrorCode.ExtensionSupportRequired, s"Extension support required: $extension")
 end A2AError

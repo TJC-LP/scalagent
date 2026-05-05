@@ -31,6 +31,8 @@ object TaskId:
 
   given JsonEncoder[TaskId] = OpaqueStringJsonCodec.encoder(_.value)
   given JsonDecoder[TaskId] = OpaqueStringJsonCodec.decoder(apply)
+  // Same-type equality for callers compiled with `-language:strictEquality`.
+  given CanEqual[TaskId, TaskId] = CanEqual.derived
 
 /** Unique identifier for an A2A message */
 opaque type MessageId = String
@@ -45,6 +47,7 @@ object MessageId:
 
   given JsonEncoder[MessageId] = OpaqueStringJsonCodec.encoder(_.value)
   given JsonDecoder[MessageId] = OpaqueStringJsonCodec.decoder(apply)
+  given CanEqual[MessageId, MessageId] = CanEqual.derived
 
 /** Unique identifier for a conversation context */
 opaque type ContextId = String
@@ -59,11 +62,24 @@ object ContextId:
 
   given JsonEncoder[ContextId] = OpaqueStringJsonCodec.encoder(_.value)
   given JsonDecoder[ContextId] = OpaqueStringJsonCodec.decoder(apply)
+  given CanEqual[ContextId, ContextId] = CanEqual.derived
 
 /** A2A protocol version */
 object A2AProtocol:
-  val Version        = "0.3.0"
+  val Version        = "1.0"
   val JsonRpcVersion = "2.0"
+
+/** Standard A2A headers */
+object A2AHeader:
+  val Version            = "A2A-Version"
+  val Extensions         = "X-A2A-Extensions"
+  val StandardExtensions = "A2A-Extensions"
+
+/** Standard content types */
+object A2AContentType:
+  val Json    = "application/json"
+  val A2AJson = "application/a2a+json"
+  val Sse     = "text/event-stream"
 
 /** Standard A2A transport types */
 enum A2ATransport:

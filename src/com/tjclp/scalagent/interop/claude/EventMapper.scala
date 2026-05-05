@@ -12,8 +12,13 @@ import com.tjclp.scalagent.messages.*
  * message with text + tool use produces two events). Provider-specific messages
  * that don't normalize pass through as `AgentEvent.Native` with a tag and
  * lossless JSON payload.
+ *
+ * Public so external Claude consumers can normalize the same way the in-tree
+ * `ClaudeInterpreter` does (parallel to the public `CodexEventMapper`). Use
+ * the package-level alias `com.tjclp.scalagent.ClaudeEventMapper` from outside
+ * `interop.claude`.
  */
-private[claude] object EventMapper:
+object EventMapper:
 
   def mapMessage(msg: AgentMessage): List[AgentEvent] = msg match
     case AgentMessage.Assistant(message, _, _, _, _) =>

@@ -113,19 +113,20 @@ object JsonRpcId:
 /** A2A protocol methods */
 object A2AMethod:
   // Message methods
-  val MessageSend   = "message/send"
-  val MessageStream = "message/stream"
+  val MessageSend   = "SendMessage"
+  val MessageStream = "SendStreamingMessage"
 
   // Task methods
-  val TasksGet         = "tasks/get"
-  val TasksCancel      = "tasks/cancel"
-  val TasksResubscribe = "tasks/resubscribe"
+  val TasksGet         = "GetTask"
+  val TasksList        = "ListTasks"
+  val TasksCancel      = "CancelTask"
+  val TasksResubscribe = "SubscribeToTask"
 
   // Push notification methods
-  val PushNotificationConfigSet    = "tasks/pushNotificationConfig/set"
-  val PushNotificationConfigGet    = "tasks/pushNotificationConfig/get"
-  val PushNotificationConfigList   = "tasks/pushNotificationConfig/list"
-  val PushNotificationConfigDelete = "tasks/pushNotificationConfig/delete"
+  val PushNotificationConfigSet    = "CreateTaskPushNotificationConfig"
+  val PushNotificationConfigGet    = "GetTaskPushNotificationConfig"
+  val PushNotificationConfigList   = "ListTaskPushNotificationConfigs"
+  val PushNotificationConfigDelete = "DeleteTaskPushNotificationConfig"
 
   // Agent methods
-  val GetAuthenticatedExtendedCard = "agent/getAuthenticatedExtendedCard"
+  val GetAuthenticatedExtendedCard = "GetExtendedAgentCard"

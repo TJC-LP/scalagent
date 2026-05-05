@@ -1,7 +1,6 @@
 package com.tjclp.scalagent.a2a
 
 import com.tjclp.scalagent.config.AgentOptions
-import com.tjclp.scalagent.a2a.facade.{JsAgentExecutor, JsTaskStore}
 import zio.*
 
 /**
@@ -49,9 +48,24 @@ trait A2AServerApp[Self <: Singleton] extends ZIOAppDefault:
   def capabilities: AgentCapabilities                                             = AgentCapabilities.default
   def sessionLogDir: Option[String]                                               = None
   def invocationPreparer: Option[(A2AMessage, TaskId) => Task[InvocationContext]] = None
-  def executorFactory: Option[(JsTaskStore, Runtime[Any]) => JsAgentExecutor]     = None
+  def executionOverride: Option[(A2AMessage, TaskId, ContextId, A2AEventPublisher) => Task[Unit]] = None
 
-  protected final def configWith(options: AgentOptions): A2AServer.Config =
+  /**
+   * Plug a durable task store. When `None` (default) tasks live in a
+   * process-local map and disappear when the host scales to zero — fine
+   * for local dev, broken for Modal `@web_server` containers.
+   */
+  def taskStore: Option[A2ATaskStore] = None
+
+  /**
+   * Effectful hook for stores that need runtime discovery (env vars,
+   * external clients) before construction. Simple servers stay on
+   * [[taskStore]]; the deploy-bound `GeneratedA2aServer` overrides this
+   * to wire its Modal-Dict-backed store.
+   */
+  def taskStoreZIO: Task[Option[A2ATaskStore]] = ZIO.succeed(taskStore)
+
+  protected final def configWith(options: AgentOptions, store: Option[A2ATaskStore]): A2AServer.Config =
     A2AServer.Config(
       name = name,
       description = description,
@@ -64,14 +78,18 @@ trait A2AServerApp[Self <: Singleton] extends ZIOAppDefault:
       skills = skills,
       sessionLogDir = sessionLogDir,
       invocationPreparer = invocationPreparer,
-      executorFactory = executorFactory,
+      executionOverride = executionOverride,
+      taskStore = store,
     )
 
   final def config: A2AServer.Config =
-    configWith(agentOptions)
+    configWith(agentOptions, taskStore)
 
   final def configZIO: Task[A2AServer.Config] =
-    agentOptionsZIO.map(configWith)
+    for
+      options <- agentOptionsZIO
+      store   <- taskStoreZIO
+    yield configWith(options, store)
 
   def onStarted(server: A2AServer): UIO[Unit] = ZIO.unit
 

@@ -5,6 +5,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
+import scala.scalajs.js.timers.setTimeout
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -36,6 +37,40 @@ class A2AInteropSpec extends FunSuite:
     val stream = js.Dynamic.literal()
     js.Dynamic.global.Reflect.set(stream, js.Symbol.asyncIterator, () => iterator)
     stream
+
+  private def delayedAsyncIterableOf(values: List[(js.Any, Int)]): js.Dynamic =
+    var index = 0
+    def delayedStep(done: Boolean, value: js.Any, delayMs: Int): js.Promise[js.Dynamic] =
+      new js.Promise[js.Dynamic]((resolve, _) =>
+        setTimeout(delayMs) {
+          resolve(js.Dynamic.literal(done = done, value = value))
+        }
+      )
+
+    val iterator = js.Dynamic.literal(
+      next = () =>
+        if index < values.length then
+          val (value, delayMs) = values(index)
+          index += 1
+          delayedStep(done = false, value = value, delayMs = delayMs)
+        else delayedStep(done = true, value = js.undefined, delayMs = 0)
+    )
+    iterator.updateDynamic("return")((_: js.UndefOr[js.Any]) => js.Promise.resolve(js.Dynamic.literal(done = true)))
+
+    val stream = js.Dynamic.literal()
+    js.Dynamic.global.Reflect.set(stream, js.Symbol.asyncIterator, () => iterator)
+    stream
+
+  private def readChunk(response: js.Dynamic): js.Promise[String] =
+    val reader  = response.body.getReader()
+    val decoder = js.Dynamic.newInstance(js.Dynamic.global.TextDecoder)()
+    reader
+      .read()
+      .asInstanceOf[js.Promise[js.Dynamic]]
+      .`then`[String] { step =>
+        if step.done.asInstanceOf[Boolean] then ""
+        else decoder.decode(step.value).asInstanceOf[String]
+      }
 
   test("message send configuration includes push notification config"):
     val pushConfig = PushNotificationConfig(
@@ -96,6 +131,32 @@ class A2AInteropSpec extends FunSuite:
     val dataPart = js.Dynamic.literal(kind = "data").asInstanceOf[JsPart]
 
     assertEquals(A2AConverters.toScalaPart(dataPart), Part.Data(Json.Null))
+
+  test("data parts preserve arbitrary JSON through JS facades"):
+    val part = Part.Data(
+      Json.Obj(
+        "kind" -> Json.Str("tool_use"),
+        "input" -> Json.Obj(
+          "path"  -> Json.Str("/tmp/test.txt"),
+          "flags" -> Json.Arr(Json.Str("a"), Json.Str("b"))
+        )
+      )
+    )
+
+    assertEquals(A2AConverters.toScalaPart(A2AConverters.toJsPart(part)), part)
+
+  test("messages preserve data parts through JS facades"):
+    val message = A2AMessage(
+      role = A2ARole.Agent,
+      parts = List(
+        Part.Text("Calling Read"),
+        Part.Data(Json.Obj("kind" -> Json.Str("tool_use"), "name" -> Json.Str("Read")))
+      ),
+      contextId = Some(ContextId("ctx-data")),
+      taskId = Some(TaskId("task-data")),
+    )
+
+    assertEquals(A2AConverters.toScala(A2AConverters.toJs(message)), message)
 
   test("legacy file parts preserve top-level name and mime type"):
     val json =
@@ -315,4 +376,25 @@ class A2AInteropSpec extends FunSuite:
     assertEquals(response.headers.get("Content-Type").asInstanceOf[String], "text/event-stream")
     response.text().asInstanceOf[js.Promise[String]].toFuture.map { body =>
       assertEquals(body, s"data: ${js.JSON.stringify(rpcEvent)}\n\n")
+    }
+
+  test("Bun JSON-RPC responses emit delayed SSE chunks incrementally"):
+    val first = js.Dynamic.literal(
+      jsonrpc = "2.0",
+      id = 1,
+      result = js.Dynamic.literal(kind = "status-update", taskId = "task-1", step = "one")
+    )
+    val second = js.Dynamic.literal(
+      jsonrpc = "2.0",
+      id = 1,
+      result = js.Dynamic.literal(kind = "status-update", taskId = "task-1", step = "two")
+    )
+    val response = BunJsonRpcResponses.fromResult(
+      delayedAsyncIterableOf(List(first -> 20, second -> 200)),
+      1,
+    )
+
+    readChunk(response).toFuture.map { chunk =>
+      assert(chunk.contains(""""step":"one""""))
+      assert(!chunk.contains(""""step":"two""""))
     }

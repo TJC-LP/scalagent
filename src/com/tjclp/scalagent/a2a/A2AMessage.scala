@@ -42,8 +42,64 @@ final case class A2AMessage(
   def hasText: Boolean = parts.exists(_.isInstanceOf[Part.Text])
 
 object A2AMessage:
-  given JsonEncoder[A2AMessage] = DeriveJsonEncoder.gen[A2AMessage]
-  given JsonDecoder[A2AMessage] = DeriveJsonDecoder.gen[A2AMessage]
+  given JsonEncoder[A2AMessage] = JsonEncoder[Json].contramap { message =>
+    var obj = Json.Obj(
+      "messageId" -> Json.Str(message.messageId.value),
+      "role"      -> message.role.toJsonAST.toOption.get,
+      "parts"     -> Json.Arr(message.parts.map(_.toJsonAST.toOption.get)*),
+    )
+    message.contextId.foreach(id => obj = obj.add("contextId", Json.Str(id.value)))
+    message.taskId.foreach(id => obj = obj.add("taskId", Json.Str(id.value)))
+    if message.referenceTaskIds.nonEmpty then
+      obj = obj.add("referenceTaskIds", Json.Arr(message.referenceTaskIds.map(id => Json.Str(id.value))*))
+    message.metadata.foreach(metadata => obj = obj.add("metadata", metadata))
+    if message.extensions.nonEmpty then obj = obj.add("extensions", Json.Arr(message.extensions.map(Json.Str(_))*))
+    obj
+  }
+
+  given JsonDecoder[A2AMessage] = JsonDecoder[Json].mapOrFail { json =>
+    json.asObject.toRight("Message must be an object").flatMap { obj =>
+      val fields = obj.toMap
+      for
+        role <- fields.get("role").toRight("Missing role").flatMap(_.as[A2ARole])
+        parts <- fields
+          .get("parts")
+          .flatMap(_.asArray)
+          .toRight("Missing parts")
+          .flatMap(values => values.toList.map(_.as[Part]).foldRight[Either[String, List[Part]]](Right(Nil)) {
+            case (Right(part), Right(parts)) => Right(part :: parts)
+            case (Left(error), _)            => Left(error)
+            case (_, Left(error))            => Left(error)
+          })
+        messageId = fields
+          .get("messageId")
+          .orElse(fields.get("message_id"))
+          .flatMap(_.asString)
+          .map(MessageId(_))
+          .getOrElse(MessageId.generate)
+        contextId = fields
+          .get("contextId")
+          .orElse(fields.get("context_id"))
+          .flatMap(_.asString)
+          .filter(_.nonEmpty)
+          .map(ContextId(_))
+        taskId = fields
+          .get("taskId")
+          .orElse(fields.get("task_id"))
+          .flatMap(_.asString)
+          .filter(_.nonEmpty)
+          .map(TaskId(_))
+        referenceTaskIds = fields
+          .get("referenceTaskIds")
+          .orElse(fields.get("reference_task_ids"))
+          .flatMap(_.asArray)
+          .map(_.toList.flatMap(_.asString).map(TaskId(_)))
+          .getOrElse(Nil)
+        metadata   = fields.get("metadata")
+        extensions = fields.get("extensions").flatMap(_.asArray).map(_.toList.flatMap(_.asString)).getOrElse(Nil)
+      yield A2AMessage(role, parts, messageId, contextId, taskId, referenceTaskIds, metadata, extensions)
+    }
+  }
 
   /** Create a user message with text content */
   def userText(text: String, contextId: Option[ContextId] = None): A2AMessage =
@@ -76,14 +132,14 @@ enum A2ARole:
 
 object A2ARole:
   given JsonEncoder[A2ARole] = StringEnumJsonCodec.encoder {
-    case A2ARole.User  => "user"
-    case A2ARole.Agent => "agent"
+    case A2ARole.User  => "ROLE_USER"
+    case A2ARole.Agent => "ROLE_AGENT"
   }
 
   given JsonDecoder[A2ARole] = StringEnumJsonCodec.decoderOrFail {
-    case "user"  => Right(A2ARole.User)
-    case "agent" => Right(A2ARole.Agent)
-    case other   => Left(s"Unknown role: $other")
+    case "ROLE_USER" | "user"   => Right(A2ARole.User)
+    case "ROLE_AGENT" | "agent" => Right(A2ARole.Agent)
+    case other                  => Left(s"Unknown role: $other")
   }
 
 /** Message part - discriminated union of content types */
@@ -93,6 +149,9 @@ enum Part:
   case Data(data: Json, metadata: Option[Json] = None)
 
 object Part:
+  private def optionalString(fields: Map[String, Json], names: String*): Option[String] =
+    names.iterator.flatMap(name => fields.get(name).flatMap(_.asString)).nextOption()
+
   private def mergeLegacyFileFields(partFields: Map[String, Json], fileJson: Json): Json =
     fileJson.asObject match
       case Some(fileObj) =>
@@ -108,15 +167,25 @@ object Part:
   given JsonEncoder[Part] = JsonEncoder[Json].contramap { part =>
     part match
       case Text(text, metadata) =>
-        var obj = Json.Obj("kind" -> Json.Str("text"), "text" -> Json.Str(text))
+        var obj = Json.Obj("text" -> Json.Str(text), "mediaType" -> Json.Str("text/plain"))
         metadata.foreach(m => obj = obj.add("metadata", m))
         obj
       case File(file, metadata) =>
-        var obj = Json.Obj("kind" -> Json.Str("file"), "file" -> file.toJsonAST.toOption.get)
+        var obj = file match
+          case FileContent.Bytes(bytes, name, mimeType) =>
+            var fileObj = Json.Obj("raw" -> Json.Str(bytes))
+            name.foreach(value => fileObj = fileObj.add("filename", Json.Str(value)))
+            mimeType.foreach(value => fileObj = fileObj.add("mediaType", Json.Str(value)))
+            fileObj
+          case FileContent.Uri(uri, name, mimeType) =>
+            var fileObj = Json.Obj("url" -> Json.Str(uri))
+            name.foreach(value => fileObj = fileObj.add("filename", Json.Str(value)))
+            mimeType.foreach(value => fileObj = fileObj.add("mediaType", Json.Str(value)))
+            fileObj
         metadata.foreach(m => obj = obj.add("metadata", m))
         obj
       case Data(data, metadata) =>
-        var obj = Json.Obj("kind" -> Json.Str("data"), "data" -> data)
+        var obj = Json.Obj("data" -> data, "mediaType" -> Json.Str("application/json"))
         metadata.foreach(m => obj = obj.add("metadata", m))
         obj
   }
@@ -125,19 +194,52 @@ object Part:
     json.asObject.toRight("Part must be an object").flatMap { jsonObj =>
       val fields   = jsonObj.toMap
       val metadata = fields.get("metadata")
-      fields.get("kind").flatMap(_.asString).toRight("Missing 'kind' field").flatMap {
-        case "text" =>
+      fields.get("kind").flatMap(_.asString) match
+        case Some("text") =>
           fields.get("text").flatMap(_.asString).toRight("Missing 'text' field").map(Text(_, metadata))
-        case "file" =>
+        case Some("file") =>
           for
             fileJson <- fields.get("file").toRight("Missing 'file' field")
             file     <- mergeLegacyFileFields(fields, fileJson).as[FileContent]
           yield File(file, metadata)
-        case "data" =>
+        case Some("data") =>
           for dataJson <- fields.get("data").toRight("Missing 'data' field")
           yield Data(dataJson, metadata)
-        case other => Left(s"Unknown part kind: $other")
-      }
+        case Some(other) =>
+          Left(s"Unknown part kind: $other")
+        case None =>
+          fields.get("text").flatMap(_.asString) match
+            case Some(text) => Right(Text(text, metadata))
+            case None =>
+              fields.get("raw").flatMap(_.asString) match
+                case Some(raw) =>
+                  Right(
+                    File(
+                      FileContent.Bytes(
+                        bytes = raw,
+                        name = optionalString(fields, "filename", "name"),
+                        mimeType = optionalString(fields, "mediaType", "media_type", "mimeType"),
+                      ),
+                      metadata,
+                    )
+                  )
+                case None =>
+                  fields.get("url").flatMap(_.asString) match
+                    case Some(url) =>
+                      Right(
+                        File(
+                          FileContent.Uri(
+                            uri = url,
+                            name = optionalString(fields, "filename", "name"),
+                            mimeType = optionalString(fields, "mediaType", "media_type", "mimeType"),
+                          ),
+                          metadata,
+                        )
+                      )
+                    case None =>
+                      fields.get("data") match
+                        case Some(dataJson) => Right(Data(dataJson, metadata))
+                        case None           => Left("Part must contain one of text, raw, url, or data")
     }
   }
 end Part

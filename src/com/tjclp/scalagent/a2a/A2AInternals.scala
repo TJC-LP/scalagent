@@ -124,7 +124,7 @@ private[scalagent] object A2AJsonRpcRequests:
     else
       val request = value.asInstanceOf[js.Dynamic]
       request.selectDynamic("method").asInstanceOf[js.UndefOr[String]].toOption match
-        case Some(A2AMethod.MessageSend) =>
+        case Some(method) if method == A2AMethod.MessageSend || method == "message/send" =>
           val paramsValue = request.selectDynamic("params").asInstanceOf[js.Any]
           if paramsValue == null || js.isUndefined(paramsValue) then false
           else normalizeConfiguration(paramsValue.asInstanceOf[js.Dynamic], blocking)
@@ -221,28 +221,35 @@ private[scalagent] object BunJsonRpcResponses:
       js.Dynamic.global.Reflect.get(asyncIterable, js.Symbol.asyncIterator).asInstanceOf[js.Dynamic]
     val iterator = iteratorFactory.call(asyncIterable).asInstanceOf[js.Dynamic]
     val encoder  = js.Dynamic.newInstance(js.Dynamic.global.TextEncoder)()
+    var canceled  = false
+
+    def pump(controller: js.Dynamic): Unit =
+      iterator
+        .next()
+        .asInstanceOf[js.Promise[js.Dynamic]]
+        .`then`[Unit] { step =>
+          if canceled then ()
+          else if step.done.asInstanceOf[Boolean] then
+            controller.close()
+            ()
+          else
+            controller.enqueue(encoder.encode(formatSseEvent(step.value)))
+            pump(controller)
+        }
+        .`catch`[Unit] { error =>
+          if !canceled then
+            val jsError = error.asInstanceOf[js.Any]
+            controller.enqueue(encoder.encode(formatSseErrorEvent(jsonRpcErrorBody(requestId, jsError))))
+            controller.close()
+          ()
+        }
 
     js.Dynamic.newInstance(js.Dynamic.global.ReadableStream)(
       js.Dynamic.literal(
-        pull = (controller: js.Dynamic) =>
-          iterator
-            .next()
-            .asInstanceOf[js.Promise[js.Dynamic]]
-            .`then`[Unit] { step =>
-              if step.done.asInstanceOf[Boolean] then
-                controller.close()
-                ()
-              else
-                controller.enqueue(encoder.encode(formatSseEvent(step.value)))
-                ()
-            }
-            .`catch`[Unit] { error =>
-              val jsError = error.asInstanceOf[js.Any]
-              controller.enqueue(encoder.encode(formatSseErrorEvent(jsonRpcErrorBody(requestId, jsError))))
-              controller.close()
-              ()
-            },
-        cancel = (_: js.Any) => iteratorReturn(iterator),
+        start = (controller: js.Dynamic) => pump(controller),
+        cancel = (_: js.Any) =>
+          canceled = true
+          iteratorReturn(iterator),
       )
     )
   end sseStream

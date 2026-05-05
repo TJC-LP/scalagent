@@ -2,6 +2,9 @@ package com.tjclp.scalagent.a2a
 
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.scalajs.js
+import scala.scalajs.js.annotation.*
+import scala.util.Random
 import munit.FunSuite
 import zio.*
 import zio.stream.*
@@ -48,6 +51,9 @@ class A2AClientSpec extends FunSuite:
     override def getTask(taskId: TaskId, historyLength: Option[Int]): Task[A2ATask] =
       ZIO.succeed(completedTask(taskId))
 
+    override def listTasks(params: A2ARequest.TasksList): Task[A2AResponse.ListTasksResult] =
+      ZIO.succeed(A2AResponse.ListTasksResult(Nil))
+
     override def cancelTask(taskId: TaskId): Task[A2ATask] =
       ZIO.succeed(completedTask(taskId))
 
@@ -57,16 +63,19 @@ class A2AClientSpec extends FunSuite:
     override def getAgentCard: Task[AgentCard] =
       agentCard
 
-    override def setPushNotificationConfig(taskId: TaskId, config: PushNotificationConfig): Task[PushNotificationConfig] =
+    override def createTaskPushNotificationConfig(
+      taskId: TaskId,
+      config: TaskPushNotificationConfig,
+    ): Task[TaskPushNotificationConfig] =
       ZIO.succeed(config)
 
-    override def getPushNotificationConfig(taskId: TaskId, configId: Option[String]): Task[PushNotificationConfig] =
+    override def getTaskPushNotificationConfig(taskId: TaskId, configId: String): Task[TaskPushNotificationConfig] =
       ZIO.dieMessage("unused in test")
 
-    override def listPushNotificationConfigs(taskId: TaskId): Task[List[PushNotificationConfig]] =
+    override def listTaskPushNotificationConfigs(taskId: TaskId): Task[List[TaskPushNotificationConfig]] =
       ZIO.succeed(Nil)
 
-    override def deletePushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
+    override def deleteTaskPushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
       ZIO.unit
 
   test("submit forces non-blocking message/send"):
@@ -83,4 +92,48 @@ class A2AClientSpec extends FunSuite:
       assertEquals(task.status.state, TaskState.Completed)
       assertEquals(client.seenConfig.flatMap(_.blocking), Some(false))
     }
+
+  test("JSON-RPC response id mismatch fails the client"):
+    val port = 45000 + Random.nextInt(1000)
+    val responseBody =
+      """{"jsonrpc":"2.0","id":999,"result":{"tasks":[],"pageSize":0,"totalSize":0}}"""
+
+    val program =
+      ZIO.scoped {
+        for
+          server <- ZIO.acquireRelease(
+            ZIO.attempt {
+              val Response = js.Dynamic.global.Response
+              TestBun.serve(
+                js.Dynamic.literal(
+                  hostname = "127.0.0.1",
+                  port = port,
+                  fetch = { (_: js.Dynamic) =>
+                    js.Promise.resolve(
+                      js.Dynamic.newInstance(Response)(
+                        responseBody,
+                        js.Dynamic.literal(status = 200, headers = js.Dynamic.literal(`Content-Type` = A2AContentType.Json)),
+                      )
+                    )
+                  }: js.Function1[js.Dynamic, js.Promise[js.Dynamic]],
+                )
+              )
+            }
+          )(server => ZIO.attempt(server.stop()).ignore)
+          client <- A2AClient.fromCard(AgentCard.minimal("Mismatch", "Mismatch test", s"http://127.0.0.1:$port"))
+          result <- client.listTasks().either
+        yield result
+      }
+
+    runTask(program).map { result =>
+      assert(result.left.exists {
+        case error: A2AError => error.code == A2AErrorCode.InvalidAgentResponse && error.message.contains("id mismatch")
+        case _               => false
+      })
+    }
 end A2AClientSpec
+
+@js.native
+@JSGlobal("Bun")
+private object TestBun extends js.Object:
+  def serve(options: js.Dynamic): js.Dynamic = js.native

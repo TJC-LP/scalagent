@@ -303,9 +303,16 @@ package object scalagent:
   type A2AClient = a2a.A2AClient
   val A2AClient = a2a.A2AClient
 
+  type A2AClientV03 = a2a.A2AClientV03
+  val A2AClientV03 = a2a.A2AClientV03
+
   type A2AServer = a2a.A2AServer
   val A2AServer = a2a.A2AServer
   type A2AServerApp[Self <: Singleton] = a2a.A2AServerApp[Self]
+
+  type A2AServerV03 = a2a.A2AServerV03
+  val A2AServerV03 = a2a.A2AServerV03
+  type A2AServerAppV03[Self <: Singleton] = a2a.A2AServerAppV03[Self]
 
   type ExecutionMode = a2a.ExecutionMode
   val ExecutionMode = a2a.ExecutionMode
@@ -314,6 +321,7 @@ package object scalagent:
   val A2ATool     = a2a.A2ATool
   val A2ARequest  = a2a.A2ARequest
   val A2AResponse = a2a.A2AResponse
+  type StreamResponse = a2a.A2AResponse.StreamResponse
 
   // Re-export A2AClient extension methods for convenience
   export a2a.{askText, sendAndPollText, sendText, streamText, submitText}
@@ -334,6 +342,12 @@ package object scalagent:
   type TaskId = a2a.TaskId
   val TaskId = a2a.TaskId
 
+  type ContextId = a2a.ContextId
+  val ContextId = a2a.ContextId
+
+  type MessageId = a2a.MessageId
+  val MessageId = a2a.MessageId
+
   type TaskState = a2a.TaskState
   val TaskState = a2a.TaskState
 
@@ -349,8 +363,26 @@ package object scalagent:
   type PushNotificationConfig = a2a.PushNotificationConfig
   val PushNotificationConfig = a2a.PushNotificationConfig
 
+  type TaskPushNotificationConfig = a2a.TaskPushNotificationConfig
+  val TaskPushNotificationConfig = a2a.TaskPushNotificationConfig
+
+  type A2APushNotificationStore = a2a.A2APushNotificationStore
+  val A2APushNotificationStore = a2a.A2APushNotificationStore
+
+  type PushNotificationUrlPolicy = a2a.PushNotificationUrlPolicy
+  val PushNotificationUrlPolicy = a2a.PushNotificationUrlPolicy
+
+  type AuthenticationInfo = a2a.AuthenticationInfo
+  val AuthenticationInfo = a2a.AuthenticationInfo
+
   type AgentCapabilities = a2a.AgentCapabilities
   val AgentCapabilities = a2a.AgentCapabilities
+
+  type AgentInterface = a2a.AgentInterface
+  val AgentInterface = a2a.AgentInterface
+
+  type A2ATransport = a2a.A2ATransport
+  val A2ATransport = a2a.A2ATransport
 
   type AgentProvider = a2a.AgentProvider
   val AgentProvider = a2a.AgentProvider
@@ -366,6 +398,16 @@ package object scalagent:
 
   type MessageSendConfiguration = a2a.MessageSendConfiguration
   val MessageSendConfiguration = a2a.MessageSendConfiguration
+
+  type SecurityRequirement = a2a.SecurityRequirement
+  val SecurityRequirement = a2a.SecurityRequirement
+
+  type SecurityScheme = a2a.SecurityScheme
+  val SecurityScheme = a2a.SecurityScheme
+
+  val A2AProtocol = a2a.A2AProtocol
+  val A2AHeader = a2a.A2AHeader
+  val A2AContentType = a2a.A2AContentType
 
   // --- macros package ---
   type Tool        = macros.Tool
@@ -516,6 +558,7 @@ package object scalagent:
 
   // --- interop package ---
   val ClaudeInterpreter = interop.claude.ClaudeInterpreter
+  val ClaudeEventMapper = interop.claude.EventMapper
   val A2AInterpreter    = interop.a2a.A2AInterpreter
   val A2AServerAdapter  = interop.a2a.A2AServerAdapter
   val McpToolLoader     = interop.mcp.McpToolLoader
