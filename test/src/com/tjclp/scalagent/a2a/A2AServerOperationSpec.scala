@@ -294,7 +294,7 @@ class A2AServerOperationSpec extends FunSuite:
       assertEquals(replayed, List("two", "three"))
     }
 
-  test("resubscribe starts with a task snapshot and rejects terminal tasks"):
+  test("resubscribe starts with a task snapshot and replays terminal tasks"):
     val port = 52500 + Random.nextInt(1000)
     val delayed =
       (_: A2AMessage, taskId: TaskId, contextId: ContextId, publisher: A2AEventPublisher) =>
@@ -316,20 +316,66 @@ class A2AServerOperationSpec extends FunSuite:
           task   <- client.submit(A2AMessage.userText("subscribe"))
           first  <- client.resubscribe(task.id).runHead
           done   <- client.awaitTask(task.id, pollEvery = 10.millis, timeout = Some(2.seconds))
-          rejected <- client.resubscribe(done.id).runHead.either
-        yield (task, first, rejected)
+          terminalFirst <- client.resubscribe(done.id).runHead
+        yield (task, first, done, terminalFirst)
       }
 
-    runTask(program).map { case (task, first, rejected) =>
+    runTask(program).map { case (task, first, done, terminalFirst) =>
       assertEquals(first, Some(A2AResponse.StreamEvent.TaskSnapshot(task)))
-      assert(rejected.left.exists {
-        case error: A2AError => error.code == A2AErrorCode.UnsupportedOperation
-        case _               => false
-      })
+      assertEquals(terminalFirst, Some(A2AResponse.StreamEvent.TaskSnapshot(done)))
+    }
+
+  test("durable event store records published events and replays terminal streams"):
+    val port = 53500 + Random.nextInt(1000)
+
+    val program =
+      ZIO.scoped {
+        for
+          ref <- Ref.make(Vector.empty[A2AResponse.StreamEvent])
+          store = new A2AEventStore:
+            override def append(
+              taskId: TaskId,
+              tenant: Option[String],
+              event: A2AResponse.StreamEvent,
+            ): UIO[Unit] =
+              val _ = (taskId, tenant)
+              ref.update(_ :+ event)
+
+            override def load(
+              taskId: TaskId,
+              tenant: Option[String],
+              limit: Int,
+            ): UIO[List[A2AResponse.StreamEvent]] =
+              val _ = (taskId, tenant)
+              ref.get.map(_.takeRight(limit).toList)
+          config = A2AServer.Config(
+            name = "DurableEventStoreTest",
+            description = "Durable event store test server",
+            host = "127.0.0.1",
+            port = port,
+            capabilities = AgentCapabilities.default.copy(streaming = true),
+            executionOverride = Some(completedExecution),
+            eventStore = Some(store),
+          )
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          task   <- client.send(A2AMessage.userText("durable"))
+          replay <- client.resubscribe(task.id).take(3).runCollect
+          stored <- ref.get
+        yield (task, replay.toList, stored.toList)
+      }
+
+    runTask(program).map { case (task, replay, stored) =>
+      assert(stored.exists(_.isInstanceOf[A2AResponse.StreamEvent.TaskSnapshot]))
+      assert(stored.exists(_.isInstanceOf[A2AResponse.StreamEvent.TaskArtifactUpdate]))
+      assert(stored.exists(_.isFinal))
+      assertEquals(replay.headOption, Some(A2AResponse.StreamEvent.TaskSnapshot(task)))
+      assert(replay.exists(_.isInstanceOf[A2AResponse.StreamEvent.TaskArtifactUpdate]))
+      assert(replay.exists(_.isFinal))
     }
 
   test("tenant-scoped clients do not see each other's tasks"):
-    val port = 53500 + Random.nextInt(1000)
+    val port = 57500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "TenantOperationsTest",
       description = "Tenant operations test server",
