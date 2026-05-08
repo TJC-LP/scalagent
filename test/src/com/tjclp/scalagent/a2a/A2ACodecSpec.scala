@@ -112,6 +112,9 @@ class A2ACodecSpec extends FunSuite:
     roundTrip[A2AResponse.StreamResponse](
       A2AResponse.StreamEvent.TaskStatusUpdate(taskId, contextId, task.status, metadata = Some(Json.Obj("m" -> Json.Str("v"))))
     )
+    val finalStatus = A2AResponse.StreamEvent.TaskStatusUpdate(taskId, contextId, task.status, `final` = true)
+    roundTrip[A2AResponse.StreamResponse](finalStatus)
+    assert(finalStatus.toJson.contains(""""final":true"""))
     roundTrip[A2AResponse.StreamResponse](A2AResponse.StreamEvent.TaskArtifactUpdate(taskId, contextId, artifact, append = true, lastChunk = false))
     roundTrip[A2AResponse.StreamResponse](A2AResponse.StreamEvent.TaskMessage(taskId, contextId, message))
 

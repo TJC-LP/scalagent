@@ -165,12 +165,13 @@ object A2AResponse:
     given JsonEncoder[StreamEvent] = JsonEncoder[Json].contramap {
       case TaskSnapshot(task) =>
         Json.Obj("task" -> task.toJsonAST.toOption.get)
-      case TaskStatusUpdate(id, contextId, status, _, metadata) =>
+      case TaskStatusUpdate(id, contextId, status, isFinal, metadata) =>
         var update = Json.Obj(
           "taskId"    -> Json.Str(id.value),
           "contextId" -> Json.Str(contextId.value),
           "status"    -> status.toJsonAST.toOption.get,
         )
+        if isFinal then update = update.add("final", Json.Bool(true))
         metadata.foreach(value => update = update.add("metadata", value))
         Json.Obj("statusUpdate" -> update)
       case TaskArtifactUpdate(id, contextId, artifact, append, lastChunk, metadata) =>

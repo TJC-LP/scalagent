@@ -6,7 +6,6 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.scalajs.js
 import scala.scalajs.js.annotation.*
-import scala.util.Random
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -96,26 +95,24 @@ class A2APushNotificationSpec extends FunSuite:
     else ZIO.sleep(25.millis) *> waitFor(label, attempts - 1)(predicate)
 
   test("inline push notifications POST StreamResponse bodies with configured auth"):
-    val serverPort   = 45500 + Random.nextInt(1000)
-    val callbackPort = 46500 + Random.nextInt(1000)
-    val records      = ListBuffer.empty[CallbackRecord]
-
-    val config = A2AServer.Config(
-      name = "PushTest",
-      description = "Push test server",
-      host = "127.0.0.1",
-      port = serverPort,
-      capabilities = AgentCapabilities.default.copy(pushNotifications = true),
-      executionOverride = Some(completeImmediately),
-      pushNotificationUrlPolicy = PushNotificationUrlPolicy.allowAll,
-    )
+    val records = ListBuffer.empty[CallbackRecord]
 
     val program =
       ZIO.scoped {
         for
-          callback <- ZIO.acquireRelease(callbackServer(callbackPort, records))(server => ZIO.attempt(server.stop()).ignore)
-          server   <- A2AServer.create(config)
-          client   <- A2AClient.discover(server.url)
+          callback    <- ZIO.acquireRelease(callbackServer(0, records))(server => ZIO.attempt(server.stop()).ignore)
+          callbackPort = callback.selectDynamic("port").asInstanceOf[Int]
+          config = A2AServer.Config(
+            name = "PushTest",
+            description = "Push test server",
+            host = "127.0.0.1",
+            port = 0,
+            capabilities = AgentCapabilities.default.copy(pushNotifications = true),
+            executionOverride = Some(completeImmediately),
+            pushNotificationUrlPolicy = PushNotificationUrlPolicy.allowAll,
+          )
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
           task <- client.send(
             A2AMessage.userText("notify me"),
             Some(
@@ -148,12 +145,11 @@ class A2APushNotificationSpec extends FunSuite:
     }
 
   test("inline push notifications reject localhost URLs by default"):
-    val port = 49500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "PushSsrfTest",
       description = "Push SSRF test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       capabilities = AgentCapabilities.default.copy(pushNotifications = true),
       executionOverride = Some(completeImmediately),
     )
@@ -188,12 +184,11 @@ class A2APushNotificationSpec extends FunSuite:
     }
 
   test("out-of-band push config create/get/list/delete uses v1 client names"):
-    val port = 47500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "PushCrudTest",
       description = "Push CRUD test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       capabilities = AgentCapabilities.default.copy(pushNotifications = true),
       executionOverride = Some(completeImmediately),
     )
@@ -228,12 +223,11 @@ class A2APushNotificationSpec extends FunSuite:
     }
 
   test("push operations fail when capability is disabled"):
-    val port = 48500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "PushDisabledTest",
       description = "Push disabled test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       executionOverride = Some(completeImmediately),
     )
 

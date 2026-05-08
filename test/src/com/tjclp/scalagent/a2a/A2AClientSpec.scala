@@ -4,7 +4,6 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.scalajs.js
 import scala.scalajs.js.annotation.*
-import scala.util.Random
 import munit.FunSuite
 import zio.*
 import zio.stream.*
@@ -94,7 +93,6 @@ class A2AClientSpec extends FunSuite:
     }
 
   test("JSON-RPC response id mismatch fails the client"):
-    val port = 45000 + Random.nextInt(1000)
     val responseBody =
       """{"jsonrpc":"2.0","id":999,"result":{"tasks":[],"pageSize":0,"totalSize":0}}"""
 
@@ -107,7 +105,7 @@ class A2AClientSpec extends FunSuite:
               TestBun.serve(
                 js.Dynamic.literal(
                   hostname = "127.0.0.1",
-                  port = port,
+                  port = 0,
                   fetch = { (_: js.Dynamic) =>
                     js.Promise.resolve(
                       js.Dynamic.newInstance(Response)(
@@ -120,6 +118,7 @@ class A2AClientSpec extends FunSuite:
               )
             }
           )(server => ZIO.attempt(server.stop()).ignore)
+          port = server.selectDynamic("port").asInstanceOf[Int]
           client <- A2AClient.fromCard(AgentCard.minimal("Mismatch", "Mismatch test", s"http://127.0.0.1:$port"))
           result <- client.listTasks().either
         yield result
