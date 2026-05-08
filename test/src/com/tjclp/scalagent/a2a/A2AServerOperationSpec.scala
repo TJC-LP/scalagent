@@ -374,6 +374,185 @@ class A2AServerOperationSpec extends FunSuite:
       assert(replay.exists(_.isFinal))
     }
 
+  test("cancellation events are persisted to the durable event store"):
+    val port = 54500 + Random.nextInt(1000)
+
+    val program =
+      ZIO.scoped {
+        for
+          ref <- Ref.make(Vector.empty[A2AResponse.StreamEvent])
+          store = new A2AEventStore:
+            override def append(
+              taskId: TaskId,
+              tenant: Option[String],
+              event: A2AResponse.StreamEvent,
+            ): UIO[Unit] =
+              val _ = (taskId, tenant)
+              ref.update(_ :+ event)
+
+            override def load(
+              taskId: TaskId,
+              tenant: Option[String],
+              limit: Int,
+            ): UIO[List[A2AResponse.StreamEvent]] =
+              val _ = (taskId, tenant)
+              ref.get.map(_.takeRight(limit).toList)
+          config = A2AServer.Config(
+            name = "CancelPersistTest",
+            description = "Cancel persistence test server",
+            host = "127.0.0.1",
+            port = port,
+            capabilities = AgentCapabilities.default.copy(streaming = true),
+            // Long-running execution that will be cancelled
+            executionOverride = Some((message, taskId, contextId, publisher) =>
+              ZIO.never *> publisher.publish(
+                A2AResponse.StreamEvent.TaskStatusUpdate(
+                  taskId,
+                  contextId,
+                  TaskStatus.completed(A2AMessage.agentText("never", Some(contextId)).copy(taskId = Some(taskId))),
+                  `final` = true,
+                ),
+              ),
+            ),
+            eventStore = Some(store),
+          )
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          task   <- client.submit(A2AMessage.userText("cancel-persist"))
+          _      <- ZIO.sleep(100.millis)
+          _      <- client.cancelTask(task.id)
+          // Give the persister daemon a beat to drain the cancel event.
+          _      <- ZIO.sleep(150.millis)
+          stored <- ref.get
+        yield stored.toList
+      }
+
+    runTask(program).map { stored =>
+      val canceledFinal = stored.collect {
+        case A2AResponse.StreamEvent.TaskStatusUpdate(_, _, status, isFinal, _) if status.state == TaskState.Canceled =>
+          isFinal
+      }
+      assert(canceledFinal.nonEmpty, s"expected at least one canceled status update; got ${stored.map(_.getClass.getSimpleName)}")
+      assert(canceledFinal.contains(true), s"expected the canceled status update to carry final=true")
+    }
+
+  test("resubscribe prefers replayProvider when both replayProvider and eventStore are configured"):
+    val port = 56500 + Random.nextInt(1000)
+
+    val program =
+      ZIO.scoped {
+        for
+          // Store: visited only if precedence is wrong.
+          storeRef <- Ref.make(Vector.empty[A2AResponse.StreamEvent])
+          storeLoadCount <- Ref.make(0)
+          store = new A2AEventStore:
+            override def append(
+              taskId: TaskId,
+              tenant: Option[String],
+              event: A2AResponse.StreamEvent,
+            ): UIO[Unit] =
+              val _ = (taskId, tenant)
+              storeRef.update(_ :+ event)
+
+            override def load(
+              taskId: TaskId,
+              tenant: Option[String],
+              limit: Int,
+            ): UIO[List[A2AResponse.StreamEvent]] =
+              val _ = (taskId, tenant, limit)
+              storeLoadCount.update(_ + 1) *> storeRef.get.map(_.toList)
+          // Provider yields a sentinel event the store would never emit.
+          providerCalled <- Ref.make(false)
+          provider = new A2AReplayProvider:
+            override def replay(
+              task: A2ATask,
+              tenant: Option[String],
+            ): ZStream[Any, Throwable, A2AResponse.StreamEvent] =
+              val _ = tenant
+              ZStream.fromZIO(providerCalled.set(true)) *>
+                ZStream.succeed(
+                  A2AResponse.StreamEvent.TaskMessage(
+                    task.id,
+                    task.contextId,
+                    A2AMessage.agentText("PROVIDER_SENTINEL", Some(task.contextId)).copy(taskId = Some(task.id)),
+                  ),
+                )
+          config = A2AServer.Config(
+            name = "ReplayPrecedenceTest",
+            description = "Replay precedence test server",
+            host = "127.0.0.1",
+            port = port,
+            capabilities = AgentCapabilities.default.copy(streaming = true),
+            executionOverride = Some(completedExecution),
+            eventStore = Some(store),
+            replayProvider = Some(provider),
+          )
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          // `send` blocks until terminal; the executor's `ensuring` removes
+          // the runtime entry so resubscribe falls into durableReplay.
+          task              <- client.send(A2AMessage.userText("precedence"))
+          replay            <- client.resubscribe(task.id).runCollect
+          providerWasCalled <- providerCalled.get
+          loadCount         <- storeLoadCount.get
+        yield (replay.toList, providerWasCalled, loadCount)
+      }
+
+    runTask(program).map { case (replay, providerWasCalled, loadCount) =>
+      assert(providerWasCalled, "replayProvider was not invoked despite being configured alongside eventStore")
+      assertEquals(loadCount, 0, "eventStore.load must not be called when replayProvider is configured")
+      val sentinelText = replay.toList.collect {
+        case A2AResponse.StreamEvent.TaskMessage(_, _, message) => message.text
+      }
+      assert(
+        sentinelText.contains("PROVIDER_SENTINEL"),
+        s"expected provider sentinel in replay; got $sentinelText",
+      )
+    }
+
+  test("event store failures do not break execution"):
+    val port = 58500 + Random.nextInt(1000)
+
+    val program =
+      ZIO.scoped {
+        for
+          // Store that always dies (uncaught defect).
+          store = new A2AEventStore:
+            override def append(
+              taskId: TaskId,
+              tenant: Option[String],
+              event: A2AResponse.StreamEvent,
+            ): UIO[Unit] =
+              val _ = (taskId, tenant, event)
+              ZIO.die(new RuntimeException("store is broken"))
+
+            override def load(
+              taskId: TaskId,
+              tenant: Option[String],
+              limit: Int,
+            ): UIO[List[A2AResponse.StreamEvent]] =
+              val _ = (taskId, tenant, limit)
+              ZIO.die(new RuntimeException("store is broken"))
+          config = A2AServer.Config(
+            name = "BrokenStoreTest",
+            description = "Broken store test server",
+            host = "127.0.0.1",
+            port = port,
+            capabilities = AgentCapabilities.default.copy(streaming = true),
+            executionOverride = Some(completedExecution),
+            eventStore = Some(store),
+          )
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          task   <- client.send(A2AMessage.userText("broken store"))
+        yield task
+      }
+
+    runTask(program).map { task =>
+      assertEquals(task.status.state, TaskState.Completed)
+      assertEquals(task.artifacts.size, 1)
+    }
+
   test("tenant-scoped clients do not see each other's tasks"):
     val port = 57500 + Random.nextInt(1000)
     val config = A2AServer.Config(
