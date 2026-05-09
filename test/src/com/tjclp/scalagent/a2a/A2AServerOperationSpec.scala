@@ -3,7 +3,6 @@ package com.tjclp.scalagent.a2a
 import munit.FunSuite
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.Random
 import zio.*
 import zio.json.ast.Json
 import zio.stream.*
@@ -39,12 +38,11 @@ class A2AServerOperationSpec extends FunSuite:
       )
 
   test("blocking send stores artifacts, history, and list filters"):
-    val port = 49500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "OperationsTest",
       description = "Operations test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       executionOverride = Some(completedExecution),
     )
 
@@ -77,8 +75,6 @@ class A2AServerOperationSpec extends FunSuite:
     }
 
   test("nonblocking send returns a working task while execution continues"):
-    val port = 50500 + Random.nextInt(1000)
-
     val program =
       ZIO.scoped {
         for
@@ -92,7 +88,7 @@ class A2AServerOperationSpec extends FunSuite:
             name = "AsyncOperationsTest",
             description = "Async operations test server",
             host = "127.0.0.1",
-            port = port,
+            port = 0,
             executionOverride = Some(delayed),
           )
           server <- A2AServer.create(config)
@@ -109,12 +105,11 @@ class A2AServerOperationSpec extends FunSuite:
     }
 
   test("send message applies historyLength to immediate and blocking responses"):
-    val port = 55500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "HistoryProjectionTest",
       description = "History projection test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       executionOverride = Some(completedExecution),
     )
 
@@ -148,7 +143,6 @@ class A2AServerOperationSpec extends FunSuite:
     }
 
   test("cancel interrupts an active task and persists canceled state"):
-    val port = 51500 + Random.nextInt(1000)
     val neverComplete =
       (_: A2AMessage, _: TaskId, _: ContextId, _: A2AEventPublisher) => ZIO.never
 
@@ -156,7 +150,7 @@ class A2AServerOperationSpec extends FunSuite:
       name = "CancelOperationsTest",
       description = "Cancel operations test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       executionOverride = Some(neverComplete),
     )
 
@@ -189,8 +183,6 @@ class A2AServerOperationSpec extends FunSuite:
     }
 
   test("cancel awaits uninterruptible execution and prevents late completion from winning"):
-    val port = 56500 + Random.nextInt(1000)
-
     val program =
       ZIO.scoped {
         for
@@ -203,7 +195,7 @@ class A2AServerOperationSpec extends FunSuite:
             name = "CancelLateCompletionTest",
             description = "Cancel late completion test server",
             host = "127.0.0.1",
-            port = port,
+            port = 0,
             executionOverride = Some(runOverride),
           )
           server   <- A2AServer.create(config)
@@ -221,7 +213,6 @@ class A2AServerOperationSpec extends FunSuite:
     }
 
   test("concurrent sends with the same task id reject the duplicate active run"):
-    val port     = 57500 + Random.nextInt(1000)
     val sharedId = TaskId("duplicate-active-run")
     val neverComplete =
       (_: A2AMessage, _: TaskId, _: ContextId, _: A2AEventPublisher) => ZIO.never
@@ -229,7 +220,7 @@ class A2AServerOperationSpec extends FunSuite:
       name = "DuplicateActiveRunTest",
       description = "Duplicate active run test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       executionOverride = Some(neverComplete),
     )
 
@@ -252,8 +243,6 @@ class A2AServerOperationSpec extends FunSuite:
     }
 
   test("event bus replay is capped to the configured limit"):
-    val port = 58500 + Random.nextInt(1000)
-
     val program =
       ZIO.scoped {
         for
@@ -272,7 +261,7 @@ class A2AServerOperationSpec extends FunSuite:
             name = "ReplayLimitTest",
             description = "Replay limit test server",
             host = "127.0.0.1",
-            port = port,
+            port = 0,
             capabilities = AgentCapabilities.default.copy(streaming = true),
             executionOverride = Some(runOverride),
             eventReplayLimit = 2,
@@ -294,8 +283,7 @@ class A2AServerOperationSpec extends FunSuite:
       assertEquals(replayed, List("two", "three"))
     }
 
-  test("resubscribe starts with a task snapshot and rejects terminal tasks"):
-    val port = 52500 + Random.nextInt(1000)
+  test("resubscribe starts with a task snapshot and replays terminal tasks"):
     val delayed =
       (_: A2AMessage, taskId: TaskId, contextId: ContextId, publisher: A2AEventPublisher) =>
         ZIO.sleep(150.millis) *> completedExecution(A2AMessage.userText("resubscribe"), taskId, contextId, publisher)
@@ -304,7 +292,7 @@ class A2AServerOperationSpec extends FunSuite:
       name = "SubscribeOperationsTest",
       description = "Subscribe operations test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       executionOverride = Some(delayed),
     )
 
@@ -316,25 +304,296 @@ class A2AServerOperationSpec extends FunSuite:
           task   <- client.submit(A2AMessage.userText("subscribe"))
           first  <- client.resubscribe(task.id).runHead
           done   <- client.awaitTask(task.id, pollEvery = 10.millis, timeout = Some(2.seconds))
-          rejected <- client.resubscribe(done.id).runHead.either
-        yield (task, first, rejected)
+          terminalFirst <- client.resubscribe(done.id).runHead
+        yield (task, first, done, terminalFirst)
       }
 
-    runTask(program).map { case (task, first, rejected) =>
+    runTask(program).map { case (task, first, done, terminalFirst) =>
       assertEquals(first, Some(A2AResponse.StreamEvent.TaskSnapshot(task)))
-      assert(rejected.left.exists {
+      assertEquals(terminalFirst, Some(A2AResponse.StreamEvent.TaskSnapshot(done)))
+    }
+
+  test("durable event store records published events and replays terminal streams"):
+    val program =
+      ZIO.scoped {
+        for
+          ref <- Ref.make(Vector.empty[A2AResponse.StreamEvent])
+          store = new A2AEventStore:
+            override def append(
+              taskId: TaskId,
+              tenant: Option[String],
+              event: A2AResponse.StreamEvent,
+            ): UIO[Unit] =
+              val _ = (taskId, tenant)
+              ref.update(_ :+ event)
+
+            override def load(
+              taskId: TaskId,
+              tenant: Option[String],
+              limit: Int,
+            ): UIO[List[A2AResponse.StreamEvent]] =
+              val _ = (taskId, tenant)
+              ref.get.map(_.takeRight(limit).toList)
+          config = A2AServer.Config(
+            name = "DurableEventStoreTest",
+            description = "Durable event store test server",
+            host = "127.0.0.1",
+            port = 0,
+            capabilities = AgentCapabilities.default.copy(streaming = true),
+            executionOverride = Some(completedExecution),
+            eventStore = Some(store),
+          )
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          task   <- client.send(A2AMessage.userText("durable"))
+          replay <- client.resubscribe(task.id).take(3).runCollect
+          stored <- ref.get
+        yield (task, replay.toList, stored.toList)
+      }
+
+    runTask(program).map { case (task, replay, stored) =>
+      assert(stored.exists(_.isInstanceOf[A2AResponse.StreamEvent.TaskSnapshot]))
+      assert(stored.exists(_.isInstanceOf[A2AResponse.StreamEvent.TaskArtifactUpdate]))
+      assert(stored.exists(_.isFinal))
+      assertEquals(replay.headOption, Some(A2AResponse.StreamEvent.TaskSnapshot(task)))
+      assert(replay.exists(_.isInstanceOf[A2AResponse.StreamEvent.TaskArtifactUpdate]))
+      assert(replay.exists(_.isFinal))
+    }
+
+  test("cancellation events are persisted to the durable event store"):
+    val program =
+      ZIO.scoped {
+        for
+          ref <- Ref.make(Vector.empty[A2AResponse.StreamEvent])
+          store = new A2AEventStore:
+            override def append(
+              taskId: TaskId,
+              tenant: Option[String],
+              event: A2AResponse.StreamEvent,
+            ): UIO[Unit] =
+              val _ = (taskId, tenant)
+              ZIO.sleep(50.millis) *> ref.update(_ :+ event)
+
+            override def load(
+              taskId: TaskId,
+              tenant: Option[String],
+              limit: Int,
+            ): UIO[List[A2AResponse.StreamEvent]] =
+              val _ = (taskId, tenant)
+              ref.get.map(_.takeRight(limit).toList)
+          config = A2AServer.Config(
+            name = "CancelPersistTest",
+            description = "Cancel persistence test server",
+            host = "127.0.0.1",
+            port = 0,
+            capabilities = AgentCapabilities.default.copy(streaming = true),
+            executionOverride = Some((message, taskId, contextId, publisher) =>
+              ZIO.never *> publisher.publish(
+                A2AResponse.StreamEvent.TaskStatusUpdate(
+                  taskId,
+                  contextId,
+                  TaskStatus.completed(A2AMessage.agentText("never", Some(contextId)).copy(taskId = Some(taskId))),
+                  `final` = true,
+                ),
+              ),
+            ),
+            eventStore = Some(store),
+          )
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          task   <- client.submit(A2AMessage.userText("cancel-persist"))
+          _      <- client.cancelTask(task.id)
+          replay <- client.resubscribe(task.id).runCollect
+          stored <- ref.get
+        yield (stored.toList, replay.toList)
+      }
+
+    runTask(program).map { case (stored, replay) =>
+      val canceledFinal = stored.collect {
+        case A2AResponse.StreamEvent.TaskStatusUpdate(_, _, status, isFinal, _) if status.state == TaskState.Canceled =>
+          isFinal
+      }
+      assert(canceledFinal.nonEmpty, s"expected at least one canceled status update; got ${stored.map(_.getClass.getSimpleName)}")
+      assert(canceledFinal.contains(true), s"expected the canceled status update to carry final=true")
+      assert(replay.exists {
+        case A2AResponse.StreamEvent.TaskStatusUpdate(_, _, status, isFinal, _) =>
+          status.state == TaskState.Canceled && isFinal
+        case _ => false
+      })
+    }
+
+  test("inactive non-terminal tasks cannot replay from an incomplete durable event store"):
+    val taskId    = TaskId("inactive-non-terminal")
+    val contextId = ContextId("inactive-context")
+    val task = A2ATask(
+      id = taskId,
+      contextId = contextId,
+      status = TaskStatus.working(),
+      history = List(A2AMessage.userText("stale").copy(taskId = Some(taskId), contextId = Some(contextId))),
+    )
+
+    val program =
+      ZIO.scoped {
+        for
+          taskStore <- ZIO.succeed(A2ATaskStore.inMemory)
+          _         <- taskStore.save(task, None)
+          store = new A2AEventStore:
+            override def append(
+              taskId: TaskId,
+              tenant: Option[String],
+              event: A2AResponse.StreamEvent,
+            ): UIO[Unit] =
+              val _ = (taskId, tenant, event)
+              ZIO.unit
+
+            override def load(
+              taskId: TaskId,
+              tenant: Option[String],
+              limit: Int,
+            ): UIO[List[A2AResponse.StreamEvent]] =
+              val _ = (taskId, tenant, limit)
+              ZIO.succeed(Nil)
+          config = A2AServer.Config(
+            name = "IncompleteReplayTest",
+            description = "Incomplete durable replay test server",
+            host = "127.0.0.1",
+            port = 0,
+            capabilities = AgentCapabilities.default.copy(streaming = true),
+            taskStore = Some(taskStore),
+            eventStore = Some(store),
+          )
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          result <- client.resubscribe(taskId).runCollect.either
+        yield result
+      }
+
+    runTask(program).map { result =>
+      assert(result.left.exists {
         case error: A2AError => error.code == A2AErrorCode.UnsupportedOperation
         case _               => false
       })
     }
 
+  test("resubscribe prefers replayProvider when both replayProvider and eventStore are configured"):
+    val program =
+      ZIO.scoped {
+        for
+          // Store: visited only if precedence is wrong.
+          storeRef <- Ref.make(Vector.empty[A2AResponse.StreamEvent])
+          storeLoadCount <- Ref.make(0)
+          store = new A2AEventStore:
+            override def append(
+              taskId: TaskId,
+              tenant: Option[String],
+              event: A2AResponse.StreamEvent,
+            ): UIO[Unit] =
+              val _ = (taskId, tenant)
+              storeRef.update(_ :+ event)
+
+            override def load(
+              taskId: TaskId,
+              tenant: Option[String],
+              limit: Int,
+            ): UIO[List[A2AResponse.StreamEvent]] =
+              val _ = (taskId, tenant, limit)
+              storeLoadCount.update(_ + 1) *> storeRef.get.map(_.toList)
+          // Provider yields a sentinel event the store would never emit.
+          providerCalled <- Ref.make(false)
+          provider = new A2AReplayProvider:
+            override def replay(
+              task: A2ATask,
+              tenant: Option[String],
+            ): ZStream[Any, Throwable, A2AResponse.StreamEvent] =
+              val _ = tenant
+              ZStream.fromZIO(providerCalled.set(true)) *>
+                ZStream.succeed(
+                  A2AResponse.StreamEvent.TaskMessage(
+                    task.id,
+                    task.contextId,
+                    A2AMessage.agentText("PROVIDER_SENTINEL", Some(task.contextId)).copy(taskId = Some(task.id)),
+                  ),
+                )
+          config = A2AServer.Config(
+            name = "ReplayPrecedenceTest",
+            description = "Replay precedence test server",
+            host = "127.0.0.1",
+            port = 0,
+            capabilities = AgentCapabilities.default.copy(streaming = true),
+            executionOverride = Some(completedExecution),
+            eventStore = Some(store),
+            replayProvider = Some(provider),
+          )
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          // `send` blocks until terminal; the executor's `ensuring` removes
+          // the runtime entry so resubscribe falls into durableReplay.
+          task              <- client.send(A2AMessage.userText("precedence"))
+          replay            <- client.resubscribe(task.id).runCollect
+          providerWasCalled <- providerCalled.get
+          loadCount         <- storeLoadCount.get
+        yield (replay.toList, providerWasCalled, loadCount)
+      }
+
+    runTask(program).map { case (replay, providerWasCalled, loadCount) =>
+      assert(providerWasCalled, "replayProvider was not invoked despite being configured alongside eventStore")
+      assertEquals(loadCount, 0, "eventStore.load must not be called when replayProvider is configured")
+      val sentinelText = replay.toList.collect {
+        case A2AResponse.StreamEvent.TaskMessage(_, _, message) => message.text
+      }
+      assert(
+        sentinelText.contains("PROVIDER_SENTINEL"),
+        s"expected provider sentinel in replay; got $sentinelText",
+      )
+    }
+
+  test("event store failures do not break execution"):
+    val program =
+      ZIO.scoped {
+        for
+          // Store that always dies (uncaught defect).
+          store = new A2AEventStore:
+            override def append(
+              taskId: TaskId,
+              tenant: Option[String],
+              event: A2AResponse.StreamEvent,
+            ): UIO[Unit] =
+              val _ = (taskId, tenant, event)
+              ZIO.die(new RuntimeException("store is broken"))
+
+            override def load(
+              taskId: TaskId,
+              tenant: Option[String],
+              limit: Int,
+            ): UIO[List[A2AResponse.StreamEvent]] =
+              val _ = (taskId, tenant, limit)
+              ZIO.die(new RuntimeException("store is broken"))
+          config = A2AServer.Config(
+            name = "BrokenStoreTest",
+            description = "Broken store test server",
+            host = "127.0.0.1",
+            port = 0,
+            capabilities = AgentCapabilities.default.copy(streaming = true),
+            executionOverride = Some(completedExecution),
+            eventStore = Some(store),
+          )
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          task   <- client.send(A2AMessage.userText("broken store"))
+        yield task
+      }
+
+    runTask(program).map { task =>
+      assertEquals(task.status.state, TaskState.Completed)
+      assertEquals(task.artifacts.size, 1)
+    }
+
   test("tenant-scoped clients do not see each other's tasks"):
-    val port = 53500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "TenantOperationsTest",
       description = "Tenant operations test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       executionOverride = Some(completedExecution),
     )
 
@@ -357,7 +616,6 @@ class A2AServerOperationSpec extends FunSuite:
     }
 
   test("tenant-scoped active runs with the same task id do not interrupt each other"):
-    val port     = 54500 + Random.nextInt(1000)
     val sharedId = TaskId("shared-task")
 
     val program =
@@ -372,7 +630,7 @@ class A2AServerOperationSpec extends FunSuite:
             name = "TenantActiveRunTest",
             description = "Tenant active run test server",
             host = "127.0.0.1",
-            port = port,
+            port = 0,
             executionOverride = Some(runOverride),
           )
           server <- A2AServer.create(config)

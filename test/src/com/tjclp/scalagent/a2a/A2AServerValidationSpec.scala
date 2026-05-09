@@ -4,7 +4,6 @@ import munit.FunSuite
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.scalajs.js
-import scala.util.Random
 import zio.*
 import zio.json.*
 
@@ -52,12 +51,11 @@ class A2AServerValidationSpec extends FunSuite:
     ).toJson
 
   test("JSON-RPC rejects unsupported A2A-Version and echoes request id"):
-    val port = 42000 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "ValidationTest",
       description = "Validation test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
     )
 
     val program =
@@ -82,13 +80,12 @@ class A2AServerValidationSpec extends FunSuite:
     }
 
   test("JSON-RPC rejects missing required extension"):
-    val port = 43000 + Random.nextInt(1000)
     val requiredExtension = "https://example.test/extensions/required/v1"
     val config = A2AServer.Config(
       name = "ExtensionTest",
       description = "Extension test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       capabilities = AgentCapabilities.default.copy(
         extensions = List(AgentExtension(uri = requiredExtension, required = true))
       ),
@@ -116,13 +113,12 @@ class A2AServerValidationSpec extends FunSuite:
     }
 
   test("JSON-RPC accepts required extension from standard extension header"):
-    val port = 44000 + Random.nextInt(1000)
     val requiredExtension = "https://example.test/extensions/required/v1"
     val config = A2AServer.Config(
       name = "ExtensionHeaderTest",
       description = "Extension header test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       capabilities = AgentCapabilities.default.copy(
         extensions = List(AgentExtension(uri = requiredExtension, required = true))
       ),
@@ -152,12 +148,11 @@ class A2AServerValidationSpec extends FunSuite:
     }
 
   test("JSON-RPC rejects streaming when capability is disabled"):
-    val port = 44500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "NoStreamingTest",
       description = "No streaming test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       capabilities = AgentCapabilities.default.copy(streaming = false),
     )
 

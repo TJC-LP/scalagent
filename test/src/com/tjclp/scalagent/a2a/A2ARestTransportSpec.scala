@@ -4,7 +4,6 @@ import munit.FunSuite
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.scalajs.js
-import scala.util.Random
 import zio.*
 import zio.json.*
 
@@ -88,12 +87,11 @@ class A2ARestTransportSpec extends FunSuite:
     )
 
   test("agent card advertises JSON-RPC and REST v1 interfaces"):
-    val port = 54500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "RestCardTest",
       description = "REST card test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       capabilities = AgentCapabilities.default.copy(pushNotifications = true),
       executionOverride = Some(completedExecution),
     )
@@ -116,12 +114,11 @@ class A2ARestTransportSpec extends FunSuite:
     }
 
   test("REST message send uses application/a2a+json and tenant-prefixed task list"):
-    val port = 55500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "RestSendTest",
       description = "REST send test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       executionOverride = Some(completedExecution),
     )
     val request = A2ARequest.MessageSend(A2AMessage.userText("rest hello")).toJson
@@ -155,12 +152,11 @@ class A2ARestTransportSpec extends FunSuite:
     }
 
   test("REST streaming emits raw StreamResponse SSE data"):
-    val port = 56500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "RestStreamTest",
       description = "REST stream test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       executionOverride = Some(completedExecution),
     )
     val request = A2ARequest.MessageSend(A2AMessage.userText("stream hello")).toJson
@@ -189,12 +185,11 @@ class A2ARestTransportSpec extends FunSuite:
     }
 
   test("REST errors use google.rpc-style bodies"):
-    val port = 57500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "RestErrorTest",
       description = "REST error test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
     )
 
     val program =
@@ -217,12 +212,11 @@ class A2ARestTransportSpec extends FunSuite:
     }
 
   test("REST rejects empty task ids and malformed push config ids"):
-    val port = 58500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "RestMalformedPathTest",
       description = "REST malformed path test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       capabilities = AgentCapabilities.default.copy(pushNotifications = true),
     )
     val headers = Map(A2AHeader.Version -> A2AProtocol.Version)
@@ -247,12 +241,11 @@ class A2ARestTransportSpec extends FunSuite:
     }
 
   test("REST list rejects invalid pagination tokens"):
-    val port = 59500 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "RestPaginationTest",
       description = "REST pagination test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
     )
 
     val program =

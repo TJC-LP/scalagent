@@ -3,7 +3,6 @@ package com.tjclp.scalagent.a2a
 import munit.FunSuite
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.Random
 import zio.*
 import zio.json.ast.Json
 
@@ -61,12 +60,11 @@ class A2AServerStreamSpec extends FunSuite:
     yield ()
 
   test("message/stream receives delayed status updates before terminal status"):
-    val port = 41000 + Random.nextInt(1000)
     val config = A2AServer.Config(
       name = "StreamTest",
       description = "Stream test server",
       host = "127.0.0.1",
-      port = port,
+      port = 0,
       capabilities = AgentCapabilities.default.copy(streaming = true),
       executionOverride = Some(delayedExecution),
     )
