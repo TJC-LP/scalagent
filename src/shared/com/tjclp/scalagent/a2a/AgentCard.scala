@@ -32,6 +32,7 @@ final case class AgentCard(
   /** Whether the card advertises an authenticated extended card. */
   def supportsAuthenticatedExtendedCard: Boolean =
     capabilities.extendedAgentCard
+end AgentCard
 
 object AgentCard:
   given JsonEncoder[AgentCard] = DeriveJsonEncoder.gen[AgentCard]
@@ -39,8 +40,8 @@ object AgentCard:
     json.asObject.toRight("AgentCard must be an object").flatMap { obj =>
       val fields = obj.toMap
       for
-        name        <- fields.get("name").flatMap(_.asString).toRight("Missing name")
-        description <- fields.get("description").flatMap(_.asString).toRight("Missing description")
+        name                <- fields.get("name").flatMap(_.asString).toRight("Missing name")
+        description         <- fields.get("description").flatMap(_.asString).toRight("Missing description")
         supportedInterfaces <-
           fields
             .get("supportedInterfaces")
@@ -56,7 +57,7 @@ object AgentCard:
                 case Some(url) => Right(List(AgentInterface(url = url, protocolVersion = "0.3.0")))
                 case None      => Right(Nil)
             }
-        provider = fields.get("provider").flatMap(_.as[AgentProvider].toOption)
+        provider     = fields.get("provider").flatMap(_.as[AgentProvider].toOption)
         capabilities = fields
           .get("capabilities")
           .flatMap(_.as[AgentCapabilities].toOption)
@@ -71,7 +72,7 @@ object AgentCard:
           .orElse(fields.get("security_requirements"))
           .flatMap(_.as[List[SecurityRequirement]].toOption)
           .getOrElse(Nil)
-        skills = fields.get("skills").flatMap(_.as[List[AgentSkill]].toOption).getOrElse(Nil)
+        skills     = fields.get("skills").flatMap(_.as[List[AgentSkill]].toOption).getOrElse(Nil)
         signatures = fields.get("signatures").flatMap(_.as[List[AgentCardSignature]].toOption).getOrElse(Nil)
       yield AgentCard(
         name = name,
@@ -100,6 +101,7 @@ object AgentCard:
         signatures = signatures,
         iconUrl = fields.get("iconUrl").orElse(fields.get("icon_url")).flatMap(_.asString),
       )
+      end for
     }
   }
 
@@ -233,8 +235,16 @@ object AgentSkill:
         description = description,
         tags = fields.get("tags").flatMap(_.as[List[String]].toOption).getOrElse(Nil),
         examples = fields.get("examples").flatMap(_.as[List[String]].toOption).getOrElse(Nil),
-        inputModes = fields.get("inputModes").orElse(fields.get("input_modes")).flatMap(_.as[List[String]].toOption).getOrElse(Nil),
-        outputModes = fields.get("outputModes").orElse(fields.get("output_modes")).flatMap(_.as[List[String]].toOption).getOrElse(Nil),
+        inputModes = fields
+          .get("inputModes")
+          .orElse(fields.get("input_modes"))
+          .flatMap(_.as[List[String]].toOption)
+          .getOrElse(Nil),
+        outputModes = fields
+          .get("outputModes")
+          .orElse(fields.get("output_modes"))
+          .flatMap(_.as[List[String]].toOption)
+          .getOrElse(Nil),
         securityRequirements = fields
           .get("securityRequirements")
           .orElse(fields.get("security_requirements"))
@@ -242,8 +252,10 @@ object AgentSkill:
           .flatMap(_.as[List[SecurityRequirement]].toOption)
           .getOrElse(Nil),
       )
+      end for
     }
   }
+end AgentSkill
 
 /** AgentCard JWS signature (RFC 7515). */
 final case class AgentCardSignature(
@@ -259,15 +271,16 @@ final case class SecurityRequirement(
   schemes: Map[String, List[String]] = Map.empty)
 object SecurityRequirement:
   given JsonEncoder[SecurityRequirement] = JsonEncoder[Json].contramap { requirement =>
-    val encoded = requirement.schemes.map { case (name, scopes) =>
-      name -> Json.Obj("list" -> Json.Arr(scopes.map(Json.Str(_))*))
+    val encoded = requirement.schemes.map {
+      case (name, scopes) =>
+        name -> Json.Obj("list" -> Json.Arr(scopes.map(Json.Str(_))*))
     }
     Json.Obj("schemes" -> Json.Obj(encoded.toSeq*))
   }
 
   given JsonDecoder[SecurityRequirement] = JsonDecoder[Json].mapOrFail { json =>
     json.asObject.toRight("SecurityRequirement must be an object").flatMap { obj =>
-      val raw = obj.toMap
+      val raw         = obj.toMap
       val schemesJson = raw.get("schemes").orElse(Some(json))
       schemesJson
         .flatMap(_.asObject)
@@ -289,12 +302,22 @@ object SecurityRequirement:
         }
     }
   }
+end SecurityRequirement
 
 /** Security scheme definition (OpenAPI-style). */
 enum SecurityScheme:
-  case ApiKey(name: String, in: String, description: String = "")
-  case Http(scheme: String, bearerFormat: Option[String] = None, description: String = "")
-  case OAuth2(flows: OAuth2Flows, oauth2MetadataUrl: Option[String] = None, description: String = "")
+  case ApiKey(
+    name: String,
+    in: String,
+    description: String = "")
+  case Http(
+    scheme: String,
+    bearerFormat: Option[String] = None,
+    description: String = "")
+  case OAuth2(
+    flows: OAuth2Flows,
+    oauth2MetadataUrl: Option[String] = None,
+    description: String = "")
   case OpenIdConnect(openIdConnectUrl: String, description: String = "")
   case MutualTLS(description: String = "")
 
@@ -317,7 +340,12 @@ object SecurityScheme:
       oauth2MetadataUrl.foreach(value => oauth = oauth.add("oauth2MetadataUrl", Json.Str(value)))
       Json.Obj("oauth2SecurityScheme" -> oauth)
     case OpenIdConnect(openIdConnectUrl, description) =>
-      Json.Obj("openIdConnectSecurityScheme" -> Json.Obj("openIdConnectUrl" -> Json.Str(openIdConnectUrl), "description" -> Json.Str(description)))
+      Json.Obj(
+        "openIdConnectSecurityScheme" -> Json.Obj(
+          "openIdConnectUrl" -> Json.Str(openIdConnectUrl),
+          "description"      -> Json.Str(description),
+        )
+      )
     case MutualTLS(description) =>
       Json.Obj("mtlsSecurityScheme" -> Json.Obj("description" -> Json.Str(description)))
   }
@@ -365,18 +393,26 @@ object SecurityScheme:
                     case Some(value) =>
                       value.asObject.toRight("openIdConnectSecurityScheme must be an object").flatMap { scheme =>
                         val f = scheme.toMap
-                        f.get("openIdConnectUrl").orElse(f.get("open_id_connect_url")).flatMap(_.asString).toRight("Missing openIdConnectUrl").map { url =>
-                          OpenIdConnect(url, f.get("description").flatMap(_.asString).getOrElse(""))
-                        }
+                        f.get("openIdConnectUrl")
+                          .orElse(f.get("open_id_connect_url"))
+                          .flatMap(_.asString)
+                          .toRight("Missing openIdConnectUrl")
+                          .map { url => OpenIdConnect(url, f.get("description").flatMap(_.asString).getOrElse("")) }
                       }
                     case None =>
                       fields.get("mtlsSecurityScheme").orElse(fields.get("mtls_security_scheme")) match
                         case Some(value) =>
-                          Right(MutualTLS(value.asObject.flatMap(_.toMap.get("description")).flatMap(_.asString).getOrElse("")))
+                          Right(
+                            MutualTLS(
+                              value.asObject.flatMap(_.toMap.get("description")).flatMap(_.asString).getOrElse("")
+                            )
+                          )
                         case None =>
                           Left("SecurityScheme must contain a recognized oneof field")
+      end match
     }
   }
+end SecurityScheme
 
 /** OAuth2 flows configuration. */
 final case class OAuth2Flows(

@@ -46,6 +46,7 @@ object A2AServerAdapter:
         capabilities = capabilities,
         skills = skills,
       )
+  end Config
 
   /**
    * Create an A2A endpoint from any string-input agent.

@@ -82,9 +82,12 @@ object A2AConverters:
       protocolVersion = js.protocolVersion.getOrElse(A2AProtocol.Version),
     )
     val additionalInterfaces = js.additionalInterfaces.toOption.map(_.toList.map(toScala)).getOrElse(Nil)
-    val capabilities = js.capabilities.toOption.map(toScala).getOrElse(AgentCapabilities.default).copy(
-      extendedAgentCard = js.supportsAuthenticatedExtendedCard.getOrElse(false)
-    )
+    val capabilities         = js.capabilities.toOption
+      .map(toScala)
+      .getOrElse(AgentCapabilities.default)
+      .copy(
+        extendedAgentCard = js.supportsAuthenticatedExtendedCard.getOrElse(false)
+      )
     AgentCard(
       name = js.name,
       description = js.description,
@@ -105,6 +108,7 @@ object A2AConverters:
         .getOrElse(Map.empty),
       signatures = js.signatures.toOption.map(_.toList.map(toScala)).getOrElse(Nil),
     )
+  end toScala
 
   def toJs(card: AgentCard): JsAgentCard =
     val obj = js.Dynamic.literal(
@@ -118,13 +122,16 @@ object A2AConverters:
     card.documentationUrl.foreach(u => obj.documentationUrl = u)
     card.iconUrl.foreach(u => obj.iconUrl = u)
     obj.capabilities = toJs(card.capabilities)
-    obj.preferredTransport = card.supportedInterfaces.headOption.map(_.protocolBinding.toRaw).getOrElse(A2ATransport.JSONRPC.toRaw)
+    obj.preferredTransport =
+      card.supportedInterfaces.headOption.map(_.protocolBinding.toRaw).getOrElse(A2ATransport.JSONRPC.toRaw)
     obj.supportedInterfaces = card.supportedInterfaces.map(toJs).toJSArray
-    if card.supportedInterfaces.drop(1).nonEmpty then obj.additionalInterfaces = card.supportedInterfaces.drop(1).map(toJs).toJSArray
+    if card.supportedInterfaces.drop(1).nonEmpty then
+      obj.additionalInterfaces = card.supportedInterfaces.drop(1).map(toJs).toJSArray
     obj.defaultInputModes = card.defaultInputModes.toJSArray
     obj.defaultOutputModes = card.defaultOutputModes.toJSArray
     if card.skills.nonEmpty then obj.skills = card.skills.map(toJs).toJSArray
-    if card.securityRequirements.nonEmpty then obj.security = card.securityRequirements.map(toJsSecurityRequirement).toJSArray
+    if card.securityRequirements.nonEmpty then
+      obj.security = card.securityRequirements.map(toJsSecurityRequirement).toJSArray
     if card.securitySchemes.nonEmpty then obj.securitySchemes = toJsSecuritySchemes(card.securitySchemes)
     if card.signatures.nonEmpty then obj.signatures = card.signatures.map(toJs).toJSArray
     if card.capabilities.extendedAgentCard then obj.supportsAuthenticatedExtendedCard = true

@@ -49,8 +49,8 @@ trait A2AServerApp[Self <: Singleton] extends ZIOAppDefault:
   def sessionLogDir: Option[String]                                               = None
   def invocationPreparer: Option[(A2AMessage, TaskId) => Task[InvocationContext]] = None
   def executionOverride: Option[(A2AMessage, TaskId, ContextId, A2AEventPublisher) => Task[Unit]] = None
-  def eventStore: Option[A2AEventStore] = None
-  def replayProvider: Option[A2AReplayProvider] = None
+  def eventStore: Option[A2AEventStore]                                                           = None
+  def replayProvider: Option[A2AReplayProvider]                                                   = None
 
   /**
    * Plug a durable task store. When `None` (default) tasks live in a

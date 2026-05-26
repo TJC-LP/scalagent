@@ -17,8 +17,8 @@ object A2ARequest:
     given JsonDecoder[MessageSend] = DeriveJsonDecoder.gen[MessageSend]
 
   /** Alias for streaming (same params). */
-  type MessageStream = MessageSend
-  type SendMessageRequest = MessageSend
+  type MessageStream               = MessageSend
+  type SendMessageRequest          = MessageSend
   type SendStreamingMessageRequest = MessageSend
 
   /** Parameters for GetTask. */
@@ -66,7 +66,7 @@ object A2ARequest:
   type SubscribeToTaskRequest = TasksResubscribe
 
   /** Parameters for CreateTaskPushNotificationConfig are the config itself. */
-  type PushNotificationConfigCreate = TaskPushNotificationConfig
+  type PushNotificationConfigCreate            = TaskPushNotificationConfig
   type CreateTaskPushNotificationConfigRequest = TaskPushNotificationConfig
 
   /** Parameters for GetTaskPushNotificationConfig. */
@@ -128,14 +128,18 @@ object MessageSendConfiguration:
       "acceptedOutputModes" -> Json.Arr(config.acceptedOutputModes.map(Json.Str(_))*),
       "returnImmediately"   -> Json.Bool(config.returnImmediately),
     )
-    config.taskPushNotificationConfig.foreach(value => obj = obj.add("taskPushNotificationConfig", value.toJsonAST.toOption.get))
-    config.historyLength.foreach(value => obj = obj.add("historyLength", Json.Num(java.math.BigDecimal.valueOf(value.toLong))))
+    config.taskPushNotificationConfig.foreach(value =>
+      obj = obj.add("taskPushNotificationConfig", value.toJsonAST.toOption.get)
+    )
+    config.historyLength.foreach(value =>
+      obj = obj.add("historyLength", Json.Num(java.math.BigDecimal.valueOf(value.toLong)))
+    )
     obj
   }
 
   given JsonDecoder[MessageSendConfiguration] = JsonDecoder[Json].mapOrFail { json =>
     json.asObject.toRight("MessageSendConfiguration must be an object").map { obj =>
-      val fields = obj.toMap
+      val fields            = obj.toMap
       val returnImmediately = fields
         .get("returnImmediately")
         .orElse(fields.get("return_immediately"))
@@ -154,7 +158,8 @@ object MessageSendConfiguration:
           .orElse(fields.get("task_push_notification_config"))
           .orElse(fields.get("pushNotificationConfig"))
           .flatMap(_.as[TaskPushNotificationConfig].toOption),
-        historyLength = fields.get("historyLength").orElse(fields.get("history_length")).flatMap(_.asNumber).map(_.value.intValue),
+        historyLength =
+          fields.get("historyLength").orElse(fields.get("history_length")).flatMap(_.asNumber).map(_.value.intValue),
         returnImmediately = returnImmediately,
       )
     }

@@ -20,7 +20,7 @@ private[a2a] object A2AProgress:
     taskId: TaskId,
     state: State,
   ): (State, Option[A2AMessage]) =
-    val mapped = progressParts(agentMessage, state.toolNamesById)
+    val mapped    = progressParts(agentMessage, state.toolNamesById)
     val nextState = state.copy(
       toolNamesById = state.toolNamesById ++ mapped.toolNamesById
     )
@@ -37,7 +37,7 @@ private[a2a] object A2AProgress:
           (nextState, None)
         case _ =>
           val publishedState = nextState.copy(lastTextOnlyStatus = textOnlyKey.orElse(nextState.lastTextOnlyStatus))
-          val message = A2AMessage(
+          val message        = A2AMessage(
             role = A2ARole.Agent,
             parts = mapped.parts,
             contextId = Some(contextId),
@@ -86,6 +86,7 @@ private[a2a] object A2AProgress:
 
       case _ =>
         MappedProgress(Nil)
+    end match
   end progressParts
 
   private def assistantParts(content: List[ContentBlock]): MappedProgress =
@@ -99,12 +100,14 @@ private[a2a] object A2AProgress:
         .map(value => Part.Text(truncate(s"Thinking: ${redactText(value)}")))
         .toList
 
-    val toolUses = content.collect { case toolUse: ContentBlock.ToolUse => toolUse }
+    val toolUses      = content.collect { case toolUse: ContentBlock.ToolUse => toolUse }
     val toolNamesById = toolUses.map(toolUse => toolUse.id -> toolUse.name.raw).toMap
-    val toolUseText =
-      Option.when(toolUses.nonEmpty && textParts.isEmpty && thinkingParts.isEmpty) {
-        Part.Text(s"Calling ${toolUses.map(_.name.raw).distinct.mkString(", ")}")
-      }.toList
+    val toolUseText   =
+      Option
+        .when(toolUses.nonEmpty && textParts.isEmpty && thinkingParts.isEmpty) {
+          Part.Text(s"Calling ${toolUses.map(_.name.raw).distinct.mkString(", ")}")
+        }
+        .toList
     val toolUseData = toolUses.map { toolUse =>
       Part.Data(
         Json.Obj(
@@ -124,12 +127,12 @@ private[a2a] object A2AProgress:
     knownToolNames: Map[ToolUseId, String],
   ): MappedProgress =
     val toolResults = content.collect { case result: ContentBlock.ToolResult => result }
-    val parts = toolResults.flatMap { result =>
-      val toolName = knownToolNames.get(result.toolUseId)
-      val label    = toolName.getOrElse("tool_result")
-      val content  = redactText(result.content)
-      val prefix   = if result.isError then "error: " else ""
-      val firstLine = firstNonEmptyLine(content).getOrElse("empty result")
+    val parts       = toolResults.flatMap { result =>
+      val toolName   = knownToolNames.get(result.toolUseId)
+      val label      = toolName.getOrElse("tool_result")
+      val content    = redactText(result.content)
+      val prefix     = if result.isError then "error: " else ""
+      val firstLine  = firstNonEmptyLine(content).getOrElse("empty result")
       val dataFields =
         List(
           "kind"      -> Json.Str("tool_result"),
@@ -177,14 +180,14 @@ private[a2a] object A2AProgress:
   private def sensitiveKey(key: String): Boolean =
     val normalized = key.toLowerCase
     normalized == "authorization" ||
-      normalized == "x-api-key" ||
-      normalized == "cookie" ||
-      normalized == "set-cookie" ||
-      normalized == "token" ||
-      normalized.endsWith("_token") ||
-      normalized.endsWith("-token") ||
-      normalized.contains("api_key") ||
-      normalized.contains("api-key")
+    normalized == "x-api-key" ||
+    normalized == "cookie" ||
+    normalized == "set-cookie" ||
+    normalized == "token" ||
+    normalized.endsWith("_token") ||
+    normalized.endsWith("-token") ||
+    normalized.contains("api_key") ||
+    normalized.contains("api-key")
 
   private def redactJson(json: Json): Json =
     json match

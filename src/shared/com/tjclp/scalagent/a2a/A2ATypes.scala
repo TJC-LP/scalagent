@@ -10,11 +10,11 @@ import zio.json.{JsonDecoder, JsonEncoder}
  * mixing of IDs (e.g., passing a TaskId where a MessageId is expected).
  */
 
-/** UUID v4 generator. `java.util.UUID.randomUUID()` is polyfilled by
-  * Scala.js (via `crypto.randomUUID()` under the hood) on the JS side,
-  * and native on the JVM side — so this works for both targets without
-  * platform-specific code. */
-private def randomUUID(): String = java.util.UUID.randomUUID().toString
+/**
+ * UUID v4 generator. Implemented per platform to avoid linking JVM-only
+ * `java.security` internals into the Scala.js bundle.
+ */
+private def randomUUID(): String = A2APlatform.randomUUID()
 
 /** Unique identifier for an A2A task */
 opaque type TaskId = String
@@ -43,8 +43,8 @@ object MessageId:
     def isEmpty: Boolean  = (id: String).isEmpty
     def nonEmpty: Boolean = !isEmpty
 
-  given JsonEncoder[MessageId] = OpaqueStringJsonCodec.encoder(_.value)
-  given JsonDecoder[MessageId] = OpaqueStringJsonCodec.decoder(apply)
+  given JsonEncoder[MessageId]         = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[MessageId]         = OpaqueStringJsonCodec.decoder(apply)
   given CanEqual[MessageId, MessageId] = CanEqual.derived
 
 /** Unique identifier for a conversation context */
@@ -58,8 +58,8 @@ object ContextId:
     def isEmpty: Boolean  = (id: String).isEmpty
     def nonEmpty: Boolean = !isEmpty
 
-  given JsonEncoder[ContextId] = OpaqueStringJsonCodec.encoder(_.value)
-  given JsonDecoder[ContextId] = OpaqueStringJsonCodec.decoder(apply)
+  given JsonEncoder[ContextId]         = OpaqueStringJsonCodec.encoder(_.value)
+  given JsonDecoder[ContextId]         = OpaqueStringJsonCodec.decoder(apply)
   given CanEqual[ContextId, ContextId] = CanEqual.derived
 
 /** A2A protocol version */

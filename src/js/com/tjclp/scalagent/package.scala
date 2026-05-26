@@ -307,9 +307,7 @@ package object scalagent:
   val A2AClientV03 = a2a.A2AClientV03
 
   type A2AServer = a2a.A2AServer
-  // `a2a.A2AServer` is now a pure trait without a companion `object A2AServer`.
-  // JS-side server factory + Config live on `a2a.A2AServerLive`. Users who used
-  // to call `A2AServer.start(config, runtime)` should call `A2AServerLive.start(...)`.
+  val A2AServer     = a2a.A2AServer
   val A2AServerLive = a2a.A2AServerLive
   type A2AServerApp[Self <: Singleton] = a2a.A2AServerApp[Self]
 
@@ -408,8 +406,8 @@ package object scalagent:
   type SecurityScheme = a2a.SecurityScheme
   val SecurityScheme = a2a.SecurityScheme
 
-  val A2AProtocol = a2a.A2AProtocol
-  val A2AHeader = a2a.A2AHeader
+  val A2AProtocol    = a2a.A2AProtocol
+  val A2AHeader      = a2a.A2AHeader
   val A2AContentType = a2a.A2AContentType
 
   // --- macros package ---

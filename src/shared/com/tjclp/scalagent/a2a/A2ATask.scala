@@ -54,7 +54,7 @@ object A2ATask:
 
   given JsonDecoder[A2ATask] = JsonDecoder[Json].mapOrFail { json =>
     json.asObject.toRight("Task must be an object").flatMap { obj =>
-      val fields = obj.toMap
+      val fields                                                             = obj.toMap
       def decodeList[A: JsonDecoder](field: String): Either[String, List[A]] =
         fields
           .get(field)
@@ -69,7 +69,7 @@ object A2ATask:
           .getOrElse(Right(Nil))
 
       for
-        id <- fields.get("id").flatMap(_.asString).filter(_.nonEmpty).map(TaskId(_)).toRight("Missing id")
+        id        <- fields.get("id").flatMap(_.asString).filter(_.nonEmpty).map(TaskId(_)).toRight("Missing id")
         contextId <- fields
           .get("contextId")
           .orElse(fields.get("context_id"))
@@ -88,6 +88,7 @@ object A2ATask:
         history = history,
         metadata = fields.get("metadata"),
       )
+      end for
     }
   }
 
@@ -98,6 +99,7 @@ object A2ATask:
       contextId = contextId,
       status = TaskStatus.submitted,
     )
+end A2ATask
 
 /**
  * Task status with state, optional message, and timestamp.
@@ -243,6 +245,7 @@ object TaskPushNotificationConfig:
       )
     }
   }
+end TaskPushNotificationConfig
 
 /** Backwards-compatible name retained while v1 callers move to TaskPushNotificationConfig. */
 type PushNotificationConfig = TaskPushNotificationConfig
@@ -260,7 +263,8 @@ object PushNotificationConfig:
       authentication = authentication.map(_.toAuthenticationInfo),
     )
 
-  def unapply(config: TaskPushNotificationConfig): Some[(String, Option[String], Option[String], Option[AuthenticationInfo])] =
+  def unapply(config: TaskPushNotificationConfig)
+    : Some[(String, Option[String], Option[String], Option[AuthenticationInfo])] =
     Some((config.url, config.id, config.token, config.authentication))
 
 /** Legacy authentication shape accepted by the compatibility constructor. */

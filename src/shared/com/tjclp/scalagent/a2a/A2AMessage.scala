@@ -61,16 +61,18 @@ object A2AMessage:
     json.asObject.toRight("Message must be an object").flatMap { obj =>
       val fields = obj.toMap
       for
-        role <- fields.get("role").toRight("Missing role").flatMap(_.as[A2ARole])
+        role  <- fields.get("role").toRight("Missing role").flatMap(_.as[A2ARole])
         parts <- fields
           .get("parts")
           .flatMap(_.asArray)
           .toRight("Missing parts")
-          .flatMap(values => values.toList.map(_.as[Part]).foldRight[Either[String, List[Part]]](Right(Nil)) {
-            case (Right(part), Right(parts)) => Right(part :: parts)
-            case (Left(error), _)            => Left(error)
-            case (_, Left(error))            => Left(error)
-          })
+          .flatMap(values =>
+            values.toList.map(_.as[Part]).foldRight[Either[String, List[Part]]](Right(Nil)) {
+              case (Right(part), Right(parts)) => Right(part :: parts)
+              case (Left(error), _)            => Left(error)
+              case (_, Left(error))            => Left(error)
+            }
+          )
         messageId = fields
           .get("messageId")
           .orElse(fields.get("message_id"))
@@ -98,6 +100,7 @@ object A2AMessage:
         metadata   = fields.get("metadata")
         extensions = fields.get("extensions").flatMap(_.asArray).map(_.toList.flatMap(_.asString)).getOrElse(Nil)
       yield A2AMessage(role, parts, messageId, contextId, taskId, referenceTaskIds, metadata, extensions)
+      end for
     }
   }
 
@@ -210,7 +213,7 @@ object Part:
         case None =>
           fields.get("text").flatMap(_.asString) match
             case Some(text) => Right(Text(text, metadata))
-            case None =>
+            case None       =>
               fields.get("raw").flatMap(_.asString) match
                 case Some(raw) =>
                   Right(
@@ -240,6 +243,7 @@ object Part:
                       fields.get("data") match
                         case Some(dataJson) => Right(Data(dataJson, metadata))
                         case None           => Left("Part must contain one of text, raw, url, or data")
+      end match
     }
   }
 end Part
@@ -301,7 +305,7 @@ object Artifact:
 
   /** Create a simple text artifact */
   def text(name: String, content: String): Artifact =
-    Artifact(artifactId = java.util.UUID.randomUUID().toString, parts = List(Part.Text(content)), name = Some(name))
+    Artifact(artifactId = A2APlatform.randomUUID(), parts = List(Part.Text(content)), name = Some(name))
 
   /** Create a file artifact */
   def file(
@@ -310,7 +314,7 @@ object Artifact:
     mimeType: Option[String] = None,
   ): Artifact =
     Artifact(
-      artifactId = java.util.UUID.randomUUID().toString,
+      artifactId = A2APlatform.randomUUID(),
       parts = List(Part.File(FileContent.Uri(uri, name = Some(name), mimeType = mimeType))),
       name = Some(name),
     )

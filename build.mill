@@ -57,6 +57,22 @@ private def emptyDocJar(taskDest: os.Path): os.Path =
 // ── agent (cross-built JS + JVM) ────────────────────────────────────────────
 
 object agent extends Module:
+  /** Backwards-compatible aggregate target used by CI/docs. */
+  def compile: T[Unit] = Task {
+    js.compile()
+    jvm.compile()
+    ()
+  }
+
+  /** Run both platform test suites from the historical `agent.test` target. */
+  def test: T[Unit] = Task {
+    js.test.bunTest(mill.api.Args())()
+    jvm.test.testForked()()
+    ()
+  }
+
+  /** Preserve `show agent.publishVersion` for release workflows. */
+  def publishVersion = sharedPublishVersion
 
   /** Scala.js / Bun build. Current scalagent surface — Claude Agent SDK,
     * @a2a-js/sdk facades, Codex SDK, MCP server bindings. Sources from

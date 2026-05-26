@@ -76,7 +76,8 @@ trait A2AClient:
   def getAgentCard: Task[AgentCard]
 
   /** Create push notification config for a task. */
-  def createTaskPushNotificationConfig(taskId: TaskId, config: TaskPushNotificationConfig): Task[TaskPushNotificationConfig]
+  def createTaskPushNotificationConfig(taskId: TaskId, config: TaskPushNotificationConfig)
+    : Task[TaskPushNotificationConfig]
 
   /** Backwards-compatible method name for createTaskPushNotificationConfig. */
   def setPushNotificationConfig(taskId: TaskId, config: PushNotificationConfig): Task[PushNotificationConfig] =
@@ -89,10 +90,10 @@ trait A2AClient:
   def getPushNotificationConfig(taskId: TaskId, configId: Option[String] = None): Task[PushNotificationConfig] =
     configId match
       case Some(id) => getTaskPushNotificationConfig(taskId, id)
-      case None =>
+      case None     =>
         listTaskPushNotificationConfigs(taskId).flatMap {
           case head :: _ => ZIO.succeed(head)
-          case Nil      => ZIO.fail(A2AError.invalidParams(s"No push notification config for task ${taskId.value}"))
+          case Nil       => ZIO.fail(A2AError.invalidParams(s"No push notification config for task ${taskId.value}"))
         }
 
   /** List push notification configs for a task. */
@@ -169,8 +170,9 @@ private final class A2AClientLive(
       A2AMethod.MessageSend,
       A2ARequest.MessageSend(message = message, configuration = Some(effective), tenant = iface.tenant),
     ).map {
-      case A2AResponse.SendMessageResult.TaskResult(task)              => task
-      case A2AResponse.SendMessageResult.MessageResult(responseMessage) => A2AStreamEventParser.taskFromMessage(message, responseMessage)
+      case A2AResponse.SendMessageResult.TaskResult(task)               => task
+      case A2AResponse.SendMessageResult.MessageResult(responseMessage) =>
+        A2AStreamEventParser.taskFromMessage(message, responseMessage)
     }
 
   override def stream(
@@ -255,11 +257,10 @@ private final class A2AClientLive(
         ZIO.fromEither(body.fromJson[JsonRpcResponse].left.map(A2AError.invalidRequest)).flatMap { response =>
           ensureResponseId(response, id, method) *> (response.error match
             case Some(error) => ZIO.fail(error.toA2AError)
-            case None =>
+            case None        =>
               response.result match
                 case Some(result) => ZIO.fromEither(result.as[B].left.map(A2AError.invalidAgentResponse))
-                case None         => ZIO.fail(A2AError.invalidAgentResponse(s"Missing result for $method"))
-          )
+                case None         => ZIO.fail(A2AError.invalidAgentResponse(s"Missing result for $method")))
         }
       }
 
@@ -272,8 +273,7 @@ private final class A2AClientLive(
         ZIO.fromEither(body.fromJson[JsonRpcResponse].left.map(A2AError.invalidRequest)).flatMap { response =>
           ensureResponseId(response, id, method) *> (response.error match
             case Some(error) => ZIO.fail(error.toA2AError)
-            case None        => ZIO.unit
-          )
+            case None        => ZIO.unit)
         }
       }
 
@@ -289,26 +289,32 @@ private final class A2AClientLive(
         ZIO.fromEither(data.fromJson[JsonRpcResponse].left.map(A2AError.invalidRequest)).flatMap { response =>
           ensureResponseId(response, id, method) *> (response.error match
             case Some(error) => ZIO.fail(error.toA2AError)
-            case None =>
+            case None        =>
               response.result match
-                case Some(result) => ZIO.fromEither(result.as[A2AResponse.StreamEvent].left.map(A2AError.invalidAgentResponse))
-                case None         => ZIO.fail(A2AError.invalidAgentResponse(s"Missing stream result for $method"))
-          )
+                case Some(result) =>
+                  ZIO.fromEither(result.as[A2AResponse.StreamEvent].left.map(A2AError.invalidAgentResponse))
+                case None => ZIO.fail(A2AError.invalidAgentResponse(s"Missing stream result for $method")))
         }
       }
 
-  private def ensureResponseId(response: JsonRpcResponse, expected: JsonRpcId, method: String): Task[Unit] =
+  private def ensureResponseId(
+    response: JsonRpcResponse,
+    expected: JsonRpcId,
+    method: String,
+  ): Task[Unit] =
     response.id match
       case Some(actual) if actual == expected =>
         ZIO.unit
       case Some(actual) =>
-        ZIO.fail(A2AError.invalidAgentResponse(s"JSON-RPC response id mismatch for $method: expected $expected, got $actual"))
+        ZIO.fail(
+          A2AError.invalidAgentResponse(s"JSON-RPC response id mismatch for $method: expected $expected, got $actual")
+        )
       case None =>
         ZIO.fail(A2AError.invalidAgentResponse(s"Missing JSON-RPC response id for $method"))
 
   private def requestHeaders(contentType: String): Map[String, String] =
     headers ++ Map(
-      "Content-Type"   -> contentType,
+      "Content-Type"    -> contentType,
       A2AHeader.Version -> iface.protocolVersion,
     )
 end A2AClientLive
@@ -320,7 +326,11 @@ private object Http:
   def get(url: String, headers: Map[String, String]): Task[String] =
     fetchText(url, js.Dynamic.literal(method = "GET", headers = toJsHeaders(headers)))
 
-  def postJson(url: String, body: String, headers: Map[String, String]): Task[String] =
+  def postJson(
+    url: String,
+    body: String,
+    headers: Map[String, String],
+  ): Task[String] =
     fetchText(url, js.Dynamic.literal(method = "POST", headers = toJsHeaders(headers), body = body))
 
   def sse(
@@ -338,7 +348,10 @@ private object Http:
         _ = body.foreach(value => init.body = value)
         response <- ZIO.fromPromiseJS(js.Dynamic.global.fetch(url, init).asInstanceOf[js.Promise[js.Dynamic]])
         _        <- failIfHttpError(response)
-        contentType = Option(response.headers.get("content-type")).filter(value => !js.isUndefined(value) && value != null).map(_.asInstanceOf[String]).getOrElse("")
+        contentType = Option(response.headers.get("content-type"))
+          .filter(value => !js.isUndefined(value) && value != null)
+          .map(_.asInstanceOf[String])
+          .getOrElse("")
         stream <-
           if contentType.startsWith(A2AContentType.Sse) then
             val reader  = response.body.getReader().asInstanceOf[js.Dynamic]
@@ -354,7 +367,9 @@ private object Http:
   private def fetchText(url: String, init: js.Dynamic): Task[String] =
     ZIO
       .fromPromiseJS(js.Dynamic.global.fetch(url, init).asInstanceOf[js.Promise[js.Dynamic]])
-      .flatMap(response => failIfHttpError(response) *> ZIO.fromPromiseJS(response.text().asInstanceOf[js.Promise[String]]))
+      .flatMap(response =>
+        failIfHttpError(response) *> ZIO.fromPromiseJS(response.text().asInstanceOf[js.Promise[String]])
+      )
 
   private def failIfHttpError(response: js.Dynamic): Task[Unit] =
     val ok = response.ok.asInstanceOf[Boolean]
@@ -373,12 +388,16 @@ private object Http:
     ZIO
       .fromPromiseJS(reader.read().asInstanceOf[js.Promise[js.Dynamic]])
       .flatMap { step =>
-        if step.done.asInstanceOf[Boolean] then
-          emitEvents(buffer, queue).ignore *> queue.offer(Take.end).unit
+        if step.done.asInstanceOf[Boolean] then emitEvents(buffer, queue).ignore *> queue.offer(Take.end).unit
         else
-          val chunk = decoder.decode(step.value).asInstanceOf[String]
+          val chunk          = decoder.decode(step.value).asInstanceOf[String]
           val (events, rest) = splitEvents(buffer + chunk)
-          ZIO.foreachDiscard(events)(event => queue.offer(Take.single(event)).unit) *> pumpSse(reader, decoder, rest, queue)
+          ZIO.foreachDiscard(events)(event => queue.offer(Take.single(event)).unit) *> pumpSse(
+            reader,
+            decoder,
+            rest,
+            queue,
+          )
       }
       .catchAll(error => queue.offer(Take.fail(error)).unit)
 
@@ -395,7 +414,7 @@ private object Http:
     (complete, rest)
 
   private def parseEvent(raw: String): Option[String] =
-    val lines = raw.linesIterator.toList
+    val lines     = raw.linesIterator.toList
     val eventType = lines
       .find(_.startsWith("event:"))
       .map(_.drop("event:".length).trim)

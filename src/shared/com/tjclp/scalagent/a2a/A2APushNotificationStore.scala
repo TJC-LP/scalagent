@@ -13,7 +13,11 @@ trait A2APushNotificationStore:
 
   def load(taskId: TaskId, tenant: Option[String]): UIO[List[TaskPushNotificationConfig]]
 
-  def delete(taskId: TaskId, tenant: Option[String], configId: String): UIO[Unit]
+  def delete(
+    taskId: TaskId,
+    tenant: Option[String],
+    configId: String,
+  ): UIO[Unit]
 end A2APushNotificationStore
 
 object A2APushNotificationStore:
@@ -47,7 +51,11 @@ private final class InMemoryA2APushNotificationStore extends A2APushNotification
   override def load(taskId: TaskId, tenant: Option[String]): UIO[List[TaskPushNotificationConfig]] =
     ZIO.succeed(configs.getOrElse(key(taskId, tenant), Nil))
 
-  override def delete(taskId: TaskId, tenant: Option[String], configId: String): UIO[Unit] =
+  override def delete(
+    taskId: TaskId,
+    tenant: Option[String],
+    configId: String,
+  ): UIO[Unit] =
     ZIO.succeed {
       val k = key(taskId, tenant)
       configs.update(k, configs.getOrElse(k, Nil).filterNot(_.id.contains(configId)))

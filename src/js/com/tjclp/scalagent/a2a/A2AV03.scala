@@ -121,7 +121,7 @@ private final class A2AClientV03Live(jsClient: JsA2AClient) extends A2AClientV03
         val effectiveConfig = config match
           case Some(value) if value.blocking.isDefined => Some(value)
           case Some(value)                             => Some(value.copy(returnImmediately = false))
-          case None                                    => Some(MessageSendConfiguration.default.copy(returnImmediately = false))
+          case None => Some(MessageSendConfiguration.default.copy(returnImmediately = false))
         val params = JsBuilders.sendMessageParams(A2AConverters.toJs(message), effectiveConfig.map(toJsConfig))
         jsClient.sendMessage(params)
       }
@@ -152,7 +152,9 @@ private final class A2AClientV03Live(jsClient: JsA2AClient) extends A2AClientV03
     }
 
   override def getTask(taskId: TaskId, historyLength: Option[Int]): Task[A2ATask] =
-    ZIO.fromPromiseJS(jsClient.getTask(JsBuilders.taskQueryParams(taskId.value, historyLength))).map(A2AConverters.toScala)
+    ZIO
+      .fromPromiseJS(jsClient.getTask(JsBuilders.taskQueryParams(taskId.value, historyLength)))
+      .map(A2AConverters.toScala)
 
   override def cancelTask(taskId: TaskId): Task[A2ATask] =
     ZIO.fromPromiseJS(jsClient.cancelTask(JsBuilders.taskIdParams(taskId.value))).map(A2AConverters.toScala)
@@ -161,7 +163,9 @@ private final class A2AClientV03Live(jsClient: JsA2AClient) extends A2AClientV03
     ZStream.unwrap {
       ZIO.attempt {
         AsyncIteratorOps
-          .toZStream(jsClient.resubscribeTask(JsBuilders.taskIdParams(taskId.value)).asInstanceOf[AsyncIterator[js.Any]])
+          .toZStream(
+            jsClient.resubscribeTask(JsBuilders.taskIdParams(taskId.value)).asInstanceOf[AsyncIterator[js.Any]]
+          )
           .mapZIO(A2AStreamEventParser.parse)
       }
     }
@@ -171,12 +175,18 @@ private final class A2AClientV03Live(jsClient: JsA2AClient) extends A2AClientV03
 
   override def setPushNotificationConfig(taskId: TaskId, config: PushNotificationConfig): Task[PushNotificationConfig] =
     ZIO
-      .fromPromiseJS(jsClient.setTaskPushNotificationConfig(JsBuilders.taskPushNotificationConfigParams(taskId.value, A2AConverters.toJs(config))))
+      .fromPromiseJS(
+        jsClient.setTaskPushNotificationConfig(
+          JsBuilders.taskPushNotificationConfigParams(taskId.value, A2AConverters.toJs(config))
+        )
+      )
       .map(A2AConverters.toScalaPushNotificationConfigResult)
 
   override def getPushNotificationConfig(taskId: TaskId, configId: Option[String]): Task[PushNotificationConfig] =
     ZIO
-      .fromPromiseJS(jsClient.getTaskPushNotificationConfig(JsBuilders.getPushNotificationConfigParams(taskId.value, configId)))
+      .fromPromiseJS(
+        jsClient.getTaskPushNotificationConfig(JsBuilders.getPushNotificationConfigParams(taskId.value, configId))
+      )
       .map(A2AConverters.toScalaPushNotificationConfigResult)
 
   override def listPushNotificationConfigs(taskId: TaskId): Task[List[PushNotificationConfig]] =
@@ -185,7 +195,11 @@ private final class A2AClientV03Live(jsClient: JsA2AClient) extends A2AClientV03
       .map(result => A2AConverters.toScalaPushNotificationConfigResults(result.asInstanceOf[js.Array[js.Any]]))
 
   override def deletePushNotificationConfig(taskId: TaskId, configId: String): Task[Unit] =
-    ZIO.fromPromiseJS(jsClient.deleteTaskPushNotificationConfig(JsBuilders.deletePushNotificationConfigParams(taskId.value, configId))).unit
+    ZIO
+      .fromPromiseJS(
+        jsClient.deleteTaskPushNotificationConfig(JsBuilders.deletePushNotificationConfigParams(taskId.value, configId))
+      )
+      .unit
 end A2AClientV03Live
 
 /** Legacy A2A 0.3 server backed by `@a2a-js/sdk`. Prefer [[A2AServer]] for v1. */
@@ -273,9 +287,9 @@ private final class A2AServerV03Live(config: A2AServerV03.Config, runtime: Runti
   private def createExecutor(taskStore: JsTaskStore): JsAgentExecutor =
     JsExecutorBuilder.create(
       handler = (ctx, bus) =>
-        val message             = A2AConverters.toScala(ctx.userMessage)
-        val taskId              = TaskId(ctx.taskId)
-        val contextId           = ContextId(ctx.contextId)
+        val message            = A2AConverters.toScala(ctx.userMessage)
+        val taskId             = TaskId(ctx.taskId)
+        val contextId          = ContextId(ctx.contextId)
         val preparedInvocation =
           config.invocationPreparer match
             case Some(prep) => prep(message, taskId)
@@ -323,22 +337,28 @@ private final class A2AServerV03Live(config: A2AServerV03.Config, runtime: Runti
           .ensuring(invocation.cleanup.ignore)
       }
 
-    withTaskTimeout(taskId, effect).flatMap { case (result, artifacts) =>
-      val responseText =
-        result.outcome.resultText
-          .orElse(result.semanticText.toOption)
-          .getOrElse("Error: " + result.outcome.toString)
-      val responseMsg = A2AMessage.agentText(responseText, Some(contextId)).copy(taskId = Some(taskId))
-      SessionLogger.logEvent(taskId.value, "completed", responseText.take(500))
-      ZIO.succeed {
-        artifacts.foreach(artifact => publishArtifactUpdate(taskId, contextId, bus, artifact))
-        publishStatusUpdate(taskId, contextId, bus, TaskStatus.completed(responseMsg), finalUpdate = true)
-        bus.publish(A2AConverters.toJs(responseMsg))
-        bus.finished()
-      }
+    withTaskTimeout(taskId, effect).flatMap {
+      case (result, artifacts) =>
+        val responseText =
+          result.outcome.resultText
+            .orElse(result.semanticText.toOption)
+            .getOrElse("Error: " + result.outcome.toString)
+        val responseMsg = A2AMessage.agentText(responseText, Some(contextId)).copy(taskId = Some(taskId))
+        SessionLogger.logEvent(taskId.value, "completed", responseText.take(500))
+        ZIO.succeed {
+          artifacts.foreach(artifact => publishArtifactUpdate(taskId, contextId, bus, artifact))
+          publishStatusUpdate(taskId, contextId, bus, TaskStatus.completed(responseMsg), finalUpdate = true)
+          bus.publish(A2AConverters.toJs(responseMsg))
+          bus.finished()
+        }
     }
+  end execute
 
-  private def progressSink(taskId: TaskId, contextId: ContextId, bus: JsExecutionEventBus): QueryCollector.MessageSink =
+  private def progressSink(
+    taskId: TaskId,
+    contextId: ContextId,
+    bus: JsExecutionEventBus,
+  ): QueryCollector.MessageSink =
     var state = A2AProgress.State.empty
     message =>
       val (next, maybeStatus) = A2AProgress.statusMessage(message, contextId, taskId, state)
@@ -371,7 +391,11 @@ private final class A2AServerV03Live(config: A2AServerV03.Config, runtime: Runti
       bus.finished()
     }
 
-  private def publishTaskSnapshot(taskId: TaskId, contextId: ContextId, bus: JsExecutionEventBus): Unit =
+  private def publishTaskSnapshot(
+    taskId: TaskId,
+    contextId: ContextId,
+    bus: JsExecutionEventBus,
+  ): Unit =
     bus.publish(
       A2AConverters.toJs(
         A2ATask(
@@ -454,9 +478,16 @@ private final class A2AServerV03Live(config: A2AServerV03.Config, runtime: Runti
       .`catch`[js.Dynamic] { error =>
         val errorMsg =
           if error == null || js.isUndefined(error) then "Internal error"
-          else error.asInstanceOf[js.Dynamic].selectDynamic("message").asInstanceOf[js.UndefOr[String]].toOption.getOrElse(error.toString)
+          else
+            error
+              .asInstanceOf[js.Dynamic]
+              .selectDynamic("message")
+              .asInstanceOf[js.UndefOr[String]]
+              .toOption
+              .getOrElse(error.toString)
         BunJsonRpcResponses.jsonRpcError(A2AErrorCode.InternalError, errorMsg, requestId)
       }
+  end handleJsonRpc
 end A2AServerV03Live
 
 /** Legacy app entry point backed by [[A2AServerV03]]. Prefer [[A2AServerApp]] for v1. */
@@ -467,15 +498,15 @@ trait A2AServerAppV03[Self <: Singleton] extends ZIOAppDefault:
     sys.env.get("A2A_HOST").orElse(sys.env.get("SERVICE_HOST")).getOrElse("localhost")
   def port: Int =
     sys.env.get("A2A_PORT").orElse(sys.env.get("SERVICE_PORT")).flatMap(_.toIntOption).getOrElse(3000)
-  def agentOptions: AgentOptions = AgentOptions.default
-  def agentOptionsZIO: Task[AgentOptions] = ZIO.succeed(agentOptions)
-  def skills: List[AgentSkill]                                                = Nil
-  def executionMode: ExecutionMode                                            = ExecutionMode.Default
-  def taskTimeout: Option[Duration]                                           = None
-  def capabilities: AgentCapabilities                                         = AgentCapabilities.default
-  def sessionLogDir: Option[String]                                           = None
+  def agentOptions: AgentOptions                                                  = AgentOptions.default
+  def agentOptionsZIO: Task[AgentOptions]                                         = ZIO.succeed(agentOptions)
+  def skills: List[AgentSkill]                                                    = Nil
+  def executionMode: ExecutionMode                                                = ExecutionMode.Default
+  def taskTimeout: Option[Duration]                                               = None
+  def capabilities: AgentCapabilities                                             = AgentCapabilities.default
+  def sessionLogDir: Option[String]                                               = None
   def invocationPreparer: Option[(A2AMessage, TaskId) => Task[InvocationContext]] = None
-  def executorFactory: Option[(JsTaskStore, Runtime[Any]) => JsAgentExecutor] = None
+  def executorFactory: Option[(JsTaskStore, Runtime[Any]) => JsAgentExecutor]     = None
 
   protected final def configWith(options: AgentOptions): A2AServerV03.Config =
     A2AServerV03.Config(
@@ -526,7 +557,8 @@ extension (client: A2AClientV03)
   ): Task[A2ATask] =
     client.sendAndPoll(A2AMessage.userText(text, contextId), pollEvery = pollEvery, timeout = timeout)
 
-  def streamTextV03(text: String, contextId: Option[ContextId] = None): ZStream[Any, Throwable, A2AResponse.StreamEvent] =
+  def streamTextV03(text: String, contextId: Option[ContextId] = None)
+    : ZStream[Any, Throwable, A2AResponse.StreamEvent] =
     client.stream(A2AMessage.userText(text, contextId))
 
   def askTextV03(text: String, contextId: Option[ContextId] = None): Task[String] =

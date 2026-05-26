@@ -209,7 +209,7 @@ private[scalagent] object BunJsonRpcResponses:
       js.Dynamic.global.Reflect.get(asyncIterable, js.Symbol.asyncIterator).asInstanceOf[js.Dynamic]
     val iterator = iteratorFactory.call(asyncIterable).asInstanceOf[js.Dynamic]
     val encoder  = js.Dynamic.newInstance(js.Dynamic.global.TextEncoder)()
-    var canceled  = false
+    var canceled = false
 
     def pump(controller: js.Dynamic): Unit =
       iterator
