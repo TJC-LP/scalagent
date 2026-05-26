@@ -60,8 +60,8 @@ object agent extends Module:
 
   /** Scala.js / Bun build. Current scalagent surface — Claude Agent SDK,
     * @a2a-js/sdk facades, Codex SDK, MCP server bindings. Sources from
-    * `src/` (shared, platform-agnostic) plus `src-js/` (JS-only files
-    * that use `@JSImport` / `node:*` / Bun.serve / etc.). */
+    * `src/shared/` (cross-built) plus `src/js/` (JS-only files that use
+    * `@JSImport` / `node:*` / Bun.serve / etc.). */
   object js extends BunScalaJSModule with BunPublishModule with PublishModule with ScalafmtModule:
     def scalaVersion        = sharedScalaVersion
     override def moduleKind = Task { ModuleKind.ESModule }
@@ -81,8 +81,8 @@ object agent extends Module:
 
     override def moduleDir = build.moduleDir
     override def sources = Task.Sources(
-      moduleDir / "src",
-      moduleDir / "src-js",
+      moduleDir / "src" / "shared",
+      moduleDir / "src" / "js",
     )
 
     override def publishVersion = sharedPublishVersion
@@ -93,8 +93,8 @@ object agent extends Module:
     object test extends BunScalaJSTests, TestModule.Munit:
       def munitVersion = "1.2.4"
       override def sources = Task.Sources(
-        build.moduleDir / "test" / "src",
-        build.moduleDir / "test" / "src-js",
+        build.moduleDir / "test" / "shared",
+        build.moduleDir / "test" / "js",
       )
   end js
 
@@ -113,8 +113,8 @@ object agent extends Module:
 
     override def moduleDir = build.moduleDir
     override def sources = Task.Sources(
-      moduleDir / "src",
-      moduleDir / "src-jvm",
+      moduleDir / "src" / "shared",
+      moduleDir / "src" / "jvm",
     )
 
     override def publishVersion = sharedPublishVersion
@@ -125,8 +125,8 @@ object agent extends Module:
     object test extends ScalaTests, TestModule.Munit:
       def mvnDeps = Seq(mvn"org.scalameta::munit::1.2.4")
       override def sources = Task.Sources(
-        build.moduleDir / "test" / "src",
-        build.moduleDir / "test" / "src-jvm",
+        build.moduleDir / "test" / "shared",
+        build.moduleDir / "test" / "jvm",
       )
   end jvm
 end agent
