@@ -16,19 +16,40 @@ enum McpServerConfig:
   case Stdio(
     command: String,
     args: List[String] = Nil,
-    env: Map[String, String] = Map.empty)
+    env: Map[String, String] = Map.empty,
+    /**
+     * When true, this server's tools are always included in the prompt instead of being deferred
+     * behind tool search — and the SDK blocks startup until the server is connected
+     * (capped at ~5s). Default: tools are deferred and the server connects in the background.
+     * Requires SDK 0.3.142+.
+     */
+    alwaysLoad: Boolean = false)
 
   /** Server-Sent Events transport */
   case SSE(
     url: String,
     headers: Map[String, String] = Map.empty,
-    tools: List[McpServerToolPolicy] = Nil)
+    tools: List[McpServerToolPolicy] = Nil,
+    /**
+     * When true, this server's tools are always included in the prompt instead of being deferred
+     * behind tool search — and the SDK blocks startup until the server is connected
+     * (capped at ~5s). Default: tools are deferred and the server connects in the background.
+     * Requires SDK 0.3.142+.
+     */
+    alwaysLoad: Boolean = false)
 
   /** HTTP transport */
   case HTTP(
     url: String,
     headers: Map[String, String] = Map.empty,
-    tools: List[McpServerToolPolicy] = Nil)
+    tools: List[McpServerToolPolicy] = Nil,
+    /**
+     * When true, this server's tools are always included in the prompt instead of being deferred
+     * behind tool search — and the SDK blocks startup until the server is connected
+     * (capped at ~5s). Default: tools are deferred and the server connects in the background.
+     * Requires SDK 0.3.142+.
+     */
+    alwaysLoad: Boolean = false)
 
   /** In-process SDK MCP server (created via McpServer.create) */
   case Sdk(
@@ -56,22 +77,25 @@ enum McpServerConfig:
 
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object = this match
-    case Stdio(cmd, args, env) =>
+    case Stdio(cmd, args, env, alwaysLoad) =>
       val obj = js.Dynamic.literal(command = cmd)
       if args.nonEmpty then obj.args = args.toJSArray
       if env.nonEmpty then obj.env = js.Dictionary(env.toSeq*)
+      if alwaysLoad then obj.alwaysLoad = true
       obj.asInstanceOf[js.Object]
 
-    case SSE(url, headers, tools) =>
+    case SSE(url, headers, tools, alwaysLoad) =>
       val obj = js.Dynamic.literal(`type` = "sse", url = url)
       if headers.nonEmpty then obj.headers = js.Dictionary(headers.toSeq*)
       if tools.nonEmpty then obj.tools = tools.map(_.toRaw).toJSArray
+      if alwaysLoad then obj.alwaysLoad = true
       obj.asInstanceOf[js.Object]
 
-    case HTTP(url, headers, tools) =>
+    case HTTP(url, headers, tools, alwaysLoad) =>
       val obj = js.Dynamic.literal(`type` = "http", url = url)
       if headers.nonEmpty then obj.headers = js.Dictionary(headers.toSeq*)
       if tools.nonEmpty then obj.tools = tools.map(_.toRaw).toJSArray
+      if alwaysLoad then obj.alwaysLoad = true
       obj.asInstanceOf[js.Object]
 
     case Sdk(_, _, rawConfig) =>

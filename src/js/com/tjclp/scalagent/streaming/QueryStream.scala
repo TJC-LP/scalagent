@@ -506,7 +506,14 @@ object AgentInfo:
       model = obj.model.asInstanceOf[js.UndefOr[String]].toOption,
     )
 
-/** MCP server connection status */
+/**
+ * MCP server connection status.
+ *
+ * @param status
+ *   Raw status string. As of SDK 0.3.142, this can be `"pending"` while a
+ *   server is connecting in the background, `"connected"` once ready, or
+ *   `"failed"` on error. Use [[connectionStatus]] for a typed read.
+ */
 final case class McpServerStatusInfo(
   name: String,
   status: String,
@@ -514,7 +521,9 @@ final case class McpServerStatusInfo(
   serverVersion: Option[String],
   error: Option[String] = None,
   scope: Option[String] = None,
-  tools: Option[List[McpToolStatusInfo]] = None)
+  tools: Option[List[McpToolStatusInfo]] = None):
+  /** Parse [[status]] into the typed [[McpServerStatus]] enum. */
+  def connectionStatus: McpServerStatus = McpServerStatus.fromString(status)
 
 object McpServerStatusInfo:
   def fromRaw(obj: js.Dynamic): McpServerStatusInfo =
@@ -529,6 +538,29 @@ object McpServerStatusInfo:
       scope = obj.scope.asInstanceOf[js.UndefOr[String]].toOption,
       tools = toolsArray.toOption.map(_.toList.map(McpToolStatusInfo.fromRaw)),
     )
+
+/**
+ * MCP server connection states surfaced by [[McpServerStatusInfo.connectionStatus]].
+ *
+ * As of SDK 0.3.142, MCP servers connect in the background by default — `Pending`
+ * means the connect is still in flight. Set `MCP_CONNECTION_NONBLOCKING=0` in the
+ * subprocess env to restore the old blocking behavior, or set `alwaysLoad = true`
+ * on individual [[com.tjclp.scalagent.config.McpServerConfig]] entries.
+ */
+enum McpServerStatus(val raw: String):
+  case Pending    extends McpServerStatus("pending")
+  case Connected  extends McpServerStatus("connected")
+  case Failed     extends McpServerStatus("failed")
+  case NeedsAuth  extends McpServerStatus("needs-auth")
+  case Custom(override val raw: String) extends McpServerStatus(raw)
+
+object McpServerStatus:
+  def fromString(s: String): McpServerStatus = s match
+    case "pending"    => Pending
+    case "connected"  => Connected
+    case "failed"     => Failed
+    case "needs-auth" => NeedsAuth
+    case other        => Custom(other)
 
 /** MCP tool status information */
 final case class McpToolStatusInfo(

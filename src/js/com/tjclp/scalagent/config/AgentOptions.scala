@@ -64,6 +64,12 @@ final case class AgentOptions(
    * As of SDK 0.2.113, passing a non-empty `env` map **replaces** the subprocess's
    * inherited `process.env` — to retain inherited variables, spread them explicitly
    * via `sys.env ++ Map("MY_VAR" -> "x")`.
+   *
+   * Notable subprocess-level env vars:
+   *   - `MCP_CONNECTION_NONBLOCKING=0` — restore the pre-0.3.142 blocking MCP
+   *     server connect behavior. Defaults to non-blocking otherwise; use
+   *     [[McpServerConfig.Stdio.alwaysLoad]] (or per-server equivalents) to
+   *     opt individual servers back into blocking startup.
    */
   env: Map[String, String] = Map.empty,
 
