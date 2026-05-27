@@ -90,6 +90,13 @@ enum HookEvent:
   /** Watched file changed hook */
   case FileChanged
 
+  /**
+   * Display-time hook for assistant text. Fires as the SDK is about to surface
+   * a message to the user — the hook can rewrite, hide, or pass through the content.
+   * Added in SDK 0.3.152.
+   */
+  case MessageDisplay
+
   /** Convert to SDK string representation */
   def toRaw: String = this match
     case PreToolUse         => "PreToolUse"
@@ -119,6 +126,7 @@ enum HookEvent:
     case TaskCreated        => "TaskCreated"
     case CwdChanged         => "CwdChanged"
     case FileChanged        => "FileChanged"
+    case MessageDisplay     => "MessageDisplay"
 end HookEvent
 
 object HookEvent:
@@ -151,6 +159,7 @@ object HookEvent:
     case "TaskCreated"        => Right(TaskCreated)
     case "CwdChanged"         => Right(CwdChanged)
     case "FileChanged"        => Right(FileChanged)
+    case "MessageDisplay"     => Right(MessageDisplay)
     case other                => Left(s"Unknown hook event: $other")
   }
 
@@ -182,5 +191,6 @@ object HookEvent:
     case "TaskCreated"        => TaskCreated
     case "CwdChanged"         => CwdChanged
     case "FileChanged"        => FileChanged
+    case "MessageDisplay"     => MessageDisplay
     case other                => throw new IllegalArgumentException(s"Unknown hook event: $other")
 end HookEvent

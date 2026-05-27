@@ -187,15 +187,25 @@ object HookOutput:
    *   Optional initial user message to inject
    * @param watchPaths
    *   Optional file paths to watch for changes
+   * @param reloadSkills
+   *   When true, re-discover skills from disk before the session resumes.
+   *   Requires SDK 0.3.152+.
+   * @param sessionTitle
+   *   Override the session title from the hook. Skips automatic title
+   *   generation. Requires SDK 0.3.152+.
    */
   final case class SessionStartOutput(
     initialUserMessage: Option[String] = None,
-    watchPaths: List[String] = Nil)
+    watchPaths: List[String] = Nil,
+    reloadSkills: Boolean = false,
+    sessionTitle: Option[String] = None)
       extends HookOutput:
     def toRaw: js.Object =
       val specific = js.Dynamic.literal()
       initialUserMessage.foreach(msg => specific.initialUserMessage = msg)
       if watchPaths.nonEmpty then specific.watchPaths = watchPaths.toJSArray
+      if reloadSkills then specific.reloadSkills = true
+      sessionTitle.foreach(t => specific.sessionTitle = t)
       js.Dynamic
         .literal(
           continue = true,
