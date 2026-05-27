@@ -161,6 +161,13 @@ final case class AgentOptions(
   /** Inline settings object or path to a settings file. */
   settings: Option[SettingsConfig] = None,
 
+  /**
+   * Embedder-provided policy-tier settings pushed in-memory to the spawned CLI,
+   * merged on top of file-based settings without touching the filesystem.
+   * Requires SDK 0.2.118+.
+   */
+  managedSettings: Option[SettingsConfig] = None,
+
   // Runtime configuration
 
   /** Runtime executable to use for spawning Claude Code. */
@@ -187,6 +194,13 @@ final case class AgentOptions(
    * produce a short present-tense description emitted on task_progress events.
    */
   agentProgressSummaries: Boolean = false,
+
+  /**
+   * When true, subagent text deltas are forwarded to the parent's stream as
+   * normal assistant text events instead of being scoped to the subagent run.
+   * Requires SDK 0.2.119+.
+   */
+  forwardSubagentText: Boolean = false,
 
   /** GCP authentication refresh command (e.g., "gcloud auth application-default login"). */
   gcpAuthRefresh: Option[String] = None,
@@ -290,6 +304,7 @@ final case class AgentOptions(
     if strictMcpConfig then obj.strictMcpConfig = true
     toolConfig.foreach(tc => obj.toolConfig = tc.toRaw)
     settings.foreach(s => obj.settings = s.toRaw)
+    managedSettings.foreach(s => obj.managedSettings = s.toRaw)
 
     // Runtime configuration
     executable.foreach(e => obj.executable = e.raw)
@@ -298,6 +313,7 @@ final case class AgentOptions(
     permissionPromptToolName.foreach(n => obj.permissionPromptToolName = n)
     stderr.foreach(cb => obj.stderr = js.Any.fromFunction1(cb))
     if agentProgressSummaries then obj.agentProgressSummaries = true
+    if forwardSubagentText then obj.forwardSubagentText = true
     gcpAuthRefresh.foreach(cmd => obj.gcpAuthRefresh = cmd)
     onElicitation.foreach(cb => obj.onElicitation = cb)
     taskBudget.foreach { budget => obj.taskBudget = js.Dynamic.literal(total = budget.total) }
@@ -952,6 +968,13 @@ object AgentOptions:
     def withSettings(config: SettingsConfig): AgentOptions =
       opts.copy(settings = Some(config))
 
+    /**
+     * Set embedder-provided policy-tier settings pushed in-memory to the spawned CLI.
+     * Merged on top of file-based settings. Requires SDK 0.2.118+.
+     */
+    def withManagedSettings(config: SettingsConfig): AgentOptions =
+      opts.copy(managedSettings = Some(config))
+
     /** Set the runtime executable for Claude Code. */
     def withExecutable(exe: Executable): AgentOptions =
       opts.copy(executable = Some(exe))
@@ -975,6 +998,13 @@ object AgentOptions:
     /** Enable periodic AI-generated progress summaries for subagents. */
     def withAgentProgressSummaries: AgentOptions =
       opts.copy(agentProgressSummaries = true)
+
+    /**
+     * Forward subagent text deltas to the parent's stream as normal assistant
+     * text events. Requires SDK 0.2.119+.
+     */
+    def withForwardSubagentText: AgentOptions =
+      opts.copy(forwardSubagentText = true)
 
     /** Set GCP authentication refresh command. */
     def withGcpAuthRefresh(command: String): AgentOptions =
