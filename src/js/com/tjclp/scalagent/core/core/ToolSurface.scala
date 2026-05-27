@@ -87,7 +87,7 @@ object ToolSurface:
       allowedTools = List(ToolName.Read, ToolName.Grep, ToolName.Glob),
     )
 
-  /** All read-only built-in tools (file, web, IDE). */
+  /** All read-only built-in tools (file, web, IDE, Task introspection, Monitor). */
   val readOnlyAll: ToolSurface =
     ToolSurface(
       tools = Nil,
@@ -98,6 +98,9 @@ object ToolSurface:
         ToolName.WebFetch,
         ToolName.WebSearch,
         ToolName.TaskOutput,
+        ToolName.TaskGet,
+        ToolName.TaskList,
+        ToolName.Monitor,
         ToolName.LSP,
         ToolName.GetDiagnostics,
         ToolName.McpResolveLibraryId,
@@ -105,7 +108,7 @@ object ToolSurface:
       ),
     )
 
-  /** Standard dev tools: read-only + Write + Edit (no Bash). */
+  /** Standard dev tools: read-only + Write + Edit + Task management (no Bash). */
   val standard: ToolSurface =
     ToolSurface(
       tools = Nil,
@@ -113,6 +116,10 @@ object ToolSurface:
         ToolName.Write,
         ToolName.Edit,
         ToolName.NotebookEdit,
+        ToolName.TaskCreate,
+        ToolName.TaskUpdate,
+        ToolName.TaskGet,
+        ToolName.TaskList,
       ),
     )
 
@@ -131,12 +138,16 @@ object ToolSurface:
         ToolName.Task,
         ToolName.WebFetch,
         ToolName.WebSearch,
-        ToolName.TodoWrite,
+        ToolName.TaskCreate,
+        ToolName.TaskUpdate,
+        ToolName.TaskGet,
+        ToolName.TaskList,
         ToolName.AskUserQuestion,
         ToolName.EnterPlanMode,
         ToolName.ExitPlanMode,
         ToolName.KillShell,
         ToolName.TaskOutput,
+        ToolName.Monitor,
         ToolName.SlashCommand,
         ToolName.Skill,
         ToolName.LSP,
