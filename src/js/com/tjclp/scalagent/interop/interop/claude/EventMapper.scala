@@ -21,10 +21,10 @@ import com.tjclp.scalagent.messages.*
 object EventMapper:
 
   def mapMessage(msg: AgentMessage): List[AgentEvent] = msg match
-    case AgentMessage.Assistant(message, _, _, _, _) =>
+    case AgentMessage.Assistant(message, _, _, _, _, _, _, _) =>
       message.content.flatMap(mapContentBlock)
 
-    case AgentMessage.User(message, _, isSynthetic, _, _, _, _) if isSynthetic =>
+    case AgentMessage.User(message, _, isSynthetic, _, _, _, _, _, _, _) if isSynthetic =>
       message.content.collect {
         case ContentBlock.ToolResult(toolUseId, content, isError) =>
           AgentEvent.ToolResult(

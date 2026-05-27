@@ -199,7 +199,7 @@ class AgentMessageSpec extends FunSuite:
     val json = msg.toJson
     val parsed = json.fromJson[AgentMessage]
     parsed match
-      case Right(AgentMessage.Assistant(_, _, _, msgUuid, msgSessionId)) =>
+      case Right(AgentMessage.Assistant(_, _, _, msgUuid, msgSessionId, _, _, _)) =>
         assertEquals(msgUuid, testMessageUuid)
         assertEquals(msgSessionId, testSessionId)
       case other => fail(s"Expected Right(Assistant), got $other")

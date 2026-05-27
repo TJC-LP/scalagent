@@ -52,7 +52,7 @@ class MessageConverterSpec extends FunSuite:
     )
 
     MessageConverter.fromRaw(raw) match
-      case AgentMessage.Assistant(message, _, _, _, _) =>
+      case AgentMessage.Assistant(message, _, _, _, _, _, _, _) =>
         assertEquals(message.stopReason, None)
       case other =>
         fail(s"Expected assistant message, got: $other")
@@ -106,7 +106,7 @@ class MessageConverterSpec extends FunSuite:
     )
 
     MessageConverter.fromRaw(raw) match
-      case AgentMessage.Assistant(message, _, _, _, _) =>
+      case AgentMessage.Assistant(message, _, _, _, _, _, _, _) =>
         message.content.headOption match
           case Some(ContentBlock.Unknown(envelope)) =>
             assertEquals(envelope.rawType, "chart")
@@ -162,7 +162,7 @@ class MessageConverterSpec extends FunSuite:
     )
 
     MessageConverter.fromRaw(raw) match
-      case AgentMessage.Assistant(message, _, _, _, _) =>
+      case AgentMessage.Assistant(message, _, _, _, _, _, _, _) =>
         message.content.headOption match
           case Some(ContentBlock.Image(ImageSource.Url(url), mediaType)) =>
             assertEquals(url, "https://example.com/test.png")
@@ -195,7 +195,7 @@ class MessageConverterSpec extends FunSuite:
     )
 
     MessageConverter.fromRaw(raw) match
-      case AgentMessage.Assistant(message, _, _, _, _) =>
+      case AgentMessage.Assistant(message, _, _, _, _, _, _, _) =>
         message.content.headOption match
           case Some(ContentBlock.Image(ImageSource.Base64(data, sourceMediaType), mediaType)) =>
             assertEquals(data, "Zm9vYmFy")

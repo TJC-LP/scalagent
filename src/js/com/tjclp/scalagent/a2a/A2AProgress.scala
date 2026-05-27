@@ -68,10 +68,10 @@ private[a2a] object A2AProgress:
       case AgentMessage.ToolUseSummary(summary, _, _, _) =>
         text(summary)
 
-      case AgentMessage.Assistant(assistant, _, _, _, _) =>
+      case AgentMessage.Assistant(assistant, _, _, _, _, _, _, _) =>
         assistantParts(assistant.content)
 
-      case AgentMessage.User(user, _, _, _, _, _, _) =>
+      case AgentMessage.User(user, _, _, _, _, _, _, _, _, _) =>
         toolResultParts(user.content, knownToolNames)
 
       case AgentMessage.System(SystemEvent.Status(status, _), _, _) =>
