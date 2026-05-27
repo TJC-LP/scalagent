@@ -153,100 +153,10 @@ object A2AServerLive:
     ZLayer.fromZIO(create(config))
 end A2AServerLive
 
-// `ServerCallContext`, `taskRuntimeKey`, `A2ATaskStore`, `InMemoryTaskStoreImpl`
-// now live in `A2AServerTypes.scala` under shared sources (cross-built).
-
-private final class A2AEventBus(replayLimit: Int):
-  private val subscribers = mutable.Set.empty[Queue[Take[Throwable, A2AResponse.StreamEvent]]]
-  private var history     = Vector.empty[A2AResponse.StreamEvent]
-  private var closed      = false
-
-  def publish(event: A2AResponse.StreamEvent): UIO[Unit] =
-    if closed then ZIO.unit
-    else
-      history =
-        if replayLimit <= 0 then Vector.empty
-        else (history :+ event).takeRight(replayLimit)
-      ZIO.foreachDiscard(subscribers.toList)(_.offer(Take.single(event))).unit
-
-  def finish: UIO[Unit] =
-    if closed then ZIO.unit
-    else
-      closed = true
-      ZIO.foreachDiscard(subscribers.toList)(_.offer(Take.end)).unit
-
-  def stream: ZStream[Any, Throwable, A2AResponse.StreamEvent] =
-    ZStream.unwrapScoped {
-      for
-        queue  <- Queue.unbounded[Take[Throwable, A2AResponse.StreamEvent]]
-        replay <- ZIO.acquireRelease {
-          ZIO.succeed {
-            val replay = history
-            if !closed then subscribers += queue
-            replay
-          }
-        }(_ => ZIO.succeed(subscribers -= queue).unit)
-      yield
-        val live =
-          if closed then ZStream.empty
-          else ZStream.fromQueue(queue).flattenTake
-        ZStream.fromIterable(replay) ++ live
-    }
-end A2AEventBus
-
-private final case class A2ARuntimeEntry(
-  bus: A2AEventBus,
-  fiber: Option[Fiber.Runtime[Throwable, Unit]] = None,
-  canceled: Boolean = false)
-
-private final class A2ARuntimeRegistry private (
-  ref: Ref.Synchronized[Map[TaskRuntimeKey, A2ARuntimeEntry]]):
-
-  def reserve(key: TaskRuntimeKey, replayLimit: Int): UIO[Option[A2AEventBus]] =
-    ref.modify { entries =>
-      entries.get(key) match
-        case Some(_) =>
-          None -> entries
-        case None =>
-          val bus = A2AEventBus(replayLimit)
-          Some(bus) -> entries.updated(key, A2ARuntimeEntry(bus))
-    }
-
-  def attachFiber(key: TaskRuntimeKey, fiber: Fiber.Runtime[Throwable, Unit]): UIO[Unit] =
-    ref.update(entries => entries.updatedWith(key)(_.map(_.copy(fiber = Some(fiber))))).unit
-
-  def markCanceled(key: TaskRuntimeKey): UIO[Option[(A2AEventBus, Option[Fiber.Runtime[Throwable, Unit]])]] =
-    ref.modify { entries =>
-      entries.get(key) match
-        case Some(entry) =>
-          Some((entry.bus, entry.fiber)) -> entries.updated(key, entry.copy(canceled = true))
-        case None =>
-          None -> entries
-    }
-
-  def isCanceled(key: TaskRuntimeKey): UIO[Boolean] =
-    ref.get.map(_.get(key).exists(_.canceled))
-
-  def bus(key: TaskRuntimeKey): UIO[Option[A2AEventBus]] =
-    ref.get.map(_.get(key).map(_.bus))
-
-  def remove(key: TaskRuntimeKey): UIO[Unit] =
-    ref.update(_ - key).unit
-
-  def interruptAll: UIO[Unit] =
-    for
-      entries <- ref.getAndSet(Map.empty)
-      _       <- ZIO.foreachDiscard(entries.values.flatMap(_.fiber).toList)(_.interrupt).ignore
-    yield ()
-end A2ARuntimeRegistry
-
-private object A2ARuntimeRegistry:
-  def make: UIO[A2ARuntimeRegistry] =
-    Ref.Synchronized.make(Map.empty[TaskRuntimeKey, A2ARuntimeEntry]).map(A2ARuntimeRegistry(_))
-
 private final class PushNotificationSender(
   store: A2APushNotificationStore,
-  urlPolicy: PushNotificationUrlPolicy):
+  urlPolicy: PushNotificationUrlPolicy)
+    extends A2APushNotificationSender:
   private val deliveryChains = mutable.Map.empty[(String, String), Promise[Nothing, Unit]]
 
   def send(event: A2AResponse.StreamEvent, context: ServerCallContext): UIO[Unit] =
@@ -298,416 +208,68 @@ private final class PushNotificationSender(
         }
 end PushNotificationSender
 
-/**
- * Per-task ordered persistence chain for an [[A2AEventStore]].
- *
- * Mirrors [[PushNotificationSender]]'s delivery-chain pattern: each enqueue
- * forks a daemon that awaits the prior chain link, runs the (timeout-bounded,
- * defect-trapped) append, then signals the next link. Non-terminal events stay
- * off the live publish path; terminal publishers await the returned barrier so
- * durable resubscribe never sees a closed runtime before its final event has
- * either been stored or timed out.
- */
-private final class EventStorePersister(
-  store: A2AEventStore,
-  appendTimeout: Duration):
-  private val chains = mutable.Map.empty[(String, String), Promise[Nothing, Unit]]
-
-  def enqueue(event: A2AResponse.StreamEvent, tenant: Option[String]): UIO[UIO[Unit]] =
-    val key = (tenant.getOrElse(""), event.taskId.value)
-    for
-      previous <- ZIO.succeed(chains.get(key))
-      current  <- Promise.make[Nothing, Unit]
-      _        <- ZIO.succeed(chains.update(key, current))
-      _        <-
-        (previous.fold(ZIO.unit)(_.await) *> appendOnce(event, tenant))
-          .ensuring(
-            current.succeed(()).unit *>
-              ZIO.succeed {
-                if chains.get(key).contains(current) then chains.remove(key)
-              }.unit
-          )
-          .forkDaemon
-    yield current.await
-
-  private def appendOnce(event: A2AResponse.StreamEvent, tenant: Option[String]): UIO[Unit] =
-    store
-      .append(event.taskId, tenant, event)
-      .timeout(appendTimeout)
-      .flatMap {
-        case Some(_) => ZIO.unit
-        case None    =>
-          ZIO.logWarning(s"[a2a-event-store] append timed out task=${event.taskId.value}")
-      }
-      // `UIO[Unit]` rules out typed failures, but a misbehaving impl can still
-      // die (JS throw, NPE). Trap the cause so persistence stays strictly
-      // best-effort and one bad append doesn't crash the daemon chain.
-      .catchAllCause(cause =>
-        ZIO.logWarning(s"[a2a-event-store] append crashed task=${event.taskId.value}: ${cause.prettyPrint}")
-      )
-      .unit
-end EventStorePersister
-
-private final class ResultManager(
-  taskStore: A2ATaskStore,
-  eventPersister: Option[EventStorePersister],
-  pushSender: PushNotificationSender,
-  bus: A2AEventBus,
-  runtimeRegistry: A2ARuntimeRegistry,
-  context: ServerCallContext,
-  userMessage: A2AMessage)
-    extends A2AEventPublisher:
-
-  override def publish(event: A2AResponse.StreamEvent): UIO[Unit] =
-    runtimeRegistry.isCanceled(taskRuntimeKey(event.taskId, context)).flatMap { canceled =>
-      if canceled then ZIO.unit
-      else
-        for
-          _            <- applyEvent(event)
-          awaitPersist <- persistEvent(event)
-          _            <- ZIO.when(event.isFinal)(awaitPersist)
-          _            <- bus.publish(event)
-          _            <- pushSender.send(event, context)
-        yield ()
-    }
-
-  override def finish: UIO[Unit] =
-    bus.finish
-
-  private def applyEvent(event: A2AResponse.StreamEvent): UIO[Unit] =
-    event match
-      case A2AResponse.StreamEvent.TaskSnapshot(task) =>
-        taskStore.load(task.id, context.tenant).flatMap {
-          case Some(existing)
-              if existing.status.state == TaskState.Canceled && task.status.state != TaskState.Canceled =>
-            ZIO.unit
-          case _ =>
-            taskStore.save(ensureHistory(task), context.tenant)
-        }
-      case A2AResponse.StreamEvent.TaskStatusUpdate(taskId, _, status, _, _) =>
-        taskStore.load(taskId, context.tenant).flatMap {
-          case Some(task) if task.status.state == TaskState.Canceled && status.state != TaskState.Canceled =>
-            ZIO.unit
-          case Some(task) =>
-            val history = status.message match
-              case Some(message) if !task.history.exists(_.messageId == message.messageId) => task.history :+ message
-              case _                                                                       => task.history
-            taskStore.save(task.copy(status = status, history = history), context.tenant)
-          case None =>
-            ZIO.unit
-        }
-      case A2AResponse.StreamEvent.TaskArtifactUpdate(taskId, _, artifact, append, _, _) =>
-        taskStore.load(taskId, context.tenant).flatMap {
-          case Some(task) if task.status.state == TaskState.Canceled =>
-            ZIO.unit
-          case Some(task) =>
-            val existingIndex = task.artifacts.indexWhere(_.artifactId == artifact.artifactId)
-            val artifacts     =
-              if existingIndex < 0 then task.artifacts :+ artifact
-              else if append then
-                task.artifacts.updated(
-                  existingIndex,
-                  task.artifacts(existingIndex).copy(parts = task.artifacts(existingIndex).parts ++ artifact.parts),
-                )
-              else task.artifacts.updated(existingIndex, artifact)
-            taskStore.save(task.copy(artifacts = artifacts), context.tenant)
-          case None =>
-            ZIO.unit
-        }
-      case A2AResponse.StreamEvent.TaskMessage(taskId, _, message) =>
-        taskStore.load(taskId, context.tenant).flatMap {
-          case Some(task) if task.status.state == TaskState.Canceled =>
-            ZIO.unit
-          case Some(task) if !task.history.exists(_.messageId == message.messageId) =>
-            taskStore.save(task.copy(history = task.history :+ message), context.tenant)
-          case _ =>
-            ZIO.unit
-        }
-
-  private def persistEvent(event: A2AResponse.StreamEvent): UIO[UIO[Unit]] =
-    // Fire-and-(eventually-)forget: the persister forkDaemons each append on a
-    // per-(taskId, tenant) chain so the live publish path is not blocked by
-    // store latency. Final events await the returned barrier before the
-    // runtime entry can disappear, so durable resubscribe cannot observe a
-    // closed task stream before its terminal event is stored.
-    eventPersister.fold[UIO[UIO[Unit]]](ZIO.succeed(ZIO.unit))(_.enqueue(event, context.tenant))
-
-  private def ensureHistory(task: A2ATask): A2ATask =
-    if task.history.exists(_.messageId == userMessage.messageId) then task
-    else task.copy(history = userMessage :: task.history)
-end ResultManager
-
-private final class A2ARequestHandler(
+/** Live implementation of A2A Server (Bun.serve runtime). */
+private final class A2AServerLiveImpl(
   config: A2AServerLive.Config,
   runtime: Runtime[Any],
-  taskStore: A2ATaskStore,
-  pushStore: A2APushNotificationStore,
-  runtimeRegistry: A2ARuntimeRegistry,
-  agentCardProvider: () => AgentCard):
+  runtimeRegistry: A2ARuntimeRegistry)
+    extends A2AServer:
 
-  private val pushSender = PushNotificationSender(pushStore, config.pushNotificationUrlPolicy)
-  private val eventPersister: Option[EventStorePersister] =
-    config.eventStore.map(EventStorePersister(_, config.eventStoreAppendTimeout))
-
-  def agentCard: AgentCard = agentCardProvider()
-
-  def sendMessage(
-    params: A2ARequest.MessageSend,
-    context: ServerCallContext,
-  ): Task[A2AResponse.SendMessageResult] =
-    for
-      prepared <- prepare(params, context)
-      result   <-
-        val historyLength = params.configuration.flatMap(_.historyLength)
-        val project       = (task: A2ATask) => A2ATaskStore.applyHistoryLength(task, historyLength)
-        val run           =
-          for
-            _ <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
-            stream = prepared.bus.stream
-            _      <- startExecution(prepared, context)
-            result <-
-              if params.configuration.exists(_.returnImmediately) then
-                ZIO.succeed(A2AResponse.SendMessageResult.TaskResult(project(prepared.task)))
-              else
-                waitForFinal(prepared.task.id, stream, context)
-                  .map(task => A2AResponse.SendMessageResult.TaskResult(project(task)))
-          yield result
-        run.onError(_ => cleanupPrepared(prepared, context))
-    yield result
-
-  def sendMessageStream(
-    params: A2ARequest.MessageSend,
-    context: ServerCallContext,
-  ): Task[ZStream[Any, Throwable, A2AResponse.StreamEvent]] =
-    requireStreaming *> {
-      for
-        prepared <- prepare(params, context)
-        stream   <-
-          val run =
-            for
-              _ <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
-              stream = prepared.bus.stream
-              _ <- startExecution(prepared, context)
-            yield stream
-          run.onError(_ => cleanupPrepared(prepared, context))
-      yield stream
-    }
-
-  def getTask(params: A2ARequest.TasksGet, context: ServerCallContext): Task[A2ATask] =
-    validateHistoryLength(params.historyLength) *>
-      taskStore.load(params.id, context.tenant).flatMap {
-        case Some(task) => ZIO.succeed(A2ATaskStore.applyHistoryLength(task, params.historyLength))
-        case None       => ZIO.fail(A2AError.taskNotFound(params.id))
-      }
-
-  def listTasks(params: A2ARequest.TasksList, context: ServerCallContext): Task[A2AResponse.ListTasksResult] =
-    taskStore.list(params, context.tenant)
-
-  def cancelTask(params: A2ARequest.TasksCancel, context: ServerCallContext): Task[A2ATask] =
-    taskStore.load(params.id, context.tenant).flatMap {
-      case Some(task) if task.isTerminal =>
-        ZIO.fail(A2AError.taskNotCancelable(params.id))
-      case Some(task) =>
-        val canceled = task.copy(status = TaskStatus.canceled)
-        val event    = A2AResponse.StreamEvent.TaskStatusUpdate(
-          params.id,
-          task.contextId,
-          canceled.status,
-          `final` = true,
-        )
-        val key = taskRuntimeKey(params.id, context)
-        for
-          runtimeEntry <- runtimeRegistry.markCanceled(key)
-          _            <- runtimeEntry.flatMap(_._2) match
-            case Some(fiber) => fiber.interrupt.unit
-            case None        => ZIO.unit
-          _            <- taskStore.save(canceled, context.tenant)
-          awaitPersist <- eventPersister.fold[UIO[UIO[Unit]]](ZIO.succeed(ZIO.unit))(_.enqueue(event, context.tenant))
-          _            <- runtimeEntry.map(_._1) match
-            case Some(bus) => bus.publish(event) *> bus.finish
-            case None      => ZIO.unit
-          _ <- pushSender.send(event, context)
-          // Cancellation bypasses ResultManager.publish (we own the final
-          // status update directly here), so wait for this event's persistence
-          // barrier before removing the runtime entry.
-          _ <- awaitPersist
-          _ <- runtimeRegistry.remove(key)
-        yield canceled
-      case None =>
-        ZIO.fail(A2AError.taskNotFound(params.id))
-    }
-
-  def resubscribe(params: A2ARequest.TasksResubscribe, context: ServerCallContext)
-    : Task[ZStream[Any, Throwable, A2AResponse.StreamEvent]] =
-    requireStreaming *> taskStore.load(params.id, context.tenant).flatMap {
-      case Some(task) =>
-        runtimeRegistry.bus(taskRuntimeKey(params.id, context)).flatMap {
-          case Some(bus) => ZIO.succeed(ZStream.succeed(A2AResponse.StreamEvent.TaskSnapshot(task)) ++ bus.stream)
-          case None      => durableReplay(task, context)
-        }
-      case None =>
-        ZIO.fail(A2AError.taskNotFound(params.id))
-    }
-
-  /**
-   * Resubscribe fallback when no in-process runtime bus exists.
-   *
-   * Decision matrix:
-   *   - replayProvider configured: synthetic TaskSnapshot + provider stream.
-   *     Provider must yield a terminal event eventually (or the stream just ends).
-   *   - eventStore only: synthetic TaskSnapshot + replay of stored events.
-   *     For non-terminal tasks the stored events must include a final event;
-   *     otherwise fail because a finite replay would be ambiguous.
-   *   - neither + task is terminal: synthetic TaskSnapshot with the task in
-   *     terminal state and close. Wire-legal — the snapshot's status carries
-   *     the terminal state — but a behavior change vs. the prior raise.
-   *   - neither + task is non-terminal: FAIL `unsupportedOperation`. Returning a
-   *     bare working-state snapshot would let the client mistake a lost run
-   *     for a completed replay; better to make the client poll `tasks/get`.
-   */
-  private def durableReplay(task: A2ATask, context: ServerCallContext)
-    : Task[ZStream[Any, Throwable, A2AResponse.StreamEvent]] =
-    val snapshot    = ZStream.succeed(A2AResponse.StreamEvent.TaskSnapshot(task))
-    val notSnapshot = (event: A2AResponse.StreamEvent) => !event.isInstanceOf[A2AResponse.StreamEvent.TaskSnapshot]
-    config.replayProvider match
-      case Some(provider) =>
-        ZIO.succeed(snapshot ++ provider.replay(task, context.tenant).filter(notSnapshot))
-      case None =>
-        config.eventStore match
-          case Some(store) =>
-            store
-              .load(task.id, context.tenant, config.eventReplayLimit)
-              .timeout(config.eventStoreLoadTimeout)
-              .flatMap {
-                case Some(events) =>
-                  val replay = events.filter(notSnapshot)
-                  if task.isTerminal || replay.exists(_.isFinal) then
-                    ZIO.succeed(snapshot ++ ZStream.fromIterable(replay))
-                  else inactiveNonTerminalReplayFailure(task, "the durable event store has no terminal event")
-                case None =>
-                  if task.isTerminal then ZIO.succeed(snapshot)
-                  else
-                    inactiveNonTerminalReplayFailure(
-                      task,
-                      s"event store load timed out after ${config.eventStoreLoadTimeout}",
-                    )
-              }
-          case None =>
-            if task.isTerminal then ZIO.succeed(snapshot)
-            else inactiveNonTerminalReplayFailure(task, "no event store / replay provider is configured")
-    end match
-  end durableReplay
-
-  private def inactiveNonTerminalReplayFailure(
-    task: A2ATask,
-    reason: String,
-  ): Task[ZStream[Any, Throwable, A2AResponse.StreamEvent]] =
-    ZIO.fail(
-      A2AError.unsupportedOperation(
-        s"Task ${task.id.value} has no active runtime bus and cannot be replayed to a terminal event ($reason). Poll tasks/get for status."
-      )
+  private var bunServer: js.Dynamic = null
+  private val taskStore             = config.taskStore.getOrElse(A2ATaskStore.inMemory)
+  private val pushStore             = config.pushNotificationStore.getOrElse(A2APushNotificationStore.inMemory)
+  private val pushSender            = PushNotificationSender(pushStore, config.pushNotificationUrlPolicy)
+  private val requestConfig         = A2ARequestHandler.Config(
+    capabilities = config.capabilities,
+    eventStore = config.eventStore,
+    replayProvider = config.replayProvider,
+    eventReplayLimit = config.eventReplayLimit,
+    eventStoreAppendTimeout = config.eventStoreAppendTimeout,
+    eventStoreLoadTimeout = config.eventStoreLoadTimeout,
+    pushNotificationUrlPolicy = config.pushNotificationUrlPolicy,
+  )
+  private val requestHandler =
+    A2ARequestHandler(
+      requestConfig,
+      runtime,
+      taskStore,
+      pushStore,
+      runtimeRegistry,
+      pushSender,
+      () => agentCard,
+      execute,
     )
 
-  def createPushConfig(configParam: TaskPushNotificationConfig, context: ServerCallContext)
-    : Task[TaskPushNotificationConfig] =
-    requirePush *> {
-      val taskId = configParam.taskId.getOrElse(TaskId(""))
-      if taskId.isEmpty then ZIO.fail(A2AError.invalidParams("taskId is required"))
-      else
-        ensureTask(taskId, context) *> config.pushNotificationUrlPolicy
-          .validate(configParam.url) *> pushStore.save(taskId, context.tenant, configParam)
+  override def agentCard: AgentCard = config.toAgentCardAt(url)
+
+  override def url: String =
+    if bunServer == null then config.url
+    else
+      val actualPort = bunServer.selectDynamic("port")
+      if js.isUndefined(actualPort) || actualPort == null then config.url
+      else s"http://${config.host}:${actualPort.asInstanceOf[Int]}"
+
+  override def start: Task[Unit] =
+    ZIO.attempt {
+      SessionLogger.configure(config.sessionLogDir)
+      bunServer = BunServer.serve(
+        js.Dynamic.literal(
+          hostname = config.host,
+          port = config.port,
+          fetch = createFetchHandler,
+        )
+      )
+      ()
     }
 
-  def getPushConfig(params: A2ARequest.PushNotificationConfigGet, context: ServerCallContext)
-    : Task[TaskPushNotificationConfig] =
-    requirePush *> ensureTask(params.taskId, context) *>
-      pushStore.load(params.taskId, context.tenant).flatMap { configs =>
-        configs.find(_.id.contains(params.id)) match
-          case Some(config) => ZIO.succeed(config)
-          case None         => ZIO.fail(A2AError.invalidParams(s"Push notification config not found: ${params.id}"))
+  override def stop: Task[Unit] =
+    runtimeRegistry.interruptAll *>
+      ZIO.attempt {
+        if bunServer != null then bunServer.stop()
+        ()
       }
 
-  def listPushConfigs(params: A2ARequest.PushNotificationConfigList, context: ServerCallContext)
-    : Task[A2AResponse.PushNotificationConfigListResult] =
-    requirePush *> ensureTask(params.taskId, context) *>
-      pushStore
-        .load(params.taskId, context.tenant)
-        .map(configs => A2AResponse.PushNotificationConfigListResult(configs))
-
-  def deletePushConfig(params: A2ARequest.PushNotificationConfigDelete, context: ServerCallContext): Task[Unit] =
-    requirePush *> ensureTask(params.taskId, context) *> pushStore.delete(params.taskId, context.tenant, params.id)
-
-  def getExtendedAgentCard(context: ServerCallContext): Task[AgentCard] =
-    if config.capabilities.extendedAgentCard then ZIO.succeed(agentCard)
-    else ZIO.fail(A2AError.authenticatedExtendedCardNotConfigured)
-
-  private final case class PreparedRun(
-    message: A2AMessage,
-    task: A2ATask,
-    bus: A2AEventBus)
-
-  private def prepare(params: A2ARequest.MessageSend, context: ServerCallContext): Task[PreparedRun] =
-    val incoming = params.message
-    val taskId   = incoming.taskId.getOrElse(TaskId.generate)
-    val key      = taskRuntimeKey(taskId, context)
-    for
-      _        <- validateHistoryLength(params.configuration.flatMap(_.historyLength))
-      _        <- validateInlinePushConfig(params.configuration)
-      existing <- taskStore.load(taskId, context.tenant)
-      _        <- existing match
-        case Some(task) if task.isTerminal =>
-          ZIO.fail(A2AError.unsupportedOperation(s"Task ${task.id.value} is terminal and cannot be modified"))
-        case Some(task) if incoming.contextId.exists(_ != task.contextId) =>
-          ZIO.fail(A2AError.invalidParams("contextId does not match task contextId"))
-        case _ =>
-          ZIO.unit
-      maybeBus <- runtimeRegistry.reserve(key, config.eventReplayLimit)
-      bus      <- maybeBus match
-        case Some(bus) => ZIO.succeed(bus)
-        case None      => ZIO.fail(A2AError.unsupportedOperation(s"Task ${taskId.value} already has an active run"))
-      contextId = incoming.contextId.orElse(existing.map(_.contextId)).getOrElse(ContextId.generate)
-      message   = incoming.copy(taskId = Some(taskId), contextId = Some(contextId))
-      task      = existing
-        .map(task => task.copy(status = TaskStatus.working(), history = task.history :+ message))
-        .getOrElse(A2ATask(id = taskId, contextId = contextId, status = TaskStatus.working(), history = List(message)))
-      _ <- taskStore.save(task, context.tenant)
-    yield PreparedRun(message, task, bus)
-    end for
-  end prepare
-
-  private def startExecution(prepared: PreparedRun, context: ServerCallContext): UIO[Unit] =
-    val manager =
-      ResultManager(taskStore, eventPersister, pushSender, prepared.bus, runtimeRegistry, context, prepared.message)
-    val key = taskRuntimeKey(prepared.task.id, context)
-    val run =
-      manager.publish(A2AResponse.StreamEvent.TaskSnapshot(prepared.task)) *>
-        execute(prepared, manager)
-          .catchAll { error =>
-            val errorMessage = A2AMessage
-              .agentText(s"Error: ${error.getMessage}", Some(prepared.task.contextId))
-              .copy(taskId = Some(prepared.task.id))
-            manager.publish(
-              A2AResponse.StreamEvent.TaskStatusUpdate(
-                prepared.task.id,
-                prepared.task.contextId,
-                TaskStatus.failed(errorMessage),
-                `final` = true,
-              )
-            )
-          }
-          .ensuring(
-            runtimeRegistry.isCanceled(key).flatMap { canceled =>
-              if canceled then ZIO.unit else manager.finish
-            } *> runtimeRegistry.remove(key)
-          )
-    ZIO
-      .succeed {
-        Unsafe.unsafe { implicit unsafe => runtime.unsafe.fork(run) }
-      }
-      .flatMap(fiber => runtimeRegistry.attachFiber(key, fiber))
-  end startExecution
-
-  private def execute(prepared: PreparedRun, publisher: A2AEventPublisher): Task[Unit] =
+  private def execute(prepared: A2ARequestHandler.PreparedRun, publisher: A2AEventPublisher): Task[Unit] =
     config.executionOverride match
       case Some(overrideRun) =>
         withTaskTimeout(
@@ -794,104 +356,6 @@ private final class A2ARequestHandler(
         effect.timeoutFail(new TimeoutException(s"A2A task ${taskId.value} timed out after $timeout"))(timeout)
       case None =>
         effect
-
-  private def waitForFinal(
-    taskId: TaskId,
-    stream: ZStream[Any, Throwable, A2AResponse.StreamEvent],
-    context: ServerCallContext,
-  ): Task[A2ATask] =
-    stream
-      .filter(_.isFinal)
-      .runHead
-      .flatMap {
-        case Some(_) => taskStore.load(taskId, context.tenant).someOrFail(A2AError.taskNotFound(taskId))
-        case None    => ZIO.fail(A2AError.internalError(s"Terminal event never received for task ${taskId.value}"))
-      }
-
-  private def cleanupPrepared(prepared: PreparedRun, context: ServerCallContext): UIO[Unit] =
-    runtimeRegistry.remove(taskRuntimeKey(prepared.task.id, context)) *> prepared.bus.finish
-
-  private def saveInlinePushConfig(
-    messageConfig: Option[MessageSendConfiguration],
-    taskId: TaskId,
-    context: ServerCallContext,
-  ): Task[Unit] =
-    messageConfig.flatMap(_.taskPushNotificationConfig) match
-      case Some(pushConfig) =>
-        validateInlinePushConfig(messageConfig) *> pushStore.save(taskId, context.tenant, pushConfig).unit
-      case None =>
-        ZIO.unit
-
-  private def validateInlinePushConfig(messageConfig: Option[MessageSendConfiguration]): Task[Unit] =
-    messageConfig.flatMap(_.taskPushNotificationConfig) match
-      case Some(pushConfig) if agentCard.capabilities.pushNotifications =>
-        config.pushNotificationUrlPolicy.validate(pushConfig.url)
-      case Some(_) =>
-        ZIO.fail(A2AError.pushNotificationNotSupported)
-      case None =>
-        ZIO.unit
-
-  private def requirePush: Task[Unit] =
-    ZIO.fail(A2AError.pushNotificationNotSupported).unless(agentCard.capabilities.pushNotifications).unit
-
-  private def requireStreaming: Task[Unit] =
-    ZIO.fail(A2AError.unsupportedOperation("Streaming not supported")).unless(agentCard.capabilities.streaming).unit
-
-  private def validateHistoryLength(historyLength: Option[Int]): Task[Unit] =
-    historyLength match
-      case Some(length) if length < 0 =>
-        ZIO.fail(A2AError.invalidParams(s"historyLength must be non-negative integer, got $length"))
-      case _ =>
-        ZIO.unit
-
-  private def ensureTask(taskId: TaskId, context: ServerCallContext): Task[Unit] =
-    taskStore.load(taskId, context.tenant).flatMap {
-      case Some(_) => ZIO.unit
-      case None    => ZIO.fail(A2AError.taskNotFound(taskId))
-    }
-end A2ARequestHandler
-
-/** Live implementation of A2A Server (Bun.serve runtime). */
-private final class A2AServerLiveImpl(
-  config: A2AServerLive.Config,
-  runtime: Runtime[Any],
-  runtimeRegistry: A2ARuntimeRegistry)
-    extends A2AServer:
-
-  private var bunServer: js.Dynamic = null
-  private val taskStore             = config.taskStore.getOrElse(A2ATaskStore.inMemory)
-  private val pushStore             = config.pushNotificationStore.getOrElse(A2APushNotificationStore.inMemory)
-  private val requestHandler        =
-    A2ARequestHandler(config, runtime, taskStore, pushStore, runtimeRegistry, () => agentCard)
-
-  override def agentCard: AgentCard = config.toAgentCardAt(url)
-
-  override def url: String =
-    if bunServer == null then config.url
-    else
-      val actualPort = bunServer.selectDynamic("port")
-      if js.isUndefined(actualPort) || actualPort == null then config.url
-      else s"http://${config.host}:${actualPort.asInstanceOf[Int]}"
-
-  override def start: Task[Unit] =
-    ZIO.attempt {
-      SessionLogger.configure(config.sessionLogDir)
-      bunServer = BunServer.serve(
-        js.Dynamic.literal(
-          hostname = config.host,
-          port = config.port,
-          fetch = createFetchHandler,
-        )
-      )
-      ()
-    }
-
-  override def stop: Task[Unit] =
-    runtimeRegistry.interruptAll *>
-      ZIO.attempt {
-        if bunServer != null then bunServer.stop()
-        ()
-      }
 
   private def createFetchHandler: js.Function1[js.Dynamic, js.Promise[js.Dynamic]] =
     (req: js.Dynamic) =>
