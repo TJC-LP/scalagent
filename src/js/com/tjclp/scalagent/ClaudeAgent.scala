@@ -258,4 +258,26 @@ private[scalagent] object SdkModule extends js.Object:
     agentId: String,
     options: js.UndefOr[js.Dynamic] = js.undefined,
   ): js.Promise[js.Array[js.Dynamic]] = js.native
+
+  /**
+   * Pre-warm the CLI subprocess so the first `query()` resolves immediately.
+   * Returns a WarmQuery handle. Available in SDK 0.3.x.
+   */
+  def startup(params: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[RawWarmQuery] = js.native
+
+  /**
+   * Resolve the effective settings cascade for the given options using the
+   * same merge engine as the CLI, without spawning a subprocess. Available
+   * in SDK 0.3.x.
+   */
+  def resolveSettings(opts: js.UndefOr[js.Dynamic] = js.undefined): js.Promise[js.Dynamic] = js.native
 end SdkModule
+
+/**
+ * Raw JS handle for the SDK's WarmQuery returned by [[SdkModule.startup]].
+ * Exposes the `query(prompt)` one-shot and `close()` for discard.
+ */
+@js.native
+private[scalagent] trait RawWarmQuery extends js.Object:
+  def query(prompt: js.Any): js.Object = js.native
+  def close(): Unit                    = js.native

@@ -3,6 +3,7 @@ package com.tjclp.scalagent
 import zio.*
 import zio.stream.*
 import scala.scalajs.js
+import scala.scalajs.js.JSConverters.*
 import com.tjclp.scalagent.config.*
 import com.tjclp.scalagent.errors.*
 import com.tjclp.scalagent.messages.*
@@ -390,7 +391,106 @@ object Claude:
       .fromPromiseJS(SdkModule.getSubagentMessages(sessionId.value, agentId, opts))
       .map(_.toList.map(SessionMessage.fromRaw))
       .mapError(AgentError.fromThrowable)
+
+  // ============================================================================
+  // Pre-warmed startup + settings inspection (SDK 0.3.x)
+  // ============================================================================
+
+  /**
+   * Pre-warm the Claude Code subprocess so the first `query()` resolves
+   * immediately. Returns a scoped [[WarmQueryHandle]] whose close runs when
+   * the surrounding ZIO scope releases — discards the warm process if it
+   * was never used.
+   *
+   * Available in SDK 0.3.x.
+   *
+   * Example:
+   * {{{
+   * ZIO.scoped {
+   *   for
+   *     warm   <- Claude.startup(AgentOptions.default)
+   *     answer <- warm.ask("What is 2 + 2?")
+   *   yield answer
+   * }
+   * }}}
+   */
+  def startup(
+    options: AgentOptions = AgentOptions.default,
+    initializeTimeoutMs: Option[Int] = None,
+  ): ZIO[Scope, AgentError, WarmQueryHandle] =
+    val params = js.Dynamic.literal()
+    params.options = options.toRaw
+    initializeTimeoutMs.foreach(t => params.initializeTimeoutMs = t)
+    val acquire = ZIO
+      .fromPromiseJS(SdkModule.startup(params))
+      .map(raw => WarmQueryHandle(raw))
+      .mapError(AgentError.fromThrowable)
+    val release = (handle: WarmQueryHandle) =>
+      ZIO.attempt(handle.raw.close()).ignore
+    ZIO.acquireRelease(acquire)(release)
+
+  /**
+   * Resolve the effective Claude Code settings cascade without spawning a
+   * subprocess. Reports merged settings, per-key provenance, and per-source
+   * raw settings (low → high precedence).
+   *
+   * Available in SDK 0.3.x (alpha). The result includes the policy tier
+   * but does not invoke any configured `policyHelper` subprocess — see the
+   * SDK docs for caveats.
+   */
+  def resolveSettings(
+    cwd: Option[String] = None,
+    settingSources: List[SettingSource] = Nil,
+    managedSettings: Option[js.Dynamic] = None,
+  ): IO[AgentError, ResolvedSettings] =
+    val hasOpts = cwd.isDefined || settingSources.nonEmpty || managedSettings.isDefined
+    val opts: js.UndefOr[js.Dynamic] =
+      if hasOpts then
+        val o = js.Dynamic.literal()
+        cwd.foreach(c => o.cwd = c)
+        if settingSources.nonEmpty then o.settingSources = settingSources.map(_.raw).toJSArray
+        managedSettings.foreach(ms => o.managedSettings = ms)
+        o
+      else js.undefined
+    ZIO
+      .fromPromiseJS(SdkModule.resolveSettings(opts))
+      .map(ResolvedSettings.fromRaw)
+      .mapError(AgentError.fromThrowable)
 end Claude
+
+/**
+ * Handle for a pre-warmed Claude subprocess returned by [[Claude.startup]].
+ *
+ * The underlying SDK guarantees one `query()` per WarmQuery — once used,
+ * the handle is consumed. The ZIO scope guarantees the warm process is
+ * released (via the SDK's `close()`) even if it was never used.
+ */
+final class WarmQueryHandle(private[scalagent] val raw: RawWarmQuery):
+  /** Drop the warm subprocess without sending a prompt. */
+  def discard: UIO[Unit] = ZIO.attempt(raw.close()).ignore
+
+/**
+ * Result of [[Claude.resolveSettings]]. Mirrors the SDK's `ResolvedSettings`
+ * shape — the merged effective settings, per-key provenance, and the raw
+ * cascade. The raw JS values are exposed unchanged for callers that need to
+ * pluck specific nested keys.
+ */
+final case class ResolvedSettings(
+  effective: js.Dynamic,
+  provenance: js.Dynamic,
+  sources: List[js.Dynamic],
+  raw: js.Dynamic)
+
+object ResolvedSettings:
+  def fromRaw(obj: js.Dynamic): ResolvedSettings =
+    val srcsAny = obj.sources.asInstanceOf[js.UndefOr[js.Array[js.Dynamic]]]
+    val srcs    = srcsAny.toOption.fold(List.empty[js.Dynamic])(_.toList)
+    ResolvedSettings(
+      effective = obj.effective.asInstanceOf[js.Dynamic],
+      provenance = obj.provenance.asInstanceOf[js.Dynamic],
+      sources = srcs,
+      raw = obj,
+    )
 
 /** Session information from listSessions */
 final case class SessionInfo(
