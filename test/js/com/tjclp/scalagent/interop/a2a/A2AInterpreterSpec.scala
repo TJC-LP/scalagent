@@ -142,7 +142,7 @@ class A2AInterpreterSpec extends FunSuite:
     runTask(program).map { case (events, output) =>
       assertEquals(output, "Done")
       assert(events.exists {
-        case AgentEvent.Status(text) => text.contains("Working")
+        case AgentEvent.Status(text, _) => text.contains("Working")
         case _                       => false
       })
       assert(events.exists {

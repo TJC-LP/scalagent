@@ -2,7 +2,7 @@ package com.tjclp.scalagent.interop.claude
 
 import zio.json.*
 import zio.json.ast.Json
-import com.tjclp.scalagent.core.{AgentEvent, RunSummary}
+import com.tjclp.scalagent.core.{AgentEvent, RunSummary, SubagentContext}
 import com.tjclp.scalagent.messages.*
 
 /**
@@ -21,11 +21,13 @@ import com.tjclp.scalagent.messages.*
 object EventMapper:
 
   def mapMessage(msg: AgentMessage): List[AgentEvent] = msg match
-    case AgentMessage.Assistant(message, _, _, _, _) =>
-      message.content.flatMap(mapContentBlock)
+    case assistant: AgentMessage.Assistant =>
+      assistant.message.content.flatMap(
+        mapContentBlock(_, subagentContext(assistant.subagentType, assistant.taskDescription))
+      )
 
-    case AgentMessage.User(message, _, isSynthetic, _, _, _, _) if isSynthetic =>
-      message.content.collect {
+    case user: AgentMessage.User if user.isSynthetic =>
+      user.message.content.collect {
         case ContentBlock.ToolResult(toolUseId, content, isError) =>
           AgentEvent.ToolResult(
             name = toolUseId.value,
@@ -63,9 +65,12 @@ object EventMapper:
     case _ =>
       List(nativeEvent(nativeTag(msg), msg))
 
-  private def mapContentBlock(block: ContentBlock): List[AgentEvent] = block match
+  private def mapContentBlock(
+    block: ContentBlock,
+    subagentContext: Option[SubagentContext],
+  ): List[AgentEvent] = block match
     case ContentBlock.Text(text) =>
-      List(AgentEvent.TextDelta(text))
+      List(AgentEvent.TextDelta(text, subagentContext))
     case ContentBlock.ToolUse(_, name, input) =>
       List(AgentEvent.ToolCall(name.raw, input))
     case ContentBlock.ToolResult(toolUseId, content, isError) =>
@@ -76,6 +81,12 @@ object EventMapper:
       List(AgentEvent.Native("image", Json.Null))
     case ContentBlock.Unknown(envelope) =>
       List(AgentEvent.Native("content_block.unknown", Json.Null))
+
+  private def subagentContext(
+    subagentType: Option[String],
+    taskDescription: Option[String],
+  ): Option[SubagentContext] =
+    subagentType.map(SubagentContext(_, taskDescription))
 
   private def toRunSummary(outcome: ResultOutcome): RunSummary =
     RunSummary(

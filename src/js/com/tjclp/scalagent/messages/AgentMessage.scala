@@ -1,6 +1,7 @@
 package com.tjclp.scalagent.messages
 
 import zio.json.*
+import zio.json.ast.Json
 import com.tjclp.scalagent.config.FastModeState
 import com.tjclp.scalagent.json.StringEnumJsonCodec
 import com.tjclp.scalagent.tools.ToolName
@@ -18,17 +19,29 @@ enum AgentMessage:
     parentToolUseId: Option[ToolUseId],
     error: Option[AssistantMessageError],
     uuid: MessageUuid,
-    sessionId: SessionId)
+    sessionId: SessionId,
+    /** Anthropic API request ID. Added in SDK 0.3.142. */
+    requestId: Option[String] = None,
+    /** Subagent type that produced this message. Added in SDK 0.3.142. */
+    subagentType: Option[String] = None,
+    /** Description of the subagent task that produced this message. Added in SDK 0.3.142. */
+    taskDescription: Option[String] = None)
 
   /** User message (including synthetic tool results) */
   case User(
     message: ApiUserMessage,
     parentToolUseId: Option[ToolUseId],
     isSynthetic: Boolean,
-    toolUseResult: Option[zio.json.ast.Json],
+    toolUseResult: Option[Json],
     uuid: Option[MessageUuid],
     sessionId: SessionId,
-    timestamp: Option[String] = None)
+    timestamp: Option[String] = None,
+    /** Structured origin of the message (for example `{ "kind": "peer" }`). Added in SDK 0.2.126. */
+    origin: Option[Json] = None,
+    /** Subagent type that produced this message. Added in SDK 0.3.142. */
+    subagentType: Option[String] = None,
+    /** Description of the subagent task that produced this message. Added in SDK 0.3.142. */
+    taskDescription: Option[String] = None)
 
   /** User message replay (from session resume) */
   case UserReplay(
@@ -192,11 +205,11 @@ object AgentMessage:
   extension (msg: AgentMessage)
     /** Extract all text content from this message */
     def text: Option[String] = msg match
-      case Assistant(message, _, _, _, _) =>
-        val texts = message.content.collect { case ContentBlock.Text(t) => t }
+      case assistant: Assistant =>
+        val texts = assistant.message.content.collect { case ContentBlock.Text(t) => t }
         if texts.isEmpty then None else Some(texts.mkString)
-      case User(message, _, _, _, _, _, _) =>
-        val texts = message.content.collect { case ContentBlock.Text(t) => t }
+      case user: User =>
+        val texts = user.message.content.collect { case ContentBlock.Text(t) => t }
         if texts.isEmpty then None else Some(texts.mkString)
       case UserReplay(message, _, _, _) =>
         val texts = message.content.collect { case ContentBlock.Text(t) => t }
@@ -209,14 +222,14 @@ object AgentMessage:
 
     /** Extract all tool use requests from this message */
     def toolCalls: List[ContentBlock.ToolUse] = msg match
-      case Assistant(message, _, _, _, _) =>
-        message.content.collect { case tu: ContentBlock.ToolUse => tu }
+      case assistant: Assistant =>
+        assistant.message.content.collect { case tu: ContentBlock.ToolUse => tu }
       case _ => Nil
 
     /** Extract all tool results from this message */
     def toolResults: List[ContentBlock.ToolResult] = msg match
-      case User(message, _, _, _, _, _, _) =>
-        message.content.collect { case tr: ContentBlock.ToolResult => tr }
+      case user: User =>
+        user.message.content.collect { case tr: ContentBlock.ToolResult => tr }
       case _ => Nil
 
     /** Check if this is a final result message */
@@ -334,6 +347,9 @@ enum AssistantMessageError:
   case InvalidRequest
   case ServerError
   case MaxOutputTokens
+
+  /** Requested model was not available. Added in SDK 0.3.144. */
+  case ModelNotFound
   case Unknown
 
 object AssistantMessageError:
@@ -347,6 +363,7 @@ object AssistantMessageError:
     case "invalid_request"       => InvalidRequest
     case "server_error"          => ServerError
     case "max_output_tokens"     => MaxOutputTokens
+    case "model_not_found"       => ModelNotFound
     case _                       => Unknown
 
 /** Raw streaming event from the API */

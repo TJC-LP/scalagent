@@ -3,10 +3,14 @@ package com.tjclp.scalagent
 import zio.*
 import zio.stream.*
 import scala.scalajs.js
+import scala.scalajs.js.JSConverters.*
+import zio.json.*
+import zio.json.ast.Json
 import com.tjclp.scalagent.config.*
 import com.tjclp.scalagent.errors.*
 import com.tjclp.scalagent.messages.*
 import com.tjclp.scalagent.session.*
+import com.tjclp.scalagent.streaming.QueryStream
 import com.tjclp.scalagent.types.{MessageUuid, SessionId}
 
 /**
@@ -390,7 +394,209 @@ object Claude:
       .fromPromiseJS(SdkModule.getSubagentMessages(sessionId.value, agentId, opts))
       .map(_.toList.map(SessionMessage.fromRaw))
       .mapError(AgentError.fromThrowable)
+
+  // ============================================================================
+  // Pre-warmed startup + settings inspection (SDK 0.3.x)
+  // ============================================================================
+
+  /**
+   * Pre-warm the Claude Code subprocess so the first `query()` resolves
+   * immediately. Returns a scoped [[WarmQueryHandle]] whose close runs when
+   * the surrounding ZIO scope releases — discards the warm process if it
+   * was never used.
+   *
+   * Available in SDK 0.3.x.
+   *
+   * Example:
+   * {{{
+   * ZIO.scoped {
+   *   for
+   *     warm   <- Claude.startup(AgentOptions.default)
+   *     answer <- warm.ask("What is 2 + 2?")
+   *   yield answer
+   * }
+   * }}}
+   */
+  def startup(
+    options: AgentOptions = AgentOptions.default,
+    initializeTimeoutMs: Option[Int] = None,
+  ): ZIO[Scope, AgentError, WarmQueryHandle] =
+    val params = js.Dynamic.literal()
+    params.options = options.toRaw
+    initializeTimeoutMs.foreach(t => params.initializeTimeoutMs = t)
+    val acquire = ZIO
+      .fromPromiseJS(SdkModule.startup(params))
+      .map(raw => WarmQueryHandle(raw))
+      .mapError(AgentError.fromThrowable)
+    val release = (handle: WarmQueryHandle) => handle.discard
+    ZIO.acquireRelease(acquire)(release)
+
+  /**
+   * Resolve the effective Claude Code settings cascade without spawning a
+   * subprocess. Reports merged settings, per-key provenance, and per-source
+   * raw settings (low → high precedence).
+   *
+   * Available in SDK 0.3.x (alpha). The result includes the policy tier
+   * but does not invoke any configured `policyHelper` subprocess — see the
+   * SDK docs for caveats.
+   *
+   * Pass `settingSources = Some(Nil)` to inspect settings in isolation. Leave
+   * it as `None` to use the SDK's resolveSettings default cascade.
+   */
+  def resolveSettings(
+    cwd: Option[String] = None,
+    settingSources: Option[List[SettingSource]] = None,
+    managedSettings: Option[ManagedSettings] = None,
+  ): IO[AgentError, ResolvedSettings] =
+    ZIO
+      .fromPromiseJS(SdkModule.resolveSettings(resolveSettingsOptions(cwd, settingSources, managedSettings)))
+      .map(ResolvedSettings.fromRaw)
+      .mapError(AgentError.fromThrowable)
+
+  private[scalagent] def resolveSettingsOptions(
+    cwd: Option[String],
+    settingSources: Option[List[SettingSource]],
+    managedSettings: Option[ManagedSettings],
+  ): js.UndefOr[js.Dynamic] =
+    val hasOpts = cwd.isDefined || settingSources.isDefined || managedSettings.isDefined
+    if hasOpts then
+      val o = js.Dynamic.literal()
+      cwd.foreach(c => o.cwd = c)
+      settingSources.foreach(sources => o.settingSources = sources.map(_.raw).toJSArray)
+      managedSettings.foreach(ms => o.managedSettings = ms.toRaw)
+      o
+    else js.undefined
 end Claude
+
+/**
+ * Handle for a pre-warmed Claude subprocess returned by [[Claude.startup]].
+ *
+ * The underlying SDK guarantees one `query()` per WarmQuery — once used,
+ * the handle is consumed. The ZIO scope guarantees the warm process is
+ * released (via the SDK's `close()`) even if it was never used.
+ */
+final class WarmQueryHandle(private[scalagent] val raw: RawWarmQuery):
+  private val consumedOrClosed: Ref[Boolean] =
+    Unsafe.unsafe { implicit unsafe => Ref.unsafe.make(false) }
+
+  private def markConsumedOrClosed: UIO[Boolean] =
+    consumedOrClosed.modify(consumed => (!consumed, true))
+
+  /**
+   * Start the one query backed by this warmed subprocess.
+   *
+   * After `query()`, the SDK owns the spawned subprocess through the returned
+   * query stream and the scope release will not call `close()` on this warm
+   * handle again.
+   */
+  def query(prompt: String): ZStream[Any, AgentError, AgentMessage] =
+    ZStream.fromZIO(queryRaw(prompt)).flatMap(_.messages)
+
+  /**
+   * Start the one query and return the controllable stream wrapper.
+   *
+   * After `queryRaw()`, the SDK owns the spawned subprocess through the
+   * returned [[QueryStream]] and the scope release will not call `close()` on
+   * this warm handle again.
+   */
+  def queryRaw(prompt: String): IO[AgentError, QueryStream] =
+    markConsumedOrClosed.flatMap {
+      case false =>
+        ZIO.fail(AgentError.ConfigurationError("WarmQueryHandle has already been consumed or discarded"))
+      case true =>
+        ZIO
+          .attempt(QueryStream(raw.query(prompt).asInstanceOf[com.tjclp.scalagent.streaming.RawQuery]))
+          .mapError(AgentError.fromThrowable)
+    }
+
+  /** Start the one query and collect the complete result. */
+  def queryComplete(
+    prompt: String,
+    collectionPolicy: CollectionPolicy = CollectionPolicy.Full,
+    sink: QueryCollector.MessageSink = QueryCollector.noSink,
+  ): IO[AgentError, QueryResult] =
+    for
+      stream          <- queryRaw(prompt)
+      result          <- QueryCollector.collect(stream.messages, collectionPolicy, sink)
+      cleanupWarnings <- stream.cleanupFailures
+    yield
+      if cleanupWarnings.isEmpty then result
+      else result.copy(warnings = result.warnings ++ cleanupWarnings.map(_.description))
+
+  /** Start the one query and return the semantic final answer text. */
+  def ask(prompt: String): IO[AgentError, String] =
+    queryComplete(
+      prompt,
+      CollectionPolicy.BoundedRecent(limit = 12, includeStreamingDeltas = false, stopAtResult = true),
+    ).flatMap(_.semanticTextOrFail)
+
+  /** Drop the warm subprocess without sending a prompt. */
+  def discard: UIO[Unit] =
+    markConsumedOrClosed.flatMap {
+      case false => ZIO.unit
+      case true  =>
+        ZIO
+          .attempt(raw.close())
+          .unit
+          .catchAll(t => ZIO.logWarning(s"WarmQueryHandle close failed: ${Option(t.getMessage).getOrElse(t.toString)}"))
+    }
+end WarmQueryHandle
+
+/**
+ * Result of [[Claude.resolveSettings]]. Mirrors the SDK's `ResolvedSettings`
+ * shape — the merged effective settings, per-key provenance, and the raw
+ * cascade. Structured JSON fields are exposed for normal use; [[raw]] remains
+ * available as an escape hatch for SDK-specific nested fields.
+ */
+final case class ResolvedSettings(
+  effective: Json,
+  provenance: Json,
+  sources: List[Json],
+  raw: js.Dynamic):
+  def effectiveModel: Option[String] =
+    ResolvedSettings.stringField(effective, "model")
+
+  def provenanceFor(key: String): Option[Json] =
+    ResolvedSettings.field(provenance, key)
+
+object ResolvedSettings:
+  def fromRaw(obj: js.Dynamic): ResolvedSettings =
+    val srcsAny = obj.sources.asInstanceOf[js.UndefOr[js.Array[js.Dynamic]]]
+    val srcs    = srcsAny.toOption.fold(List.empty[Json])(_.toList.map(dyn => jsToJson(dyn.asInstanceOf[js.Any])))
+    ResolvedSettings(
+      effective = jsToJson(obj.effective.asInstanceOf[js.Any]),
+      provenance = jsToJson(obj.provenance.asInstanceOf[js.Any]),
+      sources = srcs,
+      raw = obj,
+    )
+
+  private[scalagent] def field(json: Json, key: String): Option[Json] =
+    json match
+      case obj: Json.Obj => obj.get(key)
+      case _             => None
+
+  private[scalagent] def stringField(json: Json, key: String): Option[String] =
+    field(json, key).collect { case Json.Str(value) => value }
+
+  private def jsToJson(value: js.Any): Json =
+    if value == null || js.isUndefined(value) then Json.Null
+    else
+      try
+        js.JSON.stringify(value).asInstanceOf[js.UndefOr[String]].toOption match
+          case None             => Json.Null
+          case Some(jsonString) =>
+            jsonString.fromJson[Json] match
+              case Right(json) => json
+              case Left(error) =>
+                scala.Console.err.println(s"[ResolvedSettings] Failed to parse SDK JSON payload: $error")
+                Json.Str(jsonString)
+      catch
+        case t: Throwable =>
+          scala.Console.err.println(
+            s"[ResolvedSettings] Failed to stringify SDK settings payload: ${Option(t.getMessage).getOrElse(t.toString)}"
+          )
+          Json.Null
+end ResolvedSettings
 
 /** Session information from listSessions */
 final case class SessionInfo(

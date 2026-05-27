@@ -413,6 +413,18 @@ object HookInput:
     hookAgentType: Option[String] = None,
     permissionMode: Option[PermissionMode] = None)
       extends HookInput
+
+  /** Input for MessageDisplay hook - before assistant text is displayed */
+  final case class MessageDisplay(
+    sessionId: SessionId,
+    cwd: String,
+    transcriptPath: String,
+    delta: Option[String] = None,
+    finalContent: Option[String] = None,
+    hookAgentId: Option[SubagentId] = None,
+    hookAgentType: Option[String] = None,
+    permissionMode: Option[PermissionMode] = None)
+      extends HookInput
 end HookInput
 
 /** Permission suggestion from the SDK */

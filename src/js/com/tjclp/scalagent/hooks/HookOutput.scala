@@ -187,19 +187,47 @@ object HookOutput:
    *   Optional initial user message to inject
    * @param watchPaths
    *   Optional file paths to watch for changes
+   * @param reloadSkills
+   *   When true, re-discover skills from disk before the session resumes.
+   *   Requires SDK 0.3.152+.
+   * @param sessionTitle
+   *   Override the session title from the hook. Skips automatic title
+   *   generation. Requires SDK 0.3.152+.
    */
   final case class SessionStartOutput(
     initialUserMessage: Option[String] = None,
-    watchPaths: List[String] = Nil)
+    watchPaths: List[String] = Nil,
+    reloadSkills: Boolean = false,
+    sessionTitle: Option[String] = None)
       extends HookOutput:
     def toRaw: js.Object =
       val specific = js.Dynamic.literal()
       initialUserMessage.foreach(msg => specific.initialUserMessage = msg)
       if watchPaths.nonEmpty then specific.watchPaths = watchPaths.toJSArray
+      if reloadSkills then specific.reloadSkills = true
+      sessionTitle.foreach(t => specific.sessionTitle = t)
       js.Dynamic
         .literal(
           continue = true,
           hookSpecificOutput = specific,
+        )
+        .asInstanceOf[js.Object]
+
+  /**
+   * Override assistant display content for MessageDisplay hooks.
+   *
+   * Pass an empty string to hide the displayed content for that callback.
+   */
+  final case class MessageDisplayOutput(
+    displayContent: String)
+      extends HookOutput:
+    def toRaw: js.Object =
+      js.Dynamic
+        .literal(
+          continue = true,
+          hookSpecificOutput = js.Dynamic.literal(
+            displayContent = displayContent
+          ),
         )
         .asInstanceOf[js.Object]
 
@@ -242,6 +270,14 @@ object HookOutput:
 
   /** Block execution with the given reason */
   def block(reason: String): HookOutput = Block(reason)
+
+  /** Rewrite content for a MessageDisplay hook. */
+  def displayContent(content: String): HookOutput =
+    MessageDisplayOutput(content)
+
+  /** Hide content for a MessageDisplay hook. */
+  val hideDisplayContent: HookOutput =
+    MessageDisplayOutput("")
 
   /** Approve a permission request */
   val approve: HookOutput = Decision(approve = true)

@@ -83,8 +83,8 @@ object HookExample extends ZIOAppDefault:
 
   private def handleMessage(msg: AgentMessage): Task[Unit] =
     msg match
-      case AgentMessage.Assistant(message, _, _, _, _) =>
-        val text = message.content.collect { case ContentBlock.Text(t) => t }.mkString
+      case assistant: AgentMessage.Assistant =>
+        val text = assistant.message.content.collect { case ContentBlock.Text(t) => t }.mkString
         if text.nonEmpty then Console.printLine(s"Claude: $text")
         else ZIO.unit
 

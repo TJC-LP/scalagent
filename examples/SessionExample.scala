@@ -90,8 +90,8 @@ object SessionExample extends ZIOAppDefault:
   //
   // OLD (verbose pattern matching):
   // msg match
-  //   case AgentMessage.Assistant(message, _, _, _, _) =>
-  //     val text = message.content.collect { case ContentBlock.Text(t) => t }.mkString
+  //   case assistant: AgentMessage.Assistant =>
+  //     val text = assistant.message.content.collect { case ContentBlock.Text(t) => t }.mkString
   //     Console.printLine(s"Claude: $text")
   //   case AgentMessage.Result(ResultOutcome.Success(_, _, _, _, cost, _, _, _, _), _, _) =>
   //     Console.printLine(s"Cost: $cost")

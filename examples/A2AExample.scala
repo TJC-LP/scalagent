@@ -168,9 +168,9 @@ object A2AExample extends ZIOAppDefault:
 
   private def handleMessage(msg: AgentMessage): Task[Unit] =
     msg match
-      case AgentMessage.Assistant(message, _, _, _, _) =>
-        val text      = message.content.collect { case ContentBlock.Text(t) => t }.mkString
-        val toolCalls = message.content.collect {
+      case assistant: AgentMessage.Assistant =>
+        val text      = assistant.message.content.collect { case ContentBlock.Text(t) => t }.mkString
+        val toolCalls = assistant.message.content.collect {
           case ContentBlock.ToolUse(id, name, _) =>
             s"[Calling $name...]"
         }
@@ -179,10 +179,10 @@ object A2AExample extends ZIOAppDefault:
           _ <- if text.nonEmpty then Console.printLine(s"\nWriter: $text") else ZIO.unit
         yield ()
 
-      case AgentMessage.User(message, _, _, toolResult, _, _, _) =>
-        toolResult match
+      case user: AgentMessage.User =>
+        user.toolUseResult match
           case Some(_) =>
-            val results = message.content.collect {
+            val results = user.message.content.collect {
               case ContentBlock.ToolResult(_, content, isError) =>
                 val preview = if content.length > 200 then content.take(200) + "..." else content
                 if isError then s"[Tool Error] $preview" else s"[Researcher Response] $preview"

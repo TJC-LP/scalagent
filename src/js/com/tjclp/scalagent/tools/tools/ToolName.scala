@@ -45,16 +45,26 @@ enum ToolName(val raw: String):
   case WebSearch extends ToolName("WebSearch")
 
   // Planning and interaction
+  @deprecated("Use TaskCreate/TaskUpdate/TaskGet/TaskList — SDK 0.3.142 replaced TodoWrite with Task tools", "0.9.0")
   case TodoWrite       extends ToolName("TodoWrite")
   case AskUserQuestion extends ToolName("AskUserQuestion")
   case EnterPlanMode   extends ToolName("EnterPlanMode")
   case ExitPlanMode    extends ToolName("ExitPlanMode")
+
+  // Task tools (replaced TodoWrite in SDK 0.3.142)
+  case TaskCreate extends ToolName("TaskCreate")
+  case TaskUpdate extends ToolName("TaskUpdate")
+  case TaskGet    extends ToolName("TaskGet")
+  case TaskList   extends ToolName("TaskList")
 
   // Session control
   case KillShell    extends ToolName("KillShell")
   case TaskOutput   extends ToolName("TaskOutput")
   case SlashCommand extends ToolName("SlashCommand")
   case Skill        extends ToolName("Skill")
+
+  /** Background script event watcher tool. Added in SDK 0.3.x. */
+  case Monitor extends ToolName("Monitor")
 
   // MCP tools (context7)
   case McpResolveLibraryId extends ToolName("mcp__context7__resolve-library-id")
@@ -96,16 +106,23 @@ object ToolName:
     case "WebSearch" => WebSearch
 
     // Planning and interaction
-    case "TodoWrite"       => TodoWrite
+    case "TodoWrite"       => TodoWrite: @annotation.nowarn("cat=deprecation")
     case "AskUserQuestion" => AskUserQuestion
     case "EnterPlanMode"   => EnterPlanMode
     case "ExitPlanMode"    => ExitPlanMode
+
+    // Task tools (replaced TodoWrite in SDK 0.3.142)
+    case "TaskCreate" => TaskCreate
+    case "TaskUpdate" => TaskUpdate
+    case "TaskGet"    => TaskGet
+    case "TaskList"   => TaskList
 
     // Session control
     case "KillShell"    => KillShell
     case "TaskOutput"   => TaskOutput
     case "SlashCommand" => SlashCommand
     case "Skill"        => Skill
+    case "Monitor"      => Monitor
 
     // MCP tools
     case "mcp__context7__resolve-library-id" => McpResolveLibraryId
@@ -130,8 +147,8 @@ object ToolName:
 
   /** Check if a tool name is read-only (no side effects) */
   def isReadOnly(tool: ToolName): Boolean = tool match
-    case Read | Glob | Grep | WebFetch | WebSearch | TaskOutput | McpResolveLibraryId | McpGetLibraryDocs | LSP |
-        GetDiagnostics =>
+    case Read | Glob | Grep | WebFetch | WebSearch | TaskOutput | TaskGet | TaskList | Monitor | McpResolveLibraryId |
+        McpGetLibraryDocs | LSP | GetDiagnostics =>
       true
     case _ => false
 

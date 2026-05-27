@@ -13,7 +13,7 @@ class EventMapperSpec extends munit.FunSuite:
     val events = EventMapper.mapMessage(TestFixtures.assistantMessage)
     assertEquals(events.size, 1)
     events.head match
-      case AgentEvent.TextDelta(text) =>
+      case AgentEvent.TextDelta(text, _) =>
         assertEquals(text, "Hello, I'm Claude!")
       case other => fail(s"Expected TextDelta, got $other")
 
@@ -21,7 +21,7 @@ class EventMapperSpec extends munit.FunSuite:
     val events = EventMapper.mapMessage(TestFixtures.assistantMessageWithToolUse)
     assertEquals(events.size, 2)
     events(0) match
-      case AgentEvent.TextDelta(text) =>
+      case AgentEvent.TextDelta(text, _) =>
         assertEquals(text, "Hello, I'm Claude!")
       case other => fail(s"Expected TextDelta, got $other")
     events(1) match
@@ -29,6 +29,32 @@ class EventMapperSpec extends munit.FunSuite:
         assertEquals(name, "Read")
         assert(args.toString.contains("file_path"))
       case other => fail(s"Expected ToolCall, got $other")
+
+  test("Assistant subagent metadata is carried on TextDelta"):
+    val msg = AgentMessage.Assistant(
+      message = ApiAssistantMessage(
+        id = TestFixtures.testApiMessageId,
+        role = Role.Assistant,
+        content = List(ContentBlock.Text("child text")),
+        model = "claude-sonnet-4-20250514",
+        stopReason = None,
+        stopSequence = None,
+        usage = Some(ModelUsage.empty),
+      ),
+      parentToolUseId = None,
+      error = None,
+      uuid = TestFixtures.testMessageUuid,
+      sessionId = TestFixtures.testSessionId,
+      subagentType = Some("reviewer"),
+      taskDescription = Some("Review code"),
+    )
+
+    EventMapper.mapMessage(msg).head match
+      case AgentEvent.TextDelta(text, Some(context)) =>
+        assertEquals(text, "child text")
+        assertEquals(context.subagentType, "reviewer")
+        assertEquals(context.taskDescription, Some("Review code"))
+      case other => fail(s"Expected contextual TextDelta, got $other")
 
   // --- Synthetic user messages (tool results) ---
 
@@ -86,7 +112,7 @@ class EventMapperSpec extends munit.FunSuite:
     val events = EventMapper.mapMessage(streamEvent)
     assertEquals(events.size, 1)
     events.head match
-      case AgentEvent.TextDelta(text) =>
+      case AgentEvent.TextDelta(text, _) =>
         assertEquals(text, "hello")
       case other => fail(s"Expected TextDelta, got $other")
 
@@ -159,7 +185,7 @@ class EventMapperSpec extends munit.FunSuite:
     val events = EventMapper.mapMessage(msg)
     assertEquals(events.size, 1)
     events.head match
-      case AgentEvent.Status(value) =>
+      case AgentEvent.Status(value, _) =>
         assert(value.contains("Read"))
         assert(value.contains("2.5"))
       case other => fail(s"Expected Status, got $other")

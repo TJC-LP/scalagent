@@ -29,12 +29,12 @@ object TraceLogger:
     def logEvent(event: AgentEvent): UIO[Unit] =
       ZIO.succeed {
         event match
-          case AgentEvent.TextDelta(v)              => print(v)
+          case AgentEvent.TextDelta(v, _)           => print(v)
           case AgentEvent.ToolCall(name, _)         => println(s"  [tool] $name")
           case AgentEvent.ToolResult(name, _, err)  => println(s"  [result] $name${if err then " (error)" else ""}")
           case AgentEvent.DelegationStarted(l, id)  => println(s"  [delegate] $l ($id)")
           case AgentEvent.DelegationFinished(id, s) => println(s"  [done] $id: $s")
-          case AgentEvent.Status(v)                 => println(s"  [status] $v")
+          case AgentEvent.Status(v, _)              => println(s"  [status] $v")
           case AgentEvent.Completed(summary)        =>
             println(s"\n  --- Completed: ${if summary.isSuccess then "success" else "failure"} ---")
             println(s"  turns=${summary.numTurns} cost=$$${summary.costUsd} duration=${summary.durationMs}ms")
@@ -76,8 +76,8 @@ object TraceLogger:
 
   private def eventToJson(event: AgentEvent): Json =
     event match
-      case AgentEvent.TextDelta(v) =>
-        Json.Obj("type" -> Json.Str("text_delta"), "value" -> Json.Str(v))
+      case AgentEvent.TextDelta(v, context) =>
+        withSubagentContext(Json.Obj("type" -> Json.Str("text_delta"), "value" -> Json.Str(v)), context)
       case AgentEvent.ToolCall(name, args) =>
         Json.Obj("type" -> Json.Str("tool_call"), "name" -> Json.Str(name), "args" -> args)
       case AgentEvent.ToolResult(name, value, isError) =>
@@ -95,8 +95,8 @@ object TraceLogger:
           "childId" -> Json.Str(childId),
           "status"  -> Json.Str(status),
         )
-      case AgentEvent.Status(v) =>
-        Json.Obj("type" -> Json.Str("status"), "value" -> Json.Str(v))
+      case AgentEvent.Status(v, context) =>
+        withSubagentContext(Json.Obj("type" -> Json.Str("status"), "value" -> Json.Str(v)), context)
       case AgentEvent.Completed(summary) =>
         Json.Obj(
           "type"      -> Json.Str("completed"),
@@ -106,6 +106,17 @@ object TraceLogger:
         )
       case AgentEvent.Native(tag, payload) =>
         Json.Obj("type" -> Json.Str("native"), "tag" -> Json.Str(tag), "payload" -> payload)
+
+  private def withSubagentContext(base: Json.Obj, context: Option[SubagentContext]): Json.Obj =
+    context match
+      case None      => base
+      case Some(ctx) =>
+        val contextFields: zio.Chunk[(String, Json)] =
+          zio.Chunk("subagentType" -> Json.Str(ctx.subagentType)) ++
+            zio.Chunk.fromIterable(ctx.taskDescription.map(value => "taskDescription" -> Json.Str(value)))
+        Json.Obj(
+          (base.fields :+ ("subagentContext" -> Json.Obj(contextFields*)))*
+        )
 
   private def evaluationToJson[P, O](eval: Evaluation[P, O]): Json =
     Json.Obj(

@@ -482,6 +482,18 @@ object HookCallback:
           permissionMode = permissionMode,
         )
 
+      case "MessageDisplay" =>
+        HookInput.MessageDisplay(
+          sessionId = sessionId,
+          cwd = cwd,
+          transcriptPath = transcriptPath,
+          delta = firstString(raw, "delta"),
+          finalContent = firstString(raw, "final", "final_content", "finalContent"),
+          hookAgentId = baseAgentId,
+          hookAgentType = baseAgentType,
+          permissionMode = permissionMode,
+        )
+
       case other =>
         // Fallback for unknown events
         HookInput.Notification(

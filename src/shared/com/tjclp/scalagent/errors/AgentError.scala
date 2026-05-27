@@ -68,6 +68,19 @@ object AgentError:
     details: Option[String] = None)
       extends AgentError
 
+  /**
+   * Requested model was not available. Lifted from assistant messages that
+   * carry `error: 'model_not_found'`. Added in SDK 0.3.144.
+   */
+  final case class ModelNotFound(
+    model: String,
+    available: List[String] = Nil)
+      extends AgentError:
+    def message: String =
+      if model.isEmpty then "Requested model not found"
+      else if available.isEmpty then s"Model '$model' not found"
+      else s"Model '$model' not found. Available: ${available.mkString(", ")}"
+
   /** Operation was interrupted by user or system */
   final case class Interrupted(
     reason: String)
@@ -115,8 +128,9 @@ object AgentError:
   /** Convert from SDK error reason string to typed error */
   def fromErrorReason(reason: String, details: Option[String] = None): AgentError =
     reason match
-      case "max_turns"   => MaxTurnsExceeded(0, 0) // Actual values set by caller
-      case "max_budget"  => BudgetExceeded(0, 0)   // Actual values set by caller
-      case "interrupted" => Interrupted("User requested")
-      case other         => ApiError(500, other, details)
+      case "max_turns"       => MaxTurnsExceeded(0, 0) // Actual values set by caller
+      case "max_budget"      => BudgetExceeded(0, 0)   // Actual values set by caller
+      case "interrupted"     => Interrupted("User requested")
+      case "model_not_found" => ModelNotFound(details.getOrElse(""))
+      case other             => ApiError(500, other, details)
 end AgentError

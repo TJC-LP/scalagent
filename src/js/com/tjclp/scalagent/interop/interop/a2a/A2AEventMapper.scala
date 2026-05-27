@@ -54,9 +54,9 @@ private[a2a] object A2AEventMapper:
 
   /** Reverse mapping: AgentEvent → A2A message for server adapter. */
   def toA2AMessage(event: AgentEvent): Option[A2AMessage] = event match
-    case AgentEvent.TextDelta(text) =>
+    case AgentEvent.TextDelta(text, _) =>
       Some(A2AMessage.agentText(text, None))
-    case AgentEvent.Status(value) =>
+    case AgentEvent.Status(value, _) =>
       Some(A2AMessage.agentText(value, None))
     case AgentEvent.Completed(summary) =>
       summary.resultText.map(text => A2AMessage.agentText(text, None))

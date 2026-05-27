@@ -121,6 +121,9 @@ object MessageConverter:
       error = stringField(obj, "error").map(AssistantMessageError.fromString),
       uuid = requiredUuid(obj, raw),
       sessionId = requiredSessionId(obj, raw),
+      requestId = stringField(obj, "request_id"),
+      subagentType = stringField(obj, "subagent_type"),
+      taskDescription = stringField(obj, "task_description"),
     )
 
   private def parseUserMessage(
@@ -148,7 +151,11 @@ object MessageConverter:
         uuid = stringField(obj, "uuid").map(MessageUuid.apply),
         sessionId = requiredSessionId(obj, raw),
         timestamp = stringField(obj, "timestamp"),
+        origin = anyField(obj, "origin").map(jsToJson),
+        subagentType = stringField(obj, "subagent_type"),
+        taskDescription = stringField(obj, "task_description"),
       )
+    end if
   end parseUserMessage
 
   private def parseResultMessage(obj: js.Dynamic, raw: Json): AgentMessage.Result =
