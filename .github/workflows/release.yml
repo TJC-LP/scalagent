@@ -86,7 +86,8 @@ jobs:
         run: |
           echo "Version: $PUBLISH_VERSION"
           ./mill show agent.publishVersion
-          ./mill show agent.pomSettings
+          ./mill show agent.js.pomSettings
+          ./mill show agent.jvm.pomSettings
         env:
           PUBLISH_VERSION: ${{ steps.version.outputs.version }}
 
