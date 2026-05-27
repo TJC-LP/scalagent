@@ -710,7 +710,10 @@ private final class A2ARequestHandler(
   private def execute(prepared: PreparedRun, publisher: A2AEventPublisher): Task[Unit] =
     config.executionOverride match
       case Some(overrideRun) =>
-        overrideRun(prepared.message, prepared.task.id, prepared.task.contextId, publisher)
+        withTaskTimeout(
+          prepared.task.id,
+          overrideRun(prepared.message, prepared.task.id, prepared.task.contextId, publisher),
+        )
       case None =>
         val preparedInvocation =
           config.invocationPreparer match

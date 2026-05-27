@@ -27,6 +27,7 @@ end A2APushNotificationStore
 
 private final class InMemoryA2APushNotificationStore extends A2APushNotificationStore:
   private val configs = mutable.Map.empty[(String, String), List[TaskPushNotificationConfig]]
+  private val lock    = new AnyRef
 
   private def key(taskId: TaskId, tenant: Option[String]): (String, String) =
     (tenant.getOrElse(""), taskId.value)
@@ -36,7 +37,7 @@ private final class InMemoryA2APushNotificationStore extends A2APushNotification
     tenant: Option[String],
     config: TaskPushNotificationConfig,
   ): UIO[TaskPushNotificationConfig] =
-    ZIO.succeed {
+    ZIO.succeed(lock.synchronized {
       val normalized = config.copy(
         tenant = tenant.orElse(config.tenant),
         taskId = Some(taskId),
@@ -46,18 +47,18 @@ private final class InMemoryA2APushNotificationStore extends A2APushNotification
       val existing = configs.getOrElse(k, Nil).filterNot(_.id == normalized.id)
       configs.update(k, existing :+ normalized)
       normalized
-    }
+    })
 
   override def load(taskId: TaskId, tenant: Option[String]): UIO[List[TaskPushNotificationConfig]] =
-    ZIO.succeed(configs.getOrElse(key(taskId, tenant), Nil))
+    ZIO.succeed(lock.synchronized(configs.getOrElse(key(taskId, tenant), Nil)))
 
   override def delete(
     taskId: TaskId,
     tenant: Option[String],
     configId: String,
   ): UIO[Unit] =
-    ZIO.succeed {
+    ZIO.succeed(lock.synchronized {
       val k = key(taskId, tenant)
       configs.update(k, configs.getOrElse(k, Nil).filterNot(_.id.contains(configId)))
-    }
+    })
 end InMemoryA2APushNotificationStore
