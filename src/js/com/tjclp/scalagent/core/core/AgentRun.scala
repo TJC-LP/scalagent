@@ -27,7 +27,7 @@ final case class AgentRun[-R, +O](
 
   /** Collect only text delta events. */
   def textDeltas: ZStream[R & Scope, AgentError, String] =
-    events.collect { case AgentEvent.TextDelta(v) => v }
+    events.collect { case text: AgentEvent.TextDelta => text.value }
 
   /** Collect only tool call events. */
   def toolCalls: ZStream[R & Scope, AgentError, AgentEvent.ToolCall] =

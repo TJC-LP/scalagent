@@ -2,6 +2,7 @@ package com.tjclp.scalagent.streaming
 
 import munit.FunSuite
 import scala.scalajs.js
+import zio.json.ast.Json
 import com.tjclp.scalagent.messages.*
 
 class MessageConverterSpec extends FunSuite:
@@ -56,6 +57,49 @@ class MessageConverterSpec extends FunSuite:
         assertEquals(message.stopReason, None)
       case other =>
         fail(s"Expected assistant message, got: $other")
+
+  test("assistant SDK metadata fields are parsed from snake_case keys"):
+    val raw = js.Dynamic.literal(
+      `type` = "assistant",
+      message = js.Dynamic.literal(
+        id = "msg_api_meta",
+        role = "assistant",
+        content = js.Array(js.Dynamic.literal(`type` = "text", text = "hello")),
+        model = "claude-sonnet-4-20250514",
+        usage = usage
+      ),
+      uuid = "msg-meta",
+      session_id = "session-1",
+      request_id = "req-123",
+      subagent_type = "reviewer",
+      task_description = "Review code"
+    )
+
+    MessageConverter.fromRaw(raw) match
+      case assistant: AgentMessage.Assistant =>
+        assertEquals(assistant.requestId, Some("req-123"))
+        assertEquals(assistant.subagentType, Some("reviewer"))
+        assertEquals(assistant.taskDescription, Some("Review code"))
+      case other =>
+        fail(s"Expected assistant message, got: $other")
+
+  test("user structured origin is preserved"):
+    val raw = js.Dynamic.literal(
+      `type` = "user",
+      message = js.Dynamic.literal(
+        role = "user",
+        content = js.Array(js.Dynamic.literal(`type` = "text", text = "from peer"))
+      ),
+      uuid = "msg-origin",
+      session_id = "session-1",
+      origin = js.Dynamic.literal(kind = "peer")
+    )
+
+    MessageConverter.fromRaw(raw) match
+      case user: AgentMessage.User =>
+        assertEquals(user.origin, Some(Json.Obj("kind" -> Json.Str("peer"))))
+      case other =>
+        fail(s"Expected user message, got: $other")
 
   test("unknown top-level message types are preserved"):
     val raw = js.Dynamic.literal(

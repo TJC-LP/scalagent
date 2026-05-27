@@ -105,6 +105,9 @@ package object scalagent:
   type McpServerConfig = config.McpServerConfig
   val McpServerConfig = config.McpServerConfig
 
+  type ManagedSettings = config.ManagedSettings
+  val ManagedSettings = config.ManagedSettings
+
   type Model = config.Model
   val Model = config.Model
 
@@ -426,6 +429,9 @@ package object scalagent:
 
   type AgentEvent = core.AgentEvent
   val AgentEvent = core.AgentEvent
+
+  type SubagentContext = core.SubagentContext
+  val SubagentContext = core.SubagentContext
 
   type ExecutionPolicy = core.ExecutionPolicy
   val ExecutionPolicy = core.ExecutionPolicy

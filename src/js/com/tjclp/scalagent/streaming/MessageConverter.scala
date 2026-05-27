@@ -151,7 +151,7 @@ object MessageConverter:
         uuid = stringField(obj, "uuid").map(MessageUuid.apply),
         sessionId = requiredSessionId(obj, raw),
         timestamp = stringField(obj, "timestamp"),
-        origin = stringField(obj, "origin"),
+        origin = anyField(obj, "origin").map(jsToJson),
         subagentType = stringField(obj, "subagent_type"),
         taskDescription = stringField(obj, "task_description"),
       )

@@ -105,8 +105,8 @@ object QueryCollector:
   private def assistantFallback(messages: List[AgentMessage]): Option[String] =
     val text = messages
       .collect {
-        case AgentMessage.Assistant(message, _, _, _, _, _, _, _) =>
-          message.content.collect { case ContentBlock.Text(value) => value }.mkString
+        case assistant: AgentMessage.Assistant =>
+          assistant.message.content.collect { case ContentBlock.Text(value) => value }.mkString
       }
       .filter(_.nonEmpty)
       .mkString("\n")
@@ -119,13 +119,13 @@ object QueryCollector:
         List(s"Unknown SDK message type '${envelope.rawType}'")
       case AgentMessage.System(SystemEvent.Unknown(envelope), _, _) =>
         List(s"Unknown system event subtype '${envelope.rawSubtype.getOrElse(envelope.rawType)}'")
-      case AgentMessage.Assistant(message, _, _, _, _, _, _, _) =>
-        message.content.collect {
+      case assistant: AgentMessage.Assistant =>
+        assistant.message.content.collect {
           case ContentBlock.Unknown(envelope) =>
             s"Unknown content block type '${envelope.rawType}'"
         }
-      case AgentMessage.User(message, _, _, _, _, _, _, _, _, _) =>
-        message.content.collect {
+      case user: AgentMessage.User =>
+        user.message.content.collect {
           case ContentBlock.Unknown(envelope) =>
             s"Unknown content block type '${envelope.rawType}'"
         }

@@ -220,12 +220,12 @@ private final class DslA2AEndpointLive[O](
                 val run = agent.run((), prompt, policy)
 
                 run.events.runForeach {
-                  case AgentEvent.Status(value) =>
+                  case AgentEvent.Status(value, _) =>
                     ZIO.succeed {
                       val statusMessage = A2AMessage.agentText(value, Some(contextId)).copy(taskId = Some(taskId))
                       publishStatusUpdate(ctx, bus, TaskStatus.working(Some(statusMessage)))
                     }
-                  case AgentEvent.TextDelta(text) =>
+                  case AgentEvent.TextDelta(text, _) =>
                     ZIO.succeed(publishMessage(ctx, bus, text))
                   case _: AgentEvent.Completed =>
                     ZIO.unit

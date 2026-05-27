@@ -10,6 +10,11 @@ import zio.json.*
  * MCP (Model Context Protocol) server configuration.
  *
  * Supports stdio, SSE, and HTTP transport types.
+ *
+ * For Stdio, SSE, and HTTP transports, `alwaysLoad = true` includes that
+ * server's tools in the prompt immediately and makes SDK 0.3.142+ block
+ * startup until the server connects (capped at roughly 5s). The default keeps
+ * tools deferred and connects in the background.
  */
 enum McpServerConfig:
   /** Stdio-based MCP server (subprocess) */
@@ -17,12 +22,7 @@ enum McpServerConfig:
     command: String,
     args: List[String] = Nil,
     env: Map[String, String] = Map.empty,
-    /**
-     * When true, this server's tools are always included in the prompt instead of being deferred
-     * behind tool search — and the SDK blocks startup until the server is connected
-     * (capped at ~5s). Default: tools are deferred and the server connects in the background.
-     * Requires SDK 0.3.142+.
-     */
+    /** See enum Scaladoc. Requires SDK 0.3.142+. */
     alwaysLoad: Boolean = false)
 
   /** Server-Sent Events transport */
@@ -30,12 +30,7 @@ enum McpServerConfig:
     url: String,
     headers: Map[String, String] = Map.empty,
     tools: List[McpServerToolPolicy] = Nil,
-    /**
-     * When true, this server's tools are always included in the prompt instead of being deferred
-     * behind tool search — and the SDK blocks startup until the server is connected
-     * (capped at ~5s). Default: tools are deferred and the server connects in the background.
-     * Requires SDK 0.3.142+.
-     */
+    /** See enum Scaladoc. Requires SDK 0.3.142+. */
     alwaysLoad: Boolean = false)
 
   /** HTTP transport */
@@ -43,12 +38,7 @@ enum McpServerConfig:
     url: String,
     headers: Map[String, String] = Map.empty,
     tools: List[McpServerToolPolicy] = Nil,
-    /**
-     * When true, this server's tools are always included in the prompt instead of being deferred
-     * behind tool search — and the SDK blocks startup until the server is connected
-     * (capped at ~5s). Default: tools are deferred and the server connects in the background.
-     * Requires SDK 0.3.142+.
-     */
+    /** See enum Scaladoc. Requires SDK 0.3.142+. */
     alwaysLoad: Boolean = false)
 
   /** In-process SDK MCP server (created via McpServer.create) */
@@ -81,22 +71,19 @@ enum McpServerConfig:
       val obj = js.Dynamic.literal(command = cmd)
       if args.nonEmpty then obj.args = args.toJSArray
       if env.nonEmpty then obj.env = js.Dictionary(env.toSeq*)
-      if alwaysLoad then obj.alwaysLoad = true
-      obj.asInstanceOf[js.Object]
+      withAlwaysLoad(obj, alwaysLoad)
 
     case SSE(url, headers, tools, alwaysLoad) =>
       val obj = js.Dynamic.literal(`type` = "sse", url = url)
       if headers.nonEmpty then obj.headers = js.Dictionary(headers.toSeq*)
       if tools.nonEmpty then obj.tools = tools.map(_.toRaw).toJSArray
-      if alwaysLoad then obj.alwaysLoad = true
-      obj.asInstanceOf[js.Object]
+      withAlwaysLoad(obj, alwaysLoad)
 
     case HTTP(url, headers, tools, alwaysLoad) =>
       val obj = js.Dynamic.literal(`type` = "http", url = url)
       if headers.nonEmpty then obj.headers = js.Dictionary(headers.toSeq*)
       if tools.nonEmpty then obj.tools = tools.map(_.toRaw).toJSArray
-      if alwaysLoad then obj.alwaysLoad = true
-      obj.asInstanceOf[js.Object]
+      withAlwaysLoad(obj, alwaysLoad)
 
     case Sdk(_, _, rawConfig) =>
       // SDK server config is already in raw format
@@ -110,6 +97,10 @@ enum McpServerConfig:
       js.Dynamic
         .literal(`type` = "claudeai-proxy", url = url, id = id)
         .asInstanceOf[js.Object]
+
+  private def withAlwaysLoad(obj: js.Dynamic, alwaysLoad: Boolean): js.Object =
+    if alwaysLoad then obj.alwaysLoad = true
+    obj.asInstanceOf[js.Object]
 end McpServerConfig
 
 object McpServerConfig:

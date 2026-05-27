@@ -77,7 +77,8 @@ object AgentError:
     available: List[String] = Nil)
       extends AgentError:
     def message: String =
-      if available.isEmpty then s"Model '$model' not found"
+      if model.isEmpty then "Requested model not found"
+      else if available.isEmpty then s"Model '$model' not found"
       else s"Model '$model' not found. Available: ${available.mkString(", ")}"
 
   /** Operation was interrupted by user or system */

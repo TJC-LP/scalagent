@@ -210,3 +210,17 @@ class HookCallbackSpec extends FunSuite:
         assertEquals(input.hookAgentType, Some("code-reviewer"))
       case other => fail(s"Expected InstructionsLoaded, got: $other")
     }
+
+  test("parseHookInput handles MessageDisplay"):
+    val raw = baseInput("MessageDisplay")
+    raw.delta = "partial"
+    raw.updateDynamic("final")("complete message")
+    raw.agent_type = "reviewer"
+
+    parseInput(raw).map {
+      case input: HookInput.MessageDisplay =>
+        assertEquals(input.delta, Some("partial"))
+        assertEquals(input.finalContent, Some("complete message"))
+        assertEquals(input.hookAgentType, Some("reviewer"))
+      case other => fail(s"Expected MessageDisplay, got: $other")
+    }

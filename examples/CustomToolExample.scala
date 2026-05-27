@@ -160,9 +160,9 @@ object CustomToolExample extends ZIOAppDefault:
 
   private def handleMessage(msg: AgentMessage): Task[Unit] =
     msg match
-      case AgentMessage.Assistant(message, _, _, _, _) =>
-        val text      = message.content.collect { case ContentBlock.Text(t) => t }.mkString
-        val toolCalls = message.content.collect {
+      case assistant: AgentMessage.Assistant =>
+        val text      = assistant.message.content.collect { case ContentBlock.Text(t) => t }.mkString
+        val toolCalls = assistant.message.content.collect {
           case ContentBlock.ToolUse(id, name, _) =>
             s"[Calling $name]"
         }
@@ -171,10 +171,10 @@ object CustomToolExample extends ZIOAppDefault:
           _ <- if text.nonEmpty then Console.printLine(s"Claude: $text") else ZIO.unit
         yield ()
 
-      case AgentMessage.User(message, _, _, toolResult, _, _, _) =>
-        toolResult match
+      case user: AgentMessage.User =>
+        user.toolUseResult match
           case Some(_) =>
-            val results = message.content.collect {
+            val results = user.message.content.collect {
               case ContentBlock.ToolResult(_, content, isError) =>
                 if isError then s"[Tool Error] $content" else s"[Tool Result] $content"
             }

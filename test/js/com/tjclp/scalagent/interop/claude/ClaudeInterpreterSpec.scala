@@ -74,8 +74,8 @@ class ClaudeInterpreterSpec extends FunSuite:
     ))).map { case (events, text, options) =>
       assertEquals(text, successOutcome.result)
       assert(events.exists {
-        case AgentEvent.TextDelta("Hello, I'm Claude!") => true
-        case _                                          => false
+        case AgentEvent.TextDelta("Hello, I'm Claude!", _) => true
+        case _                                             => false
       })
       assert(events.exists {
         case AgentEvent.ToolCall("Read", _) => true

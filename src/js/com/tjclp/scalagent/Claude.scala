@@ -4,10 +4,13 @@ import zio.*
 import zio.stream.*
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
+import zio.json.*
+import zio.json.ast.Json
 import com.tjclp.scalagent.config.*
 import com.tjclp.scalagent.errors.*
 import com.tjclp.scalagent.messages.*
 import com.tjclp.scalagent.session.*
+import com.tjclp.scalagent.streaming.QueryStream
 import com.tjclp.scalagent.types.{MessageUuid, SessionId}
 
 /**
@@ -426,7 +429,7 @@ object Claude:
       .map(raw => WarmQueryHandle(raw))
       .mapError(AgentError.fromThrowable)
     val release = (handle: WarmQueryHandle) =>
-      ZIO.attempt(handle.raw.close()).ignore
+      handle.discard
     ZIO.acquireRelease(acquire)(release)
 
   /**
@@ -437,25 +440,33 @@ object Claude:
    * Available in SDK 0.3.x (alpha). The result includes the policy tier
    * but does not invoke any configured `policyHelper` subprocess — see the
    * SDK docs for caveats.
+   *
+   * Pass `settingSources = Some(Nil)` to inspect settings in isolation. Leave
+   * it as `None` to use the SDK's resolveSettings default cascade.
    */
   def resolveSettings(
     cwd: Option[String] = None,
-    settingSources: List[SettingSource] = Nil,
-    managedSettings: Option[js.Dynamic] = None,
+    settingSources: Option[List[SettingSource]] = None,
+    managedSettings: Option[ManagedSettings] = None,
   ): IO[AgentError, ResolvedSettings] =
-    val hasOpts = cwd.isDefined || settingSources.nonEmpty || managedSettings.isDefined
-    val opts: js.UndefOr[js.Dynamic] =
-      if hasOpts then
-        val o = js.Dynamic.literal()
-        cwd.foreach(c => o.cwd = c)
-        if settingSources.nonEmpty then o.settingSources = settingSources.map(_.raw).toJSArray
-        managedSettings.foreach(ms => o.managedSettings = ms)
-        o
-      else js.undefined
     ZIO
-      .fromPromiseJS(SdkModule.resolveSettings(opts))
+      .fromPromiseJS(SdkModule.resolveSettings(resolveSettingsOptions(cwd, settingSources, managedSettings)))
       .map(ResolvedSettings.fromRaw)
       .mapError(AgentError.fromThrowable)
+
+  private[scalagent] def resolveSettingsOptions(
+    cwd: Option[String],
+    settingSources: Option[List[SettingSource]],
+    managedSettings: Option[ManagedSettings],
+  ): js.UndefOr[js.Dynamic] =
+    val hasOpts = cwd.isDefined || settingSources.isDefined || managedSettings.isDefined
+    if hasOpts then
+      val o = js.Dynamic.literal()
+      cwd.foreach(c => o.cwd = c)
+      settingSources.foreach(sources => o.settingSources = sources.map(_.raw).toJSArray)
+      managedSettings.foreach(ms => o.managedSettings = ms.toRaw)
+      o
+    else js.undefined
 end Claude
 
 /**
@@ -466,31 +477,102 @@ end Claude
  * released (via the SDK's `close()`) even if it was never used.
  */
 final class WarmQueryHandle(private[scalagent] val raw: RawWarmQuery):
+  private var consumedOrClosed = false
+
+  /** Start the one query backed by this warmed subprocess. */
+  def query(prompt: String): ZStream[Any, AgentError, AgentMessage] =
+    ZStream.fromZIO(queryRaw(prompt)).flatMap(_.messages)
+
+  /** Start the one query and return the controllable stream wrapper. */
+  def queryRaw(prompt: String): IO[AgentError, QueryStream] =
+    ZIO
+      .suspendSucceed {
+        if consumedOrClosed then
+          ZIO.fail(AgentError.ConfigurationError("WarmQueryHandle has already been consumed or discarded"))
+        else
+          consumedOrClosed = true
+          ZIO.attempt(QueryStream(raw.query(prompt).asInstanceOf[com.tjclp.scalagent.streaming.RawQuery]))
+      }
+      .mapError(AgentError.fromThrowable)
+
+  /** Start the one query and collect the complete result. */
+  def queryComplete(
+    prompt: String,
+    collectionPolicy: CollectionPolicy = CollectionPolicy.Full,
+    sink: QueryCollector.MessageSink = QueryCollector.noSink,
+  ): IO[AgentError, QueryResult] =
+    for
+      stream          <- queryRaw(prompt)
+      result          <- QueryCollector.collect(stream.messages, collectionPolicy, sink)
+      cleanupWarnings <- stream.cleanupFailures
+    yield
+      if cleanupWarnings.isEmpty then result
+      else result.copy(warnings = result.warnings ++ cleanupWarnings.map(_.description))
+
+  /** Start the one query and return the semantic final answer text. */
+  def ask(prompt: String): IO[AgentError, String] =
+    queryComplete(
+      prompt,
+      CollectionPolicy.BoundedRecent(limit = 12, includeStreamingDeltas = false, stopAtResult = true),
+    ).flatMap(_.semanticTextOrFail)
+
   /** Drop the warm subprocess without sending a prompt. */
-  def discard: UIO[Unit] = ZIO.attempt(raw.close()).ignore
+  def discard: UIO[Unit] =
+    ZIO.suspendSucceed {
+      if consumedOrClosed then ZIO.unit
+      else
+        consumedOrClosed = true
+        ZIO
+          .attempt(raw.close())
+          .unit
+          .catchAll(t => ZIO.logWarning(s"WarmQueryHandle close failed: ${Option(t.getMessage).getOrElse(t.toString)}"))
+    }
 
 /**
  * Result of [[Claude.resolveSettings]]. Mirrors the SDK's `ResolvedSettings`
  * shape — the merged effective settings, per-key provenance, and the raw
- * cascade. The raw JS values are exposed unchanged for callers that need to
- * pluck specific nested keys.
+ * cascade. Structured JSON fields are exposed for normal use; [[raw]] remains
+ * available as an escape hatch for SDK-specific nested fields.
  */
 final case class ResolvedSettings(
-  effective: js.Dynamic,
-  provenance: js.Dynamic,
-  sources: List[js.Dynamic],
-  raw: js.Dynamic)
+  effective: Json,
+  provenance: Json,
+  sources: List[Json],
+  raw: js.Dynamic):
+  def effectiveModel: Option[String] =
+    ResolvedSettings.stringField(effective, "model")
+
+  def provenanceFor(key: String): Option[Json] =
+    ResolvedSettings.field(provenance, key)
 
 object ResolvedSettings:
   def fromRaw(obj: js.Dynamic): ResolvedSettings =
     val srcsAny = obj.sources.asInstanceOf[js.UndefOr[js.Array[js.Dynamic]]]
-    val srcs    = srcsAny.toOption.fold(List.empty[js.Dynamic])(_.toList)
+    val srcs    = srcsAny.toOption.fold(List.empty[Json])(_.toList.map(dyn => jsToJson(dyn.asInstanceOf[js.Any])))
     ResolvedSettings(
-      effective = obj.effective.asInstanceOf[js.Dynamic],
-      provenance = obj.provenance.asInstanceOf[js.Dynamic],
+      effective = jsToJson(obj.effective.asInstanceOf[js.Any]),
+      provenance = jsToJson(obj.provenance.asInstanceOf[js.Any]),
       sources = srcs,
       raw = obj,
     )
+
+  private[scalagent] def field(json: Json, key: String): Option[Json] =
+    json match
+      case obj: Json.Obj => obj.get(key)
+      case _             => None
+
+  private[scalagent] def stringField(json: Json, key: String): Option[String] =
+    field(json, key).collect { case Json.Str(value) => value }
+
+  private def jsToJson(value: js.Any): Json =
+    if value == null || js.isUndefined(value) then Json.Null
+    else
+      js.JSON
+        .stringify(value)
+        .asInstanceOf[js.UndefOr[String]]
+        .toOption
+        .flatMap(_.fromJson[Json].toOption)
+        .getOrElse(Json.Null)
 
 /** Session information from listSessions */
 final case class SessionInfo(

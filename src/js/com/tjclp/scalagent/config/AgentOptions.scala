@@ -101,7 +101,8 @@ final case class AgentOptions(
   // Permission callback
   canUseTool: Option[CanUseTool] = None,
 
-  // Setting sources for filesystem-based configuration (Skills, plugins, slash commands)
+  // Setting sources for filesystem-based configuration (Skills, plugins, slash commands).
+  // Empty is serialized as [] to preserve scalagent's isolated default on SDK 0.3.x.
   settingSources: List[SettingSource] = List.empty,
 
   // Plugins to load
@@ -170,9 +171,11 @@ final case class AgentOptions(
   /**
    * Embedder-provided policy-tier settings pushed in-memory to the spawned CLI,
    * merged on top of file-based settings without touching the filesystem.
+   * Unlike [[settings]], managed settings must be inline because the SDK does
+   * not load file paths for this option.
    * Requires SDK 0.2.118+.
    */
-  managedSettings: Option[SettingsConfig] = None,
+  managedSettings: Option[ManagedSettings] = None,
 
   // Runtime configuration
 
@@ -290,7 +293,7 @@ final case class AgentOptions(
           k -> v.map(_.asInstanceOf[js.Any]).getOrElse(null)
       }*)
 
-    if settingSources.nonEmpty then obj.settingSources = settingSources.map(_.raw).toJSArray
+    obj.settingSources = settingSources.map(_.raw).toJSArray
 
     if plugins.nonEmpty then obj.plugins = plugins.map(_.toRaw).toJSArray
 
@@ -660,7 +663,8 @@ object AgentOptions:
      * Configure setting sources for filesystem-based features like Skills.
      *
      * Controls loading of Skills, plugins, and slash commands from filesystem.
-     * When empty (default), SDK runs in isolation mode with no filesystem settings.
+     * When empty (default), scalagent serializes an explicit empty array so SDK
+     * 0.3.x runs in isolation mode with no filesystem settings.
      *
      * Example:
      * {{{
@@ -978,8 +982,12 @@ object AgentOptions:
      * Set embedder-provided policy-tier settings pushed in-memory to the spawned CLI.
      * Merged on top of file-based settings. Requires SDK 0.2.118+.
      */
-    def withManagedSettings(config: SettingsConfig): AgentOptions =
+    def withManagedSettings(config: ManagedSettings): AgentOptions =
       opts.copy(managedSettings = Some(config))
+
+    /** Set inline managed settings directly from a raw settings object. */
+    def withInlineManagedSettings(settings: js.Object): AgentOptions =
+      opts.copy(managedSettings = Some(ManagedSettings(settings)))
 
     /** Set the runtime executable for Claude Code. */
     def withExecutable(exe: Executable): AgentOptions =
@@ -1111,6 +1119,14 @@ enum SettingsConfig:
   def toRaw: js.Any = this match
     case Path(p)     => p.asInstanceOf[js.Any]
     case Inline(obj) => obj.asInstanceOf[js.Any]
+
+/** Inline-only managed settings payload. */
+final case class ManagedSettings(settings: js.Object):
+  def toRaw: js.Object = settings
+
+object ManagedSettings:
+  def inline(settings: js.Object): ManagedSettings =
+    ManagedSettings(settings)
 
 /** Runtime executable for spawning Claude Code. */
 enum Executable(val raw: String):

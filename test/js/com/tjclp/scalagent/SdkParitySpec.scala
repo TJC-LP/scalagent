@@ -2,8 +2,11 @@ package com.tjclp.scalagent
 
 import munit.FunSuite
 import scala.scalajs.js
+import zio.*
 import zio.json.*
+import zio.json.ast.Json
 import com.tjclp.scalagent.config.*
+import com.tjclp.scalagent.core.{AgentEvent, SubagentContext}
 import com.tjclp.scalagent.errors.AgentError
 import com.tjclp.scalagent.hooks.*
 import com.tjclp.scalagent.streaming.*
@@ -15,6 +18,16 @@ import com.tjclp.scalagent.tools.ToolName
  * here first.
  */
 class SdkParitySpec extends FunSuite:
+
+  private def run[A](effect: IO[AgentError, A]): A =
+    Unsafe.unsafe { implicit unsafe =>
+      Runtime.default.unsafe.run(effect).getOrThrowFiberFailure()
+    }
+
+  private def runUIO[A](effect: UIO[A]): A =
+    Unsafe.unsafe { implicit unsafe =>
+      Runtime.default.unsafe.run(effect).getOrThrowFiberFailure()
+    }
 
   // ============================================
   // AgentOptions additions
@@ -31,11 +44,18 @@ class SdkParitySpec extends FunSuite:
     assertEquals(on.forwardSubagentText, true)
     assertEquals(rawOn.forwardSubagentText.asInstanceOf[Boolean], true)
 
-  test("managedSettings is serialized as managedSettings on toRaw"):
+  test("AgentOptions.default serializes empty settingSources for SDK isolation"):
+    val raw     = AgentOptions.default.toRaw.asInstanceOf[js.Dynamic]
+    val sources = raw.settingSources.asInstanceOf[js.Array[String]]
+    assertEquals(sources.length, 0)
+
+  test("managedSettings is serialized as inline managedSettings on toRaw"):
+    val inline = js.Dynamic.literal(model = "claude-sonnet-4-20250514").asInstanceOf[js.Object]
     val opts =
-      AgentOptions.default.withManagedSettings(SettingsConfig.Path("/etc/managed/settings.json"))
+      AgentOptions.default.withManagedSettings(ManagedSettings(inline))
     val raw = opts.toRaw.asInstanceOf[js.Dynamic]
-    assertEquals(raw.managedSettings.asInstanceOf[String], "/etc/managed/settings.json")
+    val model = raw.managedSettings.asInstanceOf[js.Dynamic].model.asInstanceOf[String]
+    assertEquals(model, "claude-sonnet-4-20250514")
 
   test("AgentDefinition.background is wired into toRaw"):
     val agent =
@@ -60,6 +80,11 @@ class SdkParitySpec extends FunSuite:
     val specific = raw.hookSpecificOutput.asInstanceOf[js.Dynamic]
     assertEquals(specific.reloadSkills.asInstanceOf[Boolean], true)
     assertEquals(specific.sessionTitle.asInstanceOf[String], "custom-title")
+
+  test("MessageDisplayOutput emits displayContent"):
+    val raw      = HookOutput.displayContent("rewritten").toRaw.asInstanceOf[js.Dynamic]
+    val specific = raw.hookSpecificOutput.asInstanceOf[js.Dynamic]
+    assertEquals(specific.displayContent.asInstanceOf[String], "rewritten")
 
   // ============================================
   // Tools
@@ -96,6 +121,10 @@ class SdkParitySpec extends FunSuite:
       case other =>
         fail(s"Expected ModelNotFound, got $other")
 
+  test("fromErrorReason model_not_found without details has clear message"):
+    val err = AgentError.fromErrorReason("model_not_found")
+    assertEquals(err.message, "Requested model not found")
+
   test("ModelNotFound.message renders available models when present"):
     val err = AgentError.ModelNotFound("x", List("a", "b"))
     assert(err.message.contains("Available"))
@@ -108,6 +137,12 @@ class SdkParitySpec extends FunSuite:
     val cfg = McpServerConfig.Stdio(command = "node", alwaysLoad = true)
     val raw = cfg.toRaw.asInstanceOf[js.Dynamic]
     assertEquals(raw.alwaysLoad.asInstanceOf[Boolean], true)
+
+  test("McpServerConfig.SSE/HTTP alwaysLoad propagates to toRaw"):
+    val sse  = McpServerConfig.SSE(url = "https://example.com/sse", alwaysLoad = true).toRaw.asInstanceOf[js.Dynamic]
+    val http = McpServerConfig.HTTP(url = "https://example.com/mcp", alwaysLoad = true).toRaw.asInstanceOf[js.Dynamic]
+    assertEquals(sse.alwaysLoad.asInstanceOf[Boolean], true)
+    assertEquals(http.alwaysLoad.asInstanceOf[Boolean], true)
 
   test("McpServerConfig.Stdio omits alwaysLoad when false (default)"):
     val cfg = McpServerConfig.Stdio(command = "node")
@@ -133,5 +168,56 @@ class SdkParitySpec extends FunSuite:
       serverVersion = None,
     )
     assertEquals(info.connectionStatus, McpServerStatus.Pending)
+
+  // ============================================
+  // Startup + resolveSettings
+  // ============================================
+
+  test("WarmQueryHandle exposes queryRaw and becomes consumed"):
+    var queryPrompt: Option[String] = None
+    var closeCount                  = 0
+    val rawQuery                    = js.Dynamic.literal()
+    val rawWarm = js.Dynamic
+      .literal(
+        query = (prompt: js.Any) =>
+          queryPrompt = Some(prompt.asInstanceOf[String])
+          rawQuery,
+        close = () => closeCount += 1,
+      )
+      .asInstanceOf[RawWarmQuery]
+
+    val handle = WarmQueryHandle(rawWarm)
+    run(handle.queryRaw("hello"))
+    assertEquals(queryPrompt, Some("hello"))
+    run(handle.queryRaw("again").either) match
+      case Left(error) => assert(error.message.contains("already been consumed"))
+      case Right(_)    => fail("Expected consumed handle to fail")
+    runUIO(handle.discard)
+    assertEquals(closeCount, 0)
+
+  test("resolveSettings options can serialize explicit empty settingSources"):
+    val opts = Claude
+      .resolveSettingsOptions(None, Some(Nil), None)
+      .getOrElse(fail("Expected resolveSettings options"))
+    val sources = opts.settingSources.asInstanceOf[js.Array[String]]
+    assertEquals(sources.length, 0)
+
+  test("ResolvedSettings exposes structured JSON with raw escape hatch"):
+    val raw = js.Dynamic.literal(
+      effective = js.Dynamic.literal(model = "claude-sonnet-4-20250514"),
+      provenance = js.Dynamic.literal(model = js.Dynamic.literal(source = "managed")),
+      sources = js.Array(js.Dynamic.literal(kind = "managed"))
+    )
+    val resolved = ResolvedSettings.fromRaw(raw)
+    assertEquals(resolved.effectiveModel, Some("claude-sonnet-4-20250514"))
+    assertEquals(resolved.provenanceFor("model"), Some(Json.Obj("source" -> Json.Str("managed"))))
+    assertEquals(resolved.sources, List(Json.Obj("kind" -> Json.Str("managed"))))
+
+  test("AgentEvent TextDelta can carry subagent context"):
+    val event = AgentEvent.TextDelta("child text", Some(SubagentContext("reviewer", Some("review code"))))
+    event match
+      case text: AgentEvent.TextDelta =>
+        assertEquals(text.subagentContext.map(_.subagentType), Some("reviewer"))
+      case other => fail(s"Expected TextDelta, got $other")
 
 end SdkParitySpec

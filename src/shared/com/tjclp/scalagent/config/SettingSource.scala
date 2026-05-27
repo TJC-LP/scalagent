@@ -12,7 +12,8 @@ import zio.json.*
  *   - `Project` - Project settings (`.claude/settings.json`, `.claude/skills/`)
  *   - `Local` - Local settings (`.claude/settings.local.json`)
  *
- * When omitted or empty, no filesystem settings are loaded (SDK isolation mode).
+ * Scalagent serializes an empty list as `settingSources: []` so SDK 0.3.x keeps
+ * isolation mode. To load filesystem settings, pass the desired sources explicitly.
  *
  * Example:
  * {{{

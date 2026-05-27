@@ -21,7 +21,7 @@ class A2AEventMapperSpec extends munit.FunSuite:
     val events = A2AEventMapper.mapStreamEvent(event)
     assertEquals(events.size, 1)
     events.head match
-      case AgentEvent.Status(text) => assert(text.contains("Analyzing"))
+      case AgentEvent.Status(text, _) => assert(text.contains("Analyzing"))
       case other => fail(s"Expected Status, got $other")
 
   test("Completed status maps to Completed with isSuccess=true"):
@@ -65,7 +65,7 @@ class A2AEventMapperSpec extends munit.FunSuite:
     val events = A2AEventMapper.mapStreamEvent(event)
     assertEquals(events.size, 1)
     events.head match
-      case AgentEvent.TextDelta(text) =>
+      case AgentEvent.TextDelta(text, _) =>
         assertEquals(text, "Hello from remote agent")
       case other => fail(s"Expected TextDelta, got $other")
 

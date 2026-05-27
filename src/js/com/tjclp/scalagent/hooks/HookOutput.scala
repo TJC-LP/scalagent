@@ -214,6 +214,24 @@ object HookOutput:
         .asInstanceOf[js.Object]
 
   /**
+   * Override assistant display content for MessageDisplay hooks.
+   *
+   * Pass an empty string to hide the displayed content for that callback.
+   */
+  final case class MessageDisplayOutput(
+    displayContent: String)
+      extends HookOutput:
+    def toRaw: js.Object =
+      js.Dynamic
+        .literal(
+          continue = true,
+          hookSpecificOutput = js.Dynamic.literal(
+            displayContent = displayContent
+          ),
+        )
+        .asInstanceOf[js.Object]
+
+  /**
    * Make a permission decision for a tool call (for PreToolUse hooks).
    *
    * Unlike `Block` (which stops the agent session), this denies the specific
@@ -252,6 +270,14 @@ object HookOutput:
 
   /** Block execution with the given reason */
   def block(reason: String): HookOutput = Block(reason)
+
+  /** Rewrite content for a MessageDisplay hook. */
+  def displayContent(content: String): HookOutput =
+    MessageDisplayOutput(content)
+
+  /** Hide content for a MessageDisplay hook. */
+  val hideDisplayContent: HookOutput =
+    MessageDisplayOutput("")
 
   /** Approve a permission request */
   val approve: HookOutput = Decision(approve = true)
