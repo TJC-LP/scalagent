@@ -34,9 +34,9 @@ object FastMcpMount:
    * scalagent `ToolDef`s whose handlers delegate back through fast-mcp's
    * manager layer.
    *
-   * `McpServerApp.buildCore` always yields an `R = Any` server (fast-mcp 0.4.0+),
-   * so no `ZEnvironment` is needed here. Use [[toolSurface]] with a
-   * `ZEnvironment[R]` for typed standalone `JsMcpServer.typed[R]` instances.
+   * `McpServerApp.buildCore` yields an `R = Any` server in the fast-mcp 0.4.0
+   * API pinned by this module, so no `ZEnvironment` is needed here. Use
+   * [[toolSurfaceTyped]] for typed standalone `JsMcpServer.typed[R]` instances.
    */
   def toolSurfaceFromApp[T <: Transport, Self <: Singleton](
     serverName: String,

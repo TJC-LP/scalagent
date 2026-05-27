@@ -22,7 +22,9 @@ object EventMapper:
 
   def mapMessage(msg: AgentMessage): List[AgentEvent] = msg match
     case assistant: AgentMessage.Assistant =>
-      assistant.message.content.flatMap(mapContentBlock(_, subagentContext(assistant.subagentType, assistant.taskDescription)))
+      assistant.message.content.flatMap(
+        mapContentBlock(_, subagentContext(assistant.subagentType, assistant.taskDescription))
+      )
 
     case user: AgentMessage.User if user.isSynthetic =>
       user.message.content.collect {
@@ -51,8 +53,8 @@ object EventMapper:
     case AgentMessage.TaskNotification(taskId, status, _, _, _, _, _, _) =>
       List(AgentEvent.DelegationFinished(childId = taskId, status = status.toRaw))
 
-    case taskProgress: AgentMessage.TaskProgress =>
-      List(AgentEvent.Status(s"task:${taskProgress.taskId}: ${taskProgress.progress}"))
+    case AgentMessage.TaskProgress(taskId, progress, _, _, _, _, _) =>
+      List(AgentEvent.Status(s"task:$taskId: $progress"))
 
     case AgentMessage.RateLimitEvent(retryAfterMs, _, status, _, _, _, _, _, _, _, _, _, _) =>
       List(nativeEvent("rate_limit", msg))

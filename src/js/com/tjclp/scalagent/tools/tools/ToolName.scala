@@ -62,6 +62,7 @@ enum ToolName(val raw: String):
   case TaskOutput   extends ToolName("TaskOutput")
   case SlashCommand extends ToolName("SlashCommand")
   case Skill        extends ToolName("Skill")
+
   /** Background script event watcher tool. Added in SDK 0.3.x. */
   case Monitor extends ToolName("Monitor")
 

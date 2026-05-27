@@ -109,15 +109,14 @@ object TraceLogger:
 
   private def withSubagentContext(base: Json.Obj, context: Option[SubagentContext]): Json.Obj =
     context match
-      case None => base
+      case None      => base
       case Some(ctx) =>
-        val fields = base.fields.toMap ++ Map(
-          "subagentContext" -> Json.Obj(
-            "subagentType"   -> Json.Str(ctx.subagentType),
-            "taskDescription" -> ctx.taskDescription.map(Json.Str(_)).getOrElse(Json.Null),
-          )
+        val contextFields: zio.Chunk[(String, Json)] =
+          zio.Chunk("subagentType" -> Json.Str(ctx.subagentType)) ++
+            zio.Chunk.fromIterable(ctx.taskDescription.map(value => "taskDescription" -> Json.Str(value)))
+        Json.Obj(
+          (base.fields :+ ("subagentContext" -> Json.Obj(contextFields*)))*
         )
-        Json.Obj(zio.Chunk.fromIterable(fields.toSeq)*)
 
   private def evaluationToJson[P, O](eval: Evaluation[P, O]): Json =
     Json.Obj(

@@ -428,8 +428,7 @@ object Claude:
       .fromPromiseJS(SdkModule.startup(params))
       .map(raw => WarmQueryHandle(raw))
       .mapError(AgentError.fromThrowable)
-    val release = (handle: WarmQueryHandle) =>
-      handle.discard
+    val release = (handle: WarmQueryHandle) => handle.discard
     ZIO.acquireRelease(acquire)(release)
 
   /**
@@ -477,23 +476,38 @@ end Claude
  * released (via the SDK's `close()`) even if it was never used.
  */
 final class WarmQueryHandle(private[scalagent] val raw: RawWarmQuery):
-  private var consumedOrClosed = false
+  private val consumedOrClosed: Ref[Boolean] =
+    Unsafe.unsafe { implicit unsafe => Ref.unsafe.make(false) }
 
-  /** Start the one query backed by this warmed subprocess. */
+  private def markConsumedOrClosed: UIO[Boolean] =
+    consumedOrClosed.modify(consumed => (!consumed, true))
+
+  /**
+   * Start the one query backed by this warmed subprocess.
+   *
+   * After `query()`, the SDK owns the spawned subprocess through the returned
+   * query stream and the scope release will not call `close()` on this warm
+   * handle again.
+   */
   def query(prompt: String): ZStream[Any, AgentError, AgentMessage] =
     ZStream.fromZIO(queryRaw(prompt)).flatMap(_.messages)
 
-  /** Start the one query and return the controllable stream wrapper. */
+  /**
+   * Start the one query and return the controllable stream wrapper.
+   *
+   * After `queryRaw()`, the SDK owns the spawned subprocess through the
+   * returned [[QueryStream]] and the scope release will not call `close()` on
+   * this warm handle again.
+   */
   def queryRaw(prompt: String): IO[AgentError, QueryStream] =
-    ZIO
-      .suspendSucceed {
-        if consumedOrClosed then
-          ZIO.fail(AgentError.ConfigurationError("WarmQueryHandle has already been consumed or discarded"))
-        else
-          consumedOrClosed = true
-          ZIO.attempt(QueryStream(raw.query(prompt).asInstanceOf[com.tjclp.scalagent.streaming.RawQuery]))
-      }
-      .mapError(AgentError.fromThrowable)
+    markConsumedOrClosed.flatMap {
+      case false =>
+        ZIO.fail(AgentError.ConfigurationError("WarmQueryHandle has already been consumed or discarded"))
+      case true =>
+        ZIO
+          .attempt(QueryStream(raw.query(prompt).asInstanceOf[com.tjclp.scalagent.streaming.RawQuery]))
+          .mapError(AgentError.fromThrowable)
+    }
 
   /** Start the one query and collect the complete result. */
   def queryComplete(
@@ -518,15 +532,15 @@ final class WarmQueryHandle(private[scalagent] val raw: RawWarmQuery):
 
   /** Drop the warm subprocess without sending a prompt. */
   def discard: UIO[Unit] =
-    ZIO.suspendSucceed {
-      if consumedOrClosed then ZIO.unit
-      else
-        consumedOrClosed = true
+    markConsumedOrClosed.flatMap {
+      case false => ZIO.unit
+      case true  =>
         ZIO
           .attempt(raw.close())
           .unit
           .catchAll(t => ZIO.logWarning(s"WarmQueryHandle close failed: ${Option(t.getMessage).getOrElse(t.toString)}"))
     }
+end WarmQueryHandle
 
 /**
  * Result of [[Claude.resolveSettings]]. Mirrors the SDK's `ResolvedSettings`
@@ -567,12 +581,22 @@ object ResolvedSettings:
   private def jsToJson(value: js.Any): Json =
     if value == null || js.isUndefined(value) then Json.Null
     else
-      js.JSON
-        .stringify(value)
-        .asInstanceOf[js.UndefOr[String]]
-        .toOption
-        .flatMap(_.fromJson[Json].toOption)
-        .getOrElse(Json.Null)
+      try
+        js.JSON.stringify(value).asInstanceOf[js.UndefOr[String]].toOption match
+          case None             => Json.Null
+          case Some(jsonString) =>
+            jsonString.fromJson[Json] match
+              case Right(json) => json
+              case Left(error) =>
+                scala.Console.err.println(s"[ResolvedSettings] Failed to parse SDK JSON payload: $error")
+                Json.Str(jsonString)
+      catch
+        case t: Throwable =>
+          scala.Console.err.println(
+            s"[ResolvedSettings] Failed to stringify SDK settings payload: ${Option(t.getMessage).getOrElse(t.toString)}"
+          )
+          Json.Null
+end ResolvedSettings
 
 /** Session information from listSessions */
 final case class SessionInfo(

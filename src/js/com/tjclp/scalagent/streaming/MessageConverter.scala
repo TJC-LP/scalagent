@@ -155,6 +155,7 @@ object MessageConverter:
         subagentType = stringField(obj, "subagent_type"),
         taskDescription = stringField(obj, "task_description"),
       )
+    end if
   end parseUserMessage
 
   private def parseResultMessage(obj: js.Dynamic, raw: Json): AgentMessage.Result =

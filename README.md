@@ -3,7 +3,7 @@
 Type-safe agent execution for mission-critical environments.
 Scala 3 + ZIO on the battle-tested TypeScript agent ecosystem.
 
-> SDK baseline `@anthropic-ai/claude-agent-sdk@^0.2.116` | Scalagent `0.6.1` | Scala `3.8.3` | Bun or Node.js 18+
+> SDK baseline `@anthropic-ai/claude-agent-sdk@^0.3.152` + `@openai/codex-sdk@^0.134.0` | Scalagent `0.9.0-SNAPSHOT` | Scala `3.8.3` | Bun or Node.js 18+
 
 ```scala
 import com.tjclp.scalagent.*
@@ -188,13 +188,13 @@ val agent = ClaudeInterpreter.builder(claudeAgent)
 ### Mill
 
 ```scala
-ivy"com.tjclp::scalagent::0.6.1"
+ivy"com.tjclp::scalagent::0.9.0-SNAPSHOT"
 ```
 
 ### SBT
 
 ```scala
-libraryDependencies += "com.tjclp" %%% "scalagent" % "0.6.1"
+libraryDependencies += "com.tjclp" %%% "scalagent" % "0.9.0-SNAPSHOT"
 ```
 
 ### Maven
@@ -203,7 +203,7 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.6.1"
 <dependency>
   <groupId>com.tjclp</groupId>
   <artifactId>scalagent_sjs1_3</artifactId>
-  <version>0.6.1</version>
+  <version>0.9.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -212,6 +212,12 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.6.1"
 - Scala 3.8.3+ with Scala.js
 - Bun (preferred) or Node.js 18+
 - `bun install` to fetch the TypeScript SDK and ZIO dependencies
+
+### 0.9.0 Upgrade Notes
+
+- The Claude SDK baseline is now 0.3.x. `AgentOptions.default` serializes `settingSources: []` to preserve Scalagent's default settings isolation; pass user/project sources explicitly when you want filesystem settings.
+- `AgentMessage.Assistant` and `AgentMessage.User` carry new SDK metadata. Downstream positional pattern matches must be updated, or use accessor-based matching.
+- `ToolSurface.allBuiltins` now uses the SDK Task tools (`TaskCreate`, `TaskUpdate`, `TaskGet`, `TaskList`) and no longer includes deprecated `TodoWrite`.
 
 ## Quick Start
 

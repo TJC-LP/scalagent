@@ -195,6 +195,21 @@ class SdkParitySpec extends FunSuite:
     runUIO(handle.discard)
     assertEquals(closeCount, 0)
 
+  test("WarmQueryHandle.discard closes unused raw handle exactly once"):
+    var closeCount = 0
+    val rawWarm = js.Dynamic
+      .literal(
+        query = (_: js.Any) => js.Dynamic.literal(),
+        close = () => closeCount += 1,
+      )
+      .asInstanceOf[RawWarmQuery]
+
+    val handle = WarmQueryHandle(rawWarm)
+    runUIO(handle.discard)
+    assertEquals(closeCount, 1)
+    runUIO(handle.discard)
+    assertEquals(closeCount, 1)
+
   test("resolveSettings options can serialize explicit empty settingSources"):
     val opts = Claude
       .resolveSettingsOptions(None, Some(Nil), None)
@@ -204,12 +219,19 @@ class SdkParitySpec extends FunSuite:
 
   test("ResolvedSettings exposes structured JSON with raw escape hatch"):
     val raw = js.Dynamic.literal(
-      effective = js.Dynamic.literal(model = "claude-sonnet-4-20250514"),
+      effective = js.Dynamic.literal(
+        model = "claude-sonnet-4-20250514",
+        env = js.Dynamic.literal(tags = js.Array("prod", "review"), missing = null),
+      ),
       provenance = js.Dynamic.literal(model = js.Dynamic.literal(source = "managed")),
       sources = js.Array(js.Dynamic.literal(kind = "managed"))
     )
     val resolved = ResolvedSettings.fromRaw(raw)
     assertEquals(resolved.effectiveModel, Some("claude-sonnet-4-20250514"))
+    assertEquals(
+      ResolvedSettings.field(resolved.effective, "env"),
+      Some(Json.Obj("tags" -> Json.Arr(Json.Str("prod"), Json.Str("review")), "missing" -> Json.Null)),
+    )
     assertEquals(resolved.provenanceFor("model"), Some(Json.Obj("source" -> Json.Str("managed"))))
     assertEquals(resolved.sources, List(Json.Obj("kind" -> Json.Str("managed"))))
 

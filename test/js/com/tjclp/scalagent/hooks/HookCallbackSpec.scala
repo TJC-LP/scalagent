@@ -222,5 +222,8 @@ class HookCallbackSpec extends FunSuite:
         assertEquals(input.delta, Some("partial"))
         assertEquals(input.finalContent, Some("complete message"))
         assertEquals(input.hookAgentType, Some("reviewer"))
+        assertEquals(input.permissionMode, Some(PermissionMode.Custom("delegate")))
+        assertEquals(input.transcriptPath, "/tmp/project/transcript.json")
+        assertEquals(input.cwd, "/tmp/project")
       case other => fail(s"Expected MessageDisplay, got: $other")
     }

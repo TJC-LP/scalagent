@@ -347,6 +347,7 @@ enum AssistantMessageError:
   case InvalidRequest
   case ServerError
   case MaxOutputTokens
+
   /** Requested model was not available. Added in SDK 0.3.144. */
   case ModelNotFound
   case Unknown

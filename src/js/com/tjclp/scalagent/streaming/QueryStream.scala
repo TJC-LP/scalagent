@@ -548,10 +548,10 @@ object McpServerStatusInfo:
  * on individual [[com.tjclp.scalagent.config.McpServerConfig]] entries.
  */
 enum McpServerStatus(val raw: String):
-  case Pending    extends McpServerStatus("pending")
-  case Connected  extends McpServerStatus("connected")
-  case Failed     extends McpServerStatus("failed")
-  case NeedsAuth  extends McpServerStatus("needs-auth")
+  case Pending                          extends McpServerStatus("pending")
+  case Connected                        extends McpServerStatus("connected")
+  case Failed                           extends McpServerStatus("failed")
+  case NeedsAuth                        extends McpServerStatus("needs-auth")
   case Custom(override val raw: String) extends McpServerStatus(raw)
 
 object McpServerStatus:

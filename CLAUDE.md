@@ -141,8 +141,8 @@ Capabilities are checked at compile time. An agent without `CanSpawn` cannot cal
 - `ToolSurface.none` — no tools (the default)
 - `ToolSurface.readOnlyBuiltins` — Read, Glob, Grep
 - `ToolSurface.readOnlyAll` — above + WebFetch, WebSearch, LSP
-- `ToolSurface.standard` — readOnlyBuiltins + Write, Edit (no Bash)
-- `ToolSurface.allBuiltins` — everything including Bash (explicit opt-in)
+- `ToolSurface.standard` — readOnlyBuiltins + Write, Edit, NotebookEdit, Task* (no Bash)
+- `ToolSurface.allBuiltins` — everything including Bash and Task* (explicit opt-in)
 
 ### Event Streaming → Trace → Evaluation
 
@@ -258,7 +258,8 @@ mill-bun-plugin v0.2.0, which validates package specifiers at compile time:
 import mill.bun.bun
 
 def bunDeps = Task { Seq(
-  bun"@anthropic-ai/claude-agent-sdk@^0.2.116",
+  bun"@anthropic-ai/claude-agent-sdk@^0.3.152",
+  bun"@openai/codex-sdk@^0.134.0",
   bun"zod@^4.0.0"
 )}
 ```
