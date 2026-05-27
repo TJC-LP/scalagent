@@ -33,14 +33,19 @@ object FastMcpMount:
    * The app is built but not run; its registered tools are wrapped as
    * scalagent `ToolDef`s whose handlers delegate back through fast-mcp's
    * manager layer.
+   *
+   * `McpServerApp.buildCore` always yields an `R = Any` server (fast-mcp 0.4.0+),
+   * so no `ZEnvironment` is needed here. Use [[toolSurface]] with a
+   * `ZEnvironment[R]` for typed standalone `JsMcpServer.typed[R]` instances.
    */
   def toolSurfaceFromApp[T <: Transport, Self <: Singleton](
     serverName: String,
     app: McpServerApp[T, Self],
   ): Task[McpToolSurface] =
     app.buildCore.flatMap {
-      case server: JsMcpServer => ZIO.fromEither(toolSurface(serverName, server))
-      case other               =>
+      case server: JsMcpServer[?] =>
+        ZIO.fromEither(toolSurface(serverName, server.asInstanceOf[JsMcpServer[Any]]))
+      case other =>
         ZIO.fail(
           new IllegalArgumentException(
             s"fast-mcp scalagent mounting currently requires JsMcpServer, got ${other.getClass.getName}"
@@ -59,18 +64,72 @@ object FastMcpMount:
       McpToolLoader.toServerFactory(surface, runtime).copy(version = version)
     }
 
-  /** Build a tool surface from an already-built JS fast-mcp server. */
-  def toolSurface(serverName: String, server: JsMcpServer): Either[Throwable, McpToolSurface] =
+  /**
+   * Build a tool surface from an already-built JS fast-mcp server (untyped env).
+   *
+   * Back-compat overload for `JsMcpServer[Any]`. For servers that declare a
+   * non-`Any` env (`McpServer.typed[R]("name")` in fast-mcp 0.4.0+), use the
+   * typed overload that takes a `ZEnvironment[R]`.
+   */
+  def toolSurface(serverName: String, server: JsMcpServer[Any]): Either[Throwable, McpToolSurface] =
+    toolSurfaceTyped[Any](serverName, server, ZEnvironment.empty)
+
+  /**
+   * Build a tool surface from a typed JS fast-mcp server.
+   *
+   * fast-mcp-scala 0.4.0 parameterizes `JsMcpServer[R]` so `@Tool` handlers can
+   * return `ZIO[R, E, A]`. To bridge such a server into scalagent's
+   * `Any`-typed `ToolDef.handler`, supply a `ZEnvironment[R]` (built from the
+   * same layer/ref/service you would `.provide(...)` to `runHttp()`); the
+   * handler discharges `R` via `provideEnvironment` so the resulting scalagent
+   * tool effects are `Task`-typed.
+   *
+   * Example:
+   * {{{
+   * import zio.*
+   * import com.tjclp.fastmcp.server.JsMcpServer
+   *
+   * val server: JsMcpServer[Ref[Int]] = JsMcpServer.typed[Ref[Int]]("counter")
+   * for
+   *   counter <- Ref.make(0)
+   *   surface <- ZIO.fromEither(FastMcpMount.toolSurfaceTyped(
+   *     "counter", server, ZEnvironment(counter),
+   *   ))
+   * yield surface
+   * }}}
+   */
+  def toolSurfaceTyped[R](
+    serverName: String,
+    server: JsMcpServer[R],
+    env: ZEnvironment[R],
+  ): Either[Throwable, McpToolSurface] =
     val tools =
       server.toolManager
         .listDefinitions()
         .sortBy(_.name)
-        .map(definition => toolDef(server, definition))
+        .map(definition => toolDef[R](server, definition, env))
     collectThrowable(tools).map(McpToolSurface(serverName, _))
 
-  private def toolDef(
-    server: JsMcpServer,
+  /**
+   * Build a server factory from a typed fast-mcp JS server. Mirrors
+   * [[toolSurfaceTyped]] for callers who want to plug the typed server directly
+   * into `AgentOptions.mcpServers` via `withMcpServerFactory`.
+   */
+  def serverFactoryTyped[R](
+    serverName: String,
+    server: JsMcpServer[R],
+    env: ZEnvironment[R],
+    version: String = "1.0.0",
+    runtime: Runtime[Any] = Runtime.default,
+  ): Either[Throwable, McpServerConfig.SdkFactory] =
+    toolSurfaceTyped(serverName, server, env).map { surface =>
+      McpToolLoader.toServerFactory(surface, runtime).copy(version = version)
+    }
+
+  private def toolDef[R](
+    server: JsMcpServer[R],
     definition: ToolDefinition,
+    env: ZEnvironment[R],
   ): Either[Throwable, ToolDef[Json]] =
     schemaFromFastMcp(definition.inputSchema.toJsonString).map { schema =>
       ToolDef[Json](
@@ -80,6 +139,7 @@ object FastMcpMount:
         handler = input =>
           server.toolManager
             .callTool(definition.name, jsonObjectToMap(input), None)
+            .provideEnvironment(env)
             .map(fastResultToToolResult)
             .catchAll(err => ZIO.succeed(ToolResult.error(Option(err.getMessage).getOrElse(err.getClass.getName)))),
       )

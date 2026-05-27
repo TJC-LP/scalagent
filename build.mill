@@ -158,7 +158,7 @@ object fastMcp extends BunScalaJSModule with BunPublishModule with PublishModule
   override def sources   = Task.Sources(moduleDir / "src")
 
   def mvnDeps = Seq(
-    mvn"com.tjclp::fast-mcp-scala::0.3.2",
+    mvn"com.tjclp::fast-mcp-scala::0.4.0",
     mvn"dev.zio::zio::2.1.24",
     mvn"dev.zio::zio-json::0.9.0",
   )
