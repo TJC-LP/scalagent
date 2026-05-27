@@ -65,7 +65,7 @@ object agent extends Module:
   }
 
   /** Run both platform test suites from the historical `agent.test` target. */
-  def test: T[Unit] = Task {
+  def test(): Command[Unit] = Task.Command {
     js.test.bunTest(mill.api.Args())()
     jvm.test.testForked()()
     ()

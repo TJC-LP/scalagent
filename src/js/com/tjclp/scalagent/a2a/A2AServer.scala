@@ -523,7 +523,7 @@ private final class A2AServerLiveImpl(
     urlObj: js.Dynamic,
     req: js.Dynamic,
   ): Option[Task[js.Dynamic]] =
-    val (tenant, path)                            = splitTenant(pathname)
+    val (tenant, path)                            = A2APathRouting.splitTenant(pathname)
     val query                                     = urlObj.searchParams.asInstanceOf[js.Dynamic]
     def queryString(name: String): Option[String] =
       val value = query.get(name)
@@ -686,16 +686,6 @@ private final class A2AServerLiveImpl(
         None
     end match
   end routeRest
-
-  private def splitTenant(pathname: String): (Option[String], String) =
-    val knownPrefixes = Set("message:send", "message:stream", "tasks", "extendedAgentCard")
-    val stripped      = pathname.stripPrefix("/")
-    val segments      = if stripped.isEmpty then Nil else stripped.split("/", -1).toList
-    segments match
-      case first :: rest if first.nonEmpty && !knownPrefixes.contains(first) =>
-        Some(first) -> ("/" + rest.mkString("/"))
-      case _ =>
-        None -> pathname
 
   private def toA2AError(error: Throwable): A2AError =
     error match

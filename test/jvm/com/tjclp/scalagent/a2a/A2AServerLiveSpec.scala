@@ -2,6 +2,7 @@ package com.tjclp.scalagent.a2a
 
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import java.net.{InetAddress, ServerSocket}
 
 import munit.FunSuite
 import zio.*
@@ -225,6 +226,32 @@ class A2AServerLiveSpec extends FunSuite:
     runTask(program).map { response =>
       assertEquals(response.error.map(_.code), Some(A2AErrorCode.InvalidRequest))
       assert(response.error.exists(_.message.contains("Request body exceeds 8 byte limit")))
+    }
+
+  test("JVM start fails when the configured port is already bound"):
+    val program =
+      ZIO.scoped {
+        ZIO
+          .acquireRelease(
+            ZIO.attempt(new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")))
+          )(socket => ZIO.attempt(socket.close()).ignore)
+          .flatMap { socket =>
+            val config = A2AServerLive.Config(
+              name = "BindFailureJvmTest",
+              description = "Bind failure JVM test server",
+              host = "127.0.0.1",
+              port = socket.getLocalPort,
+              executionOverride = Some(completedExecution),
+            )
+            A2AServerLive.start(config, runtime).foldZIO(
+              _ => ZIO.succeed(true),
+              server => server.stop.as(false),
+            )
+          }
+      }
+
+    runTask(program).map { failed =>
+      assert(failed, "start should fail when the configured port is already bound")
     }
 
   test("JVM taskTimeout fails a hung executionOverride"):

@@ -19,8 +19,10 @@ import zio.stream.*
  * `invocationPreparer`) since the JVM scalagent build doesn't include the
  * Claude Agent SDK adapters.
  *
- * For CMA-backed agents, the common fields are `name`, `description`, `port`,
- * `executionOverride`, `skills`, and optionally the task/event stores.
+ * The JVM default host binds all interfaces for container deployments; set it
+ * to `localhost` for local-only development. Tenant values are protocol
+ * fields, not authentication: production deployments should place this server
+ * behind an auth layer that validates or overrides tenant identity.
  */
 object A2AServerLive:
 
@@ -172,15 +174,20 @@ private[a2a] final class A2AServerLiveImpl(
   def url: String = config.url
 
   def start: Task[Unit] =
-    val server = Server
-      .serve(a2aRoutes)
-      .provide(
-        ZLayer.succeed(Server.Config.default.binding(config.host, config.port)),
-        Server.live,
-      )
     for
+      ready <- Promise.make[Throwable, Unit]
+      server = Server
+        .install(a2aRoutes)
+        .provide(
+          ZLayer.succeed(Server.Config.default.binding(config.host, config.port)),
+          Server.live,
+        )
+        .unit
+        .flatMap(_ => ready.succeed(()).unit *> ZIO.never)
+        .catchAllCause(cause => ready.fail(cause.squash).unit *> ZIO.failCause(cause))
       fiber <- server.fork
       _     <- serverFiberRef.set(Some(fiber))
+      _     <- ready.await.onError(_ => fiber.interruptFork)
     yield ()
 
   def stop: Task[Unit] =
@@ -312,7 +319,7 @@ private[a2a] final class A2AServerLiveImpl(
       .fold(context)(tenant => context.copy(tenant = Some(tenant)))
 
   private def routeRest(request: Request): Option[UIO[Response]] =
-    val (tenant, path) = splitTenant(request.path.encode)
+    val (tenant, path) = A2APathRouting.splitTenant(request.path.encode)
     val query          = request.url.queryParams
 
     def queryString(name: String): Option[String] =
@@ -483,16 +490,6 @@ private[a2a] final class A2AServerLiveImpl(
         None
     end match
   end routeRest
-
-  private def splitTenant(pathname: String): (Option[String], String) =
-    val knownPrefixes = Set("message:send", "message:stream", "tasks", "extendedAgentCard")
-    val stripped      = pathname.stripPrefix("/")
-    val segments      = if stripped.isEmpty then Nil else stripped.split("/", -1).toList
-    segments match
-      case first :: rest if first.nonEmpty && !knownPrefixes.contains(first) =>
-        Some(first) -> ("/" + rest.mkString("/"))
-      case _ =>
-        None -> pathname
 
   private def contextFrom(request: Request, tenant: Option[String]): ServerCallContext =
     def header(name: String): Option[String] =
