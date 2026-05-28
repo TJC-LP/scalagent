@@ -1,6 +1,6 @@
 # Compatibility Matrix
 
-Baseline: `@anthropic-ai/claude-agent-sdk` `^0.2.116`, `@openai/codex-sdk` `^0.122.0`
+Baseline: `@anthropic-ai/claude-agent-sdk` `^0.3.154`, `@openai/codex-sdk` `^0.134.0`
 
 This document tracks the current compatibility posture of `scalagent` against the installed TypeScript SDK baseline.
 
@@ -20,7 +20,7 @@ This document tracks the current compatibility posture of `scalagent` against th
 | `system/memory_recall` (SDK 0.2.105) | Exact mirror | `SystemEvent.MemoryRecall(mode, memories)` with `MemoryRecallMode` and `MemoryScope` enums. |
 | `system/mirror_error` (SDK 0.2.113) | Exact mirror | `AgentMessage.MirrorError(error, projectKey, mirroredSessionId, subpath, ...)`. |
 | `McpServerToolPolicy` on remote configs (SDK 0.2.111) | Exact mirror | `McpServerConfig.{HTTP,SSE}.tools` carries per-tool `McpToolPolicy`. |
-| `Model.Opus4_7` / `EffortLevel.xhigh` (SDK 0.2.111) | Exact mirror | `Model.Opus4_7` + `Effort.XHigh`; `Model.opus` alias updated. |
+| `Model.Opus4_8` / `Model.Opus4_7` / `EffortLevel.xhigh` | Exact mirror | `Model.Opus4_8` and `Model.Opus4_7` are available; `Model.opus` now points to `Model.Opus4_8`. |
 | Top-level `Options.skills` | Scala-only compatibility shim | The installed SDK typings do not expose top-level `skills`; `AgentOptions.withSkills(...)` prefers a synthesized or augmented main agent, then falls back to prompt injection when needed. |
 | `AgentDefinition.skills` | Exact mirror | Passed through natively and used as the preferred compatibility path for preloaded skills. |
 | `Query` lifecycle | Adapted mirror | Wrapped by `QueryStream`, which preserves SDK control methods and adds cleanup-aware `ZStream` semantics plus idempotent `close()`. |

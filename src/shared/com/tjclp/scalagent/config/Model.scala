@@ -19,10 +19,17 @@ import com.tjclp.scalagent.json.StringEnumJsonCodec
 enum Model(val id: String):
 
   // ============================================================================
-  // Claude 4.7 Family (Latest Generation)
+  // Claude 4.8 Family (Latest Generation)
   // ============================================================================
 
-  /** Claude Opus 4.7 - Most capable model; supports xhigh reasoning effort */
+  /** Claude Opus 4.8 - Most capable model for complex reasoning and agentic coding */
+  case Opus4_8 extends Model("claude-opus-4-8")
+
+  // ============================================================================
+  // Claude 4.7 Family
+  // ============================================================================
+
+  /** Claude Opus 4.7 - High-capability model; supports adaptive thinking and effort controls */
   case Opus4_7 extends Model("claude-opus-4-7")
 
   // ============================================================================
@@ -109,6 +116,8 @@ object Model:
    * Known model IDs are mapped to their enum variants. Unknown IDs become Custom.
    */
   def fromId(id: String): Model = id match
+    // Claude 4.8 Family
+    case "claude-opus-4-8" => Opus4_8
     // Claude 4.7 Family
     case "claude-opus-4-7" => Opus4_7
     // Claude 4.6 Family
@@ -132,11 +141,11 @@ object Model:
     case "claude-3-haiku-20240307"  => Haiku3
     case other                      => Custom(other)
 
-  /** Default model for Claude Agent SDK - uses current recommended model */
+  /** Default model for Claude Agent SDK - balanced for general-purpose agent use */
   val default: Model = Sonnet4_6
 
   // Convenience aliases (point to current generation)
-  val opus: Model   = Opus4_7
+  val opus: Model   = Opus4_8
   val sonnet: Model = Sonnet4_6
   val haiku: Model  = Haiku4_5
 end Model
