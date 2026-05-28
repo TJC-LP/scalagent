@@ -72,8 +72,10 @@ object A2AServerLive:
   /** Start a JVM A2A server without scope management. */
   def start(config: Config, runtime: Runtime[Any]): Task[A2AServer] =
     for
-      server <- ZIO.attempt(A2AServerLiveImpl(config, runtime))
-      _      <- server.start
+      runtimeRegistry <- A2ARuntimeRegistry.make
+      serverScopeRef  <- Ref.Synchronized.make(Option.empty[Scope.Closeable])
+      server          <- ZIO.attempt(A2AServerLiveImpl(config, runtime, runtimeRegistry, serverScopeRef))
+      _               <- server.start
     yield server
 
   /** Create a server layer. */
@@ -135,13 +137,13 @@ end PushNotificationSender
 /** Live implementation of A2A Server using zio-http. */
 private[a2a] final class A2AServerLiveImpl(
   config: A2AServerLive.Config,
-  runtime: Runtime[Any])
+  runtime: Runtime[Any],
+  runtimeRegistry: A2ARuntimeRegistry,
+  serverScopeRef: Ref.Synchronized[Option[Scope.Closeable]])
     extends A2AServer:
 
   private val taskStore = config.taskStore.getOrElse(A2ATaskStore.inMemory)
   private val pushStore = config.pushNotificationStore.getOrElse(A2APushNotificationStore.inMemory)
-  private val runtimeRegistry: A2ARuntimeRegistry =
-    Unsafe.unsafe { implicit unsafe => runtime.unsafe.run(A2ARuntimeRegistry.make).getOrThrow() }
   private val pushSender    = PushNotificationSender(pushStore, config.pushNotificationUrlPolicy)
   private val requestConfig = A2ARequestHandler.Config(
     capabilities = config.capabilities,
@@ -164,36 +166,35 @@ private[a2a] final class A2AServerLiveImpl(
       execute,
     )
 
-  private val serverFiberRef: Ref.Synchronized[Option[Fiber.Runtime[Throwable, Unit]]] =
-    Unsafe.unsafe { implicit unsafe =>
-      runtime.unsafe.run(Ref.Synchronized.make(Option.empty[Fiber.Runtime[Throwable, Unit]])).getOrThrow()
-    }
-
   def agentCard: AgentCard = config.toAgentCardAt(url)
 
   def url: String = config.url
 
   def start: Task[Unit] =
-    for
-      ready <- Promise.make[Throwable, Unit]
-      server = Server
-        .install(a2aRoutes)
-        .provide(
-          ZLayer.succeed(Server.Config.default.binding(config.host, config.port)),
-          Server.live,
-        )
-        .unit
-        .flatMap(_ => ready.succeed(()).unit *> ZIO.never)
-        .catchAllCause(cause => ready.fail(cause.squash).unit *> ZIO.failCause(cause))
-      fiber <- server.fork
-      _     <- serverFiberRef.set(Some(fiber))
-      _     <- ready.await.onError(_ => fiber.interruptFork)
-    yield ()
+    serverScopeRef.modifyZIO {
+      case Some(scope) => ZIO.succeed(((), Some(scope)))
+      case None        =>
+        (for
+          scope <- Scope.make
+          _     <-
+            (for
+              serverEnv <- (ZLayer.succeed(Server.Config.default.binding(config.host, config.port)) >>> Server.live)
+                             .build(scope)
+              _         <- Server.install(a2aRoutes).provideEnvironment(serverEnv)
+            yield ()).catchAllCause(closeStartupScope(scope, _))
+        yield ((), Some(scope)))
+    }
+
+  private def closeStartupScope(scope: Scope.Closeable, cause: Cause[Throwable]): Task[Nothing] =
+    val failure =
+      if cause.isInterruptedOnly then ZIO.failCause(cause)
+      else ZIO.fail(cause.squash)
+    scope.close(Exit.failCause(cause)).ignore *> failure
 
   def stop: Task[Unit] =
     runtimeRegistry.interruptAll *>
-      serverFiberRef.modifyZIO {
-        case Some(fiber) => fiber.interruptFork.as(((), None))
+      serverScopeRef.modifyZIO {
+        case Some(scope) => scope.close(Exit.succeed(())).as(((), None))
         case None        => ZIO.succeed(((), None))
       }
 
