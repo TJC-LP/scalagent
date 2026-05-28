@@ -19,17 +19,21 @@ import mill.scalajslib.bun.*
 // ScalaModule trait hierarchies (which diverge at the class level).
 
 private val sharedScalaVersion: String = "3.8.3"
+private val sharedZioVersion: String   = "2.1.24"
+private val sharedZioJsonVersion       = "0.9.0"
+private val sharedZioSchemaVersion     = "1.8.3"
+private val sharedZioBlocksVersion     = "0.0.33"
 
 private val sharedZioDeps = Seq(
-  mvn"dev.zio::zio::2.1.24",
-  mvn"dev.zio::zio-streams::2.1.24",
-  mvn"dev.zio::zio-json::0.9.0",
+  mvn"dev.zio::zio::$sharedZioVersion",
+  mvn"dev.zio::zio-streams::$sharedZioVersion",
+  mvn"dev.zio::zio-json::$sharedZioJsonVersion",
   // zio-schema for JSON Schema derivation from case classes
-  mvn"dev.zio::zio-schema::1.8.3",
-  mvn"dev.zio::zio-schema-json::1.8.3",
-  mvn"dev.zio::zio-schema-derivation::1.8.3",
+  mvn"dev.zio::zio-schema::$sharedZioSchemaVersion",
+  mvn"dev.zio::zio-schema-json::$sharedZioSchemaVersion",
+  mvn"dev.zio::zio-schema-derivation::$sharedZioSchemaVersion",
   // zio-blocks/scope for compile-time resource safety (non-experimental alternative to capture checking)
-  mvn"dev.zio::zio-blocks-scope::0.0.33",
+  mvn"dev.zio::zio-blocks-scope::$sharedZioBlocksVersion",
 )
 
 private def sharedPomSettings = PomSettings(
@@ -44,7 +48,7 @@ private def sharedPomSettings = PomSettings(
 )
 
 private def sharedPublishVersion = Task.Input {
-  Task.env.get("PUBLISH_VERSION").getOrElse("0.9.1-SNAPSHOT")
+  Task.env.get("PUBLISH_VERSION").getOrElse("0.9.1")
 }
 
 // Empty Javadoc jar (Scala.js facades trip Scaladoc; we keep parity on JVM).
@@ -124,7 +128,7 @@ object agent extends Module:
 
     def mvnDeps = sharedZioDeps ++ Seq(
       // JVM-only deps for the A2A server runtime + JSON / HTTP.
-      mvn"dev.zio::zio-http::3.0.1",
+      mvn"dev.zio::zio-http::3.11.2",
     )
 
     override def moduleDir = build.moduleDir
@@ -159,8 +163,8 @@ object fastMcp extends BunScalaJSModule with BunPublishModule with PublishModule
 
   def mvnDeps = Seq(
     mvn"com.tjclp::fast-mcp-scala::0.4.0",
-    mvn"dev.zio::zio::2.1.24",
-    mvn"dev.zio::zio-json::0.9.0",
+    mvn"dev.zio::zio::$sharedZioVersion",
+    mvn"dev.zio::zio-json::$sharedZioJsonVersion",
   )
 
   override def scalacOptions = Seq("-experimental")
@@ -185,8 +189,8 @@ object examples extends BunScalaJSModule with ScalafmtModule:
   override def bunBundleTarget = Task { "bun" }
 
   def mvnDeps = Seq(
-    mvn"dev.zio::zio::2.1.24",
-    mvn"dev.zio::zio-streams::2.1.24",
+    mvn"dev.zio::zio::$sharedZioVersion",
+    mvn"dev.zio::zio-streams::$sharedZioVersion",
   )
 
   override def moduleDir = build.moduleDir

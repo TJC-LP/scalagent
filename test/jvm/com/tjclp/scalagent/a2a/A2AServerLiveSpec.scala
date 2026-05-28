@@ -2,7 +2,9 @@ package com.tjclp.scalagent.a2a
 
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
-import java.net.{InetAddress, ServerSocket}
+import java.net.{InetAddress, ServerSocket, URI}
+import java.net.http.{HttpClient, HttpRequest, HttpResponse}
+import java.time.{Duration as JavaDuration}
 
 import munit.FunSuite
 import zio.*
@@ -11,6 +13,7 @@ import zio.json.*
 
 class A2AServerLiveSpec extends FunSuite:
   private val runtime = Runtime.default
+  private val client  = HttpClient.newBuilder().connectTimeout(JavaDuration.ofSeconds(2)).build()
 
   private def runTask[A](task: Task[A]): Future[A] =
     Unsafe.unsafe { implicit unsafe =>
@@ -18,10 +21,32 @@ class A2AServerLiveSpec extends FunSuite:
     }
 
   private def testServer(config: A2AServerLive.Config): Task[A2AServerLiveImpl] =
-    ZIO.attempt(A2AServerLiveImpl(config, runtime))
+    for
+      registry <- A2ARuntimeRegistry.make
+      scopeRef <- Ref.Synchronized.make(Option.empty[Scope.Closeable])
+      server   <- ZIO.attempt(A2AServerLiveImpl(config, runtime, registry, scopeRef))
+    yield server
 
   private def dispatch(server: A2AServerLiveImpl, request: JsonRpcRequest): Task[JsonRpcResponse] =
     server.dispatchJsonRpc(request)
+
+  private def freeLocalPort: Task[Int] =
+    ZIO.attempt {
+      val socket = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+      try socket.getLocalPort
+      finally socket.close()
+    }
+
+  private def get(url: String): Task[(Int, String)] =
+    ZIO.attemptBlocking {
+      val request = HttpRequest
+        .newBuilder(URI.create(url))
+        .timeout(JavaDuration.ofSeconds(2))
+        .GET()
+        .build()
+      val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+      response.statusCode() -> response.body()
+    }
 
   private def resultAs[A: JsonDecoder](response: JsonRpcResponse): Task[A] =
     ZIO.fromEither(
@@ -252,6 +277,34 @@ class A2AServerLiveSpec extends FunSuite:
 
     runTask(program).map { failed =>
       assert(failed, "start should fail when the configured port is already bound")
+    }
+
+  test("JVM create starts zio-http server and serves agent card"):
+    val program =
+      ZIO.scoped {
+        for
+          port <- freeLocalPort
+          config = A2AServerLive.Config(
+            name = "HttpStartupJvmTest",
+            description = "HTTP startup JVM test server",
+            host = "127.0.0.1",
+            port = port,
+            executionOverride = Some(completedExecution),
+          )
+          server <- A2AServerLive
+                      .create(config)
+                      .timeoutFail(new RuntimeException("server did not become ready"))(10.seconds)
+          result <- get(s"http://127.0.0.1:$port${A2APaths.AgentCard}")
+          card   <- ZIO.fromEither(result._2.fromJson[AgentCard].left.map(new RuntimeException(_)))
+        yield (config.url, server.url, result._1, card)
+      }
+
+    runTask(program).map { case (expectedUrl, actualUrl, status, card) =>
+      assertEquals(status, 200)
+      assertEquals(actualUrl, expectedUrl)
+      assertEquals(card.name, "HttpStartupJvmTest")
+      assertEquals(card.description, "HTTP startup JVM test server")
+      assertEquals(card.supportedInterfaces.map(_.url), List(expectedUrl, expectedUrl))
     }
 
   test("JVM taskTimeout fails a hung executionOverride"):
