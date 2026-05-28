@@ -171,16 +171,25 @@ private[a2a] final class A2AServerLiveImpl(
   def url: String = config.url
 
   def start: Task[Unit] =
-    for
-      scope <- Scope.make
-      _     <-
+    serverScopeRef.modifyZIO {
+      case Some(scope) => ZIO.succeed(((), Some(scope)))
+      case None        =>
         (for
-          serverEnv <- (ZLayer.succeed(Server.Config.default.binding(config.host, config.port)) >>> Server.live)
-                         .build(scope)
-          _         <- Server.install(a2aRoutes).provideEnvironment(serverEnv)
-          _         <- serverScopeRef.set(Some(scope))
-        yield ()).catchAllCause(cause => scope.close(Exit.failCause(cause)).ignore *> ZIO.fail(cause.squash))
-    yield ()
+          scope <- Scope.make
+          _     <-
+            (for
+              serverEnv <- (ZLayer.succeed(Server.Config.default.binding(config.host, config.port)) >>> Server.live)
+                             .build(scope)
+              _         <- Server.install(a2aRoutes).provideEnvironment(serverEnv)
+            yield ()).catchAllCause(closeStartupScope(scope, _))
+        yield ((), Some(scope)))
+    }
+
+  private def closeStartupScope(scope: Scope.Closeable, cause: Cause[Throwable]): Task[Nothing] =
+    val failure =
+      if cause.isInterruptedOnly then ZIO.failCause(cause)
+      else ZIO.fail(cause.squash)
+    scope.close(Exit.failCause(cause)).ignore *> failure
 
   def stop: Task[Unit] =
     runtimeRegistry.interruptAll *>

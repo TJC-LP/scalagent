@@ -307,6 +307,27 @@ class A2AServerLiveSpec extends FunSuite:
       assertEquals(card.supportedInterfaces.map(_.url), List(expectedUrl, expectedUrl))
     }
 
+  test("JVM start is idempotent for the same server instance"):
+    val program =
+      for
+        port <- freeLocalPort
+        config = A2AServerLive.Config(
+          name = "IdempotentStartJvmTest",
+          description = "Idempotent start JVM test server",
+          host = "127.0.0.1",
+          port = port,
+          executionOverride = Some(completedExecution),
+        )
+        server <- testServer(config)
+        result <- (for
+                    _      <- server.start.timeoutFail(new RuntimeException("first start did not complete"))(10.seconds)
+                    _      <- server.start.timeoutFail(new RuntimeException("second start did not complete"))(10.seconds)
+                    result <- get(s"http://127.0.0.1:$port${A2APaths.AgentCard}")
+                  yield result).ensuring(server.stop.ignore)
+      yield result._1
+
+    runTask(program).map(status => assertEquals(status, 200))
+
   test("JVM taskTimeout fails a hung executionOverride"):
     val timedOut =
       (_: A2AMessage, _: TaskId, _: ContextId, _: A2AEventPublisher) => ZIO.never

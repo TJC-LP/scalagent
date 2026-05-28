@@ -216,7 +216,7 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.9.1"
 ### 0.9.1 Hotfix Notes
 
 - JVM `A2AServerLive.create` now starts zio-http under an explicit closeable scope, so the server accepts requests and shuts down cleanly when the surrounding ZIO scope is released.
-- The JVM-only zio-http runtime dependency is updated to 3.11.2. Shared Scala.js-facing ZIO dependencies remain pinned to Scala.js 1.20-compatible versions.
+- Runtime dependency pins remain compatible with 0.9.0; this hotfix is limited to the JVM A2A server lifecycle and release metadata.
 
 ### 0.9.0 Upgrade Notes
 

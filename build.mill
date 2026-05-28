@@ -128,7 +128,7 @@ object agent extends Module:
 
     def mvnDeps = sharedZioDeps ++ Seq(
       // JVM-only deps for the A2A server runtime + JSON / HTTP.
-      mvn"dev.zio::zio-http::3.11.2",
+      mvn"dev.zio::zio-http::3.0.1",
     )
 
     override def moduleDir = build.moduleDir
