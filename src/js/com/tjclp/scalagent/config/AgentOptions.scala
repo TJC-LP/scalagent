@@ -405,6 +405,16 @@ object AgentOptions:
     /** Set the model using a string ID (for custom/new models) */
     def withModelId(id: String): AgentOptions = opts.copy(model = Some(Model.fromId(id)))
 
+    /**
+     * Set a built-in model and effort level with compile-time compatibility
+     * checking.
+     *
+     * Use `withModel` + `withEffort` for custom models, custom effort values, or
+     * values discovered at runtime.
+     */
+    def withModelAndEffort(model: Model, effort: Effort)(using SupportsEffort[model.type, effort.type]): AgentOptions =
+      opts.copy(model = Some(model), effort = Some(effort))
+
     def withCwd(c: String): AgentOptions = opts.copy(cwd = Some(c))
 
     /**
@@ -923,7 +933,8 @@ object AgentOptions:
      * Example:
      * {{{
      * options.withEffort(Effort.High)
-     * options.withEffort(Effort.Max)  // Opus 4.6 only
+     * options.withEffort(Effort.Max)  // Opus 4.8/4.7/4.6 or Sonnet 4.6
+     * options.withModelAndEffort(Model.Opus4_8, Effort.Max) // compile-time checked
      * }}}
      */
     def withEffort(e: Effort): AgentOptions =

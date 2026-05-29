@@ -51,6 +51,11 @@ class PackageExportsSpec extends FunSuite:
     val interpreter = ClaudeInterpreter
     assert(interpreter != null)
 
+  test("reasoning config types are available from package object"):
+    val opts = AgentOptions.default.withModelAndEffort(Model.Opus4_8, Effort.Max)
+    assertEquals(opts.model, Some(Model.Opus4_8))
+    assertEquals(opts.effort, Some(Effort.Max))
+
   test("A2A v1 types are available from package object"):
     val iface: AgentInterface = AgentInterface.jsonRpc("http://example.test")
     val card: AgentCard = AgentCard(

@@ -18,10 +18,10 @@ enum Effort:
   /** Deep reasoning (default) */
   case High
 
-  /** Deeper than high (selected Opus models, including Opus 4.7 and 4.8). SDK 0.2.111+. */
+  /** Deeper than high. Supported by Opus 4.8 and Opus 4.7; falls back to High otherwise. */
   case XHigh
 
-  /** Maximum effort (selected Claude 4.x models) */
+  /** Maximum effort. Supported by Opus 4.8, Opus 4.7, Opus 4.6, and Sonnet 4.6. */
   case Max
 
   /** Forward-compatible variant for unknown effort levels */

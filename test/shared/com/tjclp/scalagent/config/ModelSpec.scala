@@ -170,8 +170,14 @@ class ModelSpec extends FunSuite:
       Model.Sonnet4_5,
       Model.Haiku4_5,
       Model.Opus4_5,
+      Model.Opus4_1,
+      Model.Opus4,
       Model.Sonnet4,
+      Model.Sonnet3_7,
       Model.Haiku3_5,
+      Model.Opus3,
+      Model.Sonnet3,
+      Model.Haiku3,
       Model.Custom("test-model")
     )
     models.foreach { model =>

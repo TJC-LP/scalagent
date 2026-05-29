@@ -99,6 +99,12 @@ package object scalagent:
   type AgentOptions = config.AgentOptions
   val AgentOptions = config.AgentOptions
 
+  type Effort = config.Effort
+  val Effort = config.Effort
+
+  type SupportsEffort[M <: Model, E <: Effort] = config.SupportsEffort[M, E]
+  val SupportsEffort = config.SupportsEffort
+
   type CommandName = config.CommandName
   val CommandName = config.CommandName
 
@@ -149,6 +155,9 @@ package object scalagent:
 
   type SystemPromptConfig = config.SystemPromptConfig
   val SystemPromptConfig = config.SystemPromptConfig
+
+  type ThinkingConfig = config.ThinkingConfig
+  val ThinkingConfig = config.ThinkingConfig
 
   type ToolsConfig = config.ToolsConfig
   val ToolsConfig = config.ToolsConfig
