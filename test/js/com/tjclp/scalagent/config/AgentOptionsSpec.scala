@@ -68,6 +68,11 @@ class AgentOptionsSpec extends FunSuite:
 
       AgentOptions.default.withModelAndEffort(Model.Sonnet4_6, Effort.XHigh)
     """))
+    assert(!typeChecks("""
+      import com.tjclp.scalagent.config.*
+
+      AgentOptions.default.withModelAndEffort(Model.Custom("foo"), Effort.Max)
+    """))
 
   test("withCwd sets working directory"):
     val opts = AgentOptions.default.withCwd("/path/to/project")

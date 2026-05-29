@@ -930,6 +930,10 @@ object AgentOptions:
     /**
      * Set the effort level for Claude's responses.
      *
+     * This dynamic method passes values through without compile-time
+     * model/effort compatibility checking. Use `withModelAndEffort` when both
+     * values are built-in literals and you want static validation.
+     *
      * Example:
      * {{{
      * options.withEffort(Effort.High)

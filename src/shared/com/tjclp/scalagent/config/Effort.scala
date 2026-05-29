@@ -18,7 +18,7 @@ enum Effort:
   /** Deep reasoning (default) */
   case High
 
-  /** Deeper than high. Supported by Opus 4.8 and Opus 4.7; falls back to High otherwise. */
+  /** Deeper than high. Supported by Opus 4.8 and Opus 4.7. */
   case XHigh
 
   /** Maximum effort. Supported by Opus 4.8, Opus 4.7, Opus 4.6, and Sonnet 4.6. */
