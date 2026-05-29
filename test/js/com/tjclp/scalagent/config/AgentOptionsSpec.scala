@@ -1,6 +1,7 @@
 package com.tjclp.scalagent.config
 
 import munit.FunSuite
+import scala.compiletime.testing.typeChecks
 import scala.scalajs.js
 import com.tjclp.scalagent.tools.ToolName
 // PermissionMode is in config package, not permissions
@@ -37,6 +38,41 @@ class AgentOptionsSpec extends FunSuite:
     opts.model match
       case Some(Model.Custom(id)) => assertEquals(id, "custom-model-123")
       case other                  => fail(s"Expected Custom model, got $other")
+
+  test("withModelAndEffort sets compile-time validated model and effort"):
+    val opts = AgentOptions.default.withModelAndEffort(Model.Opus4_8, Effort.Max)
+    assertEquals(opts.model, Some(Model.Opus4_8))
+    assertEquals(opts.effort, Some(Effort.Max))
+
+  test("withModelAndEffort accepts supported built-in effort combinations"):
+    assert(typeChecks("""
+      import com.tjclp.scalagent.config.*
+
+      AgentOptions.default.withModelAndEffort(Model.Opus4_8, Effort.XHigh)
+      AgentOptions.default.withModelAndEffort(Model.Opus4_7, Effort.XHigh)
+      AgentOptions.default.withModelAndEffort(Model.Opus4_8, Effort.Max)
+      AgentOptions.default.withModelAndEffort(Model.Opus4_7, Effort.Max)
+      AgentOptions.default.withModelAndEffort(Model.Opus4_6, Effort.Max)
+      AgentOptions.default.withModelAndEffort(Model.Sonnet4_6, Effort.Max)
+      AgentOptions.default.withModelAndEffort(Model.Haiku4_5, Effort.High)
+    """))
+
+  test("withModelAndEffort rejects unsupported built-in effort combinations"):
+    assert(!typeChecks("""
+      import com.tjclp.scalagent.config.*
+
+      AgentOptions.default.withModelAndEffort(Model.Haiku4_5, Effort.Max)
+    """))
+    assert(!typeChecks("""
+      import com.tjclp.scalagent.config.*
+
+      AgentOptions.default.withModelAndEffort(Model.Sonnet4_6, Effort.XHigh)
+    """))
+    assert(!typeChecks("""
+      import com.tjclp.scalagent.config.*
+
+      AgentOptions.default.withModelAndEffort(Model.Custom("foo"), Effort.Max)
+    """))
 
   test("withCwd sets working directory"):
     val opts = AgentOptions.default.withCwd("/path/to/project")

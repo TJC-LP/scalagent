@@ -9,6 +9,16 @@ class ModelSpec extends FunSuite:
   // Enum Values
   // ============================================
 
+  test("Model enum has correct IDs for Claude 4.8 family"):
+    assertEquals(Model.Opus4_8.id, "claude-opus-4-8")
+
+  test("Model enum has correct IDs for Claude 4.7 family"):
+    assertEquals(Model.Opus4_7.id, "claude-opus-4-7")
+
+  test("Model enum has correct IDs for Claude 4.6 family"):
+    assertEquals(Model.Opus4_6.id, "claude-opus-4-6")
+    assertEquals(Model.Sonnet4_6.id, "claude-sonnet-4-6")
+
   test("Model enum has correct IDs for Claude 4.5 family"):
     assertEquals(Model.Sonnet4_5.id, "claude-sonnet-4-5-20250929")
     assertEquals(Model.Haiku4_5.id, "claude-haiku-4-5-20251001")
@@ -37,6 +47,16 @@ class ModelSpec extends FunSuite:
   // ============================================
   // fromId Parsing
   // ============================================
+
+  test("fromId parses known Claude 4.8 models"):
+    assertEquals(Model.fromId("claude-opus-4-8"), Model.Opus4_8)
+
+  test("fromId parses known Claude 4.7 models"):
+    assertEquals(Model.fromId("claude-opus-4-7"), Model.Opus4_7)
+
+  test("fromId parses known Claude 4.6 models"):
+    assertEquals(Model.fromId("claude-opus-4-6"), Model.Opus4_6)
+    assertEquals(Model.fromId("claude-sonnet-4-6"), Model.Sonnet4_6)
 
   test("fromId parses known Claude 4.5 models"):
     assertEquals(Model.fromId("claude-sonnet-4-5-20250929"), Model.Sonnet4_5)
@@ -67,6 +87,13 @@ class ModelSpec extends FunSuite:
 
   test("fromId round-trips with all known models"):
     val knownModels = List(
+      // Claude 4.8 Family
+      Model.Opus4_8,
+      // Claude 4.7 Family
+      Model.Opus4_7,
+      // Claude 4.6 Family
+      Model.Opus4_6,
+      Model.Sonnet4_6,
       // Claude 4.5 Family
       Model.Sonnet4_5,
       Model.Haiku4_5,
@@ -93,9 +120,13 @@ class ModelSpec extends FunSuite:
   // ============================================
 
   test("convenience aliases point to current generation models"):
-    assertEquals(Model.opus, Model.Opus4_7)
+    assertEquals(Model.opus, Model.Opus4_8)
     assertEquals(Model.sonnet, Model.Sonnet4_6)
     assertEquals(Model.haiku, Model.Haiku4_5)
+
+  test("Opus 4.8 maps to claude-opus-4-8"):
+    assertEquals(Model.Opus4_8.id, "claude-opus-4-8")
+    assertEquals(Model.fromId("claude-opus-4-8"), Model.Opus4_8)
 
   test("Opus 4.7 maps to claude-opus-4-7 (SDK 0.2.111+)"):
     assertEquals(Model.Opus4_7.id, "claude-opus-4-7")
@@ -109,11 +140,13 @@ class ModelSpec extends FunSuite:
   // ============================================
 
   test("Model encodes to JSON string"):
+    assertEquals(Model.Opus4_8.toJson, """"claude-opus-4-8"""")
     assertEquals(Model.Sonnet4_5.toJson, """"claude-sonnet-4-5-20250929"""")
     assertEquals(Model.Opus4_5.toJson, """"claude-opus-4-5-20251101"""")
     assertEquals(Model.Haiku4_5.toJson, """"claude-haiku-4-5-20251001"""")
 
   test("Model decodes from JSON string"):
+    assertEquals(""""claude-opus-4-8"""".fromJson[Model], Right(Model.Opus4_8))
     assertEquals(""""claude-sonnet-4-5-20250929"""".fromJson[Model], Right(Model.Sonnet4_5))
     assertEquals(""""claude-opus-4-5-20251101"""".fromJson[Model], Right(Model.Opus4_5))
     assertEquals(""""claude-haiku-4-5-20251001"""".fromJson[Model], Right(Model.Haiku4_5))
@@ -130,11 +163,21 @@ class ModelSpec extends FunSuite:
 
   test("JSON round-trip preserves model"):
     val models = List(
+      Model.Opus4_8,
+      Model.Opus4_7,
+      Model.Opus4_6,
+      Model.Sonnet4_6,
       Model.Sonnet4_5,
       Model.Haiku4_5,
       Model.Opus4_5,
+      Model.Opus4_1,
+      Model.Opus4,
       Model.Sonnet4,
+      Model.Sonnet3_7,
       Model.Haiku3_5,
+      Model.Opus3,
+      Model.Sonnet3,
+      Model.Haiku3,
       Model.Custom("test-model")
     )
     models.foreach { model =>
