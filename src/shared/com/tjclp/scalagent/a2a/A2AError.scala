@@ -1,6 +1,9 @@
 package com.tjclp.scalagent.a2a
 
+import scala.util.Try
+
 import zio.json.*
+import zio.json.ast.Json
 
 /**
  * A2A error codes following JSON-RPC 2.0 and A2A specification.
@@ -51,11 +54,90 @@ final case class A2AError(
   data: Option[String] = None)
     extends Exception(s"A2A Error $code: $message"):
 
-  def toJsonRpcError: JsonRpcError = JsonRpcError(code, message, data.map(d => zio.json.ast.Json.Str(d)))
+  def toJsonRpcError: JsonRpcError =
+    val jsonData =
+      A2AError
+        .errorInfoReason(code)
+        .map { reason =>
+          var errorInfo = Json.Obj(
+            "@type"  -> Json.Str(A2AError.ErrorInfoType),
+            "reason" -> Json.Str(reason),
+            "domain" -> Json.Str(A2AError.ErrorInfoDomain),
+          )
+          data.foreach(detail => errorInfo = errorInfo.add("metadata", Json.Obj("detail" -> Json.Str(detail))))
+          Json.Arr(errorInfo)
+        }
+        .orElse(data.map(Json.Str(_)))
+    JsonRpcError(code, message, jsonData)
+end A2AError
 
 object A2AError:
-  given JsonEncoder[A2AError] = DeriveJsonEncoder.gen[A2AError]
-  given JsonDecoder[A2AError] = DeriveJsonDecoder.gen[A2AError]
+  given JsonEncoder[A2AError] = JsonEncoder[Json].contramap { error =>
+    var obj = Json.Obj(
+      "code"    -> Json.Num(java.math.BigDecimal.valueOf(error.code.toLong)),
+      "message" -> Json.Str(error.message),
+    )
+    error.data.filter(_.nonEmpty).foreach(value => obj = obj.add("data", Json.Str(value)))
+    obj
+  }
+
+  given JsonDecoder[A2AError] = JsonDecoder[Json].mapOrFail { json =>
+    json.asObject.toRight("A2AError must be an object").flatMap { obj =>
+      val fields = obj.toMap
+      for
+        code <- fields
+          .get("code")
+          .toRight("Missing code")
+          .flatMap(_.asNumber.toRight("code must be an int32"))
+          .flatMap(number => Try(number.value.intValueExact).toEither.left.map(_ => "code must be an int32"))
+        message <- fields
+          .get("message")
+          .toRight("Missing message")
+          .flatMap(_.asString.toRight("message must be a string"))
+          .flatMap {
+            case value if value.nonEmpty => Right(value)
+            case _                       => Left("Missing message")
+          }
+        data <- fields.get("data") match
+          case Some(value) => value.asString.toRight("data must be a string").map(Option(_).filter(_.nonEmpty))
+          case None        => Right(None)
+      yield A2AError(code, message, data)
+    }
+  }
+
+  val ErrorInfoType   = "type.googleapis.com/google.rpc.ErrorInfo"
+  val ErrorInfoDomain = "a2a-protocol.org"
+
+  def errorInfoReason(code: Int): Option[String] =
+    code match
+      case A2AErrorCode.TaskNotFound                           => Some("TASK_NOT_FOUND")
+      case A2AErrorCode.TaskNotCancelable                      => Some("TASK_NOT_CANCELABLE")
+      case A2AErrorCode.PushNotificationNotSupported           => Some("PUSH_NOTIFICATION_NOT_SUPPORTED")
+      case A2AErrorCode.UnsupportedOperation                   => Some("UNSUPPORTED_OPERATION")
+      case A2AErrorCode.ContentTypeNotSupported                => Some("CONTENT_TYPE_NOT_SUPPORTED")
+      case A2AErrorCode.InvalidAgentResponse                   => Some("INVALID_AGENT_RESPONSE")
+      case A2AErrorCode.AuthenticatedExtendedCardNotConfigured => Some("EXTENDED_AGENT_CARD_NOT_CONFIGURED")
+      case A2AErrorCode.ExtensionSupportRequired               => Some("EXTENSION_SUPPORT_REQUIRED")
+      case A2AErrorCode.VersionNotSupported                    => Some("VERSION_NOT_SUPPORTED")
+      case _                                                   => None
+
+  def httpStatus(error: A2AError): Int =
+    error.code match
+      case A2AErrorCode.TaskNotFound         => 404
+      case A2AErrorCode.InvalidAgentResponse => 500
+      case A2AErrorCode.InternalError        => 500
+      case _                                 => 400
+
+  def httpStatusName(status: Int): String =
+    status match
+      case 404 => "NOT_FOUND"
+      case 500 => "INTERNAL"
+      case _   => "INVALID_ARGUMENT"
+
+  def fromThrowable(error: Throwable): A2AError =
+    error match
+      case err: A2AError => err
+      case other         => A2AError.internalError(Option(other.getMessage).getOrElse(other.getClass.getName))
 
   // Factory methods for common errors
   def parseError(detail: String): A2AError =
@@ -75,6 +157,9 @@ object A2AError:
 
   def taskNotFound(taskId: TaskId): A2AError =
     A2AError(A2AErrorCode.TaskNotFound, s"Task not found: ${taskId.value}")
+
+  def pushNotificationConfigNotFound(configId: String): A2AError =
+    A2AError(A2AErrorCode.TaskNotFound, s"Push notification config not found: $configId")
 
   def taskNotCancelable(taskId: TaskId): A2AError =
     A2AError(A2AErrorCode.TaskNotCancelable, s"Task not cancelable: ${taskId.value}")

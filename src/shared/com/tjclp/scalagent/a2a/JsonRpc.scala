@@ -1,7 +1,42 @@
 package com.tjclp.scalagent.a2a
 
+import scala.util.Try
+
 import zio.json.*
 import zio.json.ast.Json
+
+private object JsonRpcJson:
+  def objectFields(json: Json, label: String): Either[String, Map[String, Json]] =
+    json.asObject.map(_.toMap).toRight(s"$label must be an object")
+
+  def requiredString(fields: Map[String, Json], name: String): Either[String, String] =
+    fields
+      .get(name)
+      .toRight(s"Missing $name")
+      .flatMap(_.asString.toRight(s"$name must be a string"))
+      .flatMap {
+        case value if value.nonEmpty => Right(value)
+        case _                       => Left(s"Missing $name")
+      }
+
+  def jsonRpcVersion(fields: Map[String, Json]): Either[String, String] =
+    requiredString(fields, "jsonrpc").flatMap {
+      case A2AProtocol.JsonRpcVersion => Right(A2AProtocol.JsonRpcVersion)
+      case _                          => Left("""jsonrpc must be "2.0"""")
+    }
+
+  def optionalId(fields: Map[String, Json]): Either[String, Option[JsonRpcId]] =
+    fields.get("id") match
+      case Some(value) => value.as[JsonRpcId].map(Some(_))
+      case None        => Right(None)
+
+  def requiredInt(fields: Map[String, Json], name: String): Either[String, Int] =
+    fields
+      .get(name)
+      .toRight(s"Missing $name")
+      .flatMap(_.asNumber.toRight(s"$name must be an int32"))
+      .flatMap(number => Try(number.value.intValueExact).toEither.left.map(_ => s"$name must be an int32"))
+end JsonRpcJson
 
 /** JSON-RPC 2.0 request structure */
 final case class JsonRpcRequest(
@@ -13,8 +48,36 @@ final case class JsonRpcRequest(
   def isNotification: Boolean = id.isEmpty
 
 object JsonRpcRequest:
-  given JsonEncoder[JsonRpcRequest] = DeriveJsonEncoder.gen[JsonRpcRequest]
-  given JsonDecoder[JsonRpcRequest] = DeriveJsonDecoder.gen[JsonRpcRequest]
+  def parse(body: String): Either[A2AError, JsonRpcRequest] =
+    body
+      .fromJson[Json]
+      .left
+      .map(A2AError.parseError)
+      .flatMap(_.as[JsonRpcRequest].left.map(A2AError.invalidRequest))
+      .flatMap { request =>
+        if request.id.isDefined then Right(request)
+        else Left(A2AError.invalidRequest("Missing id"))
+      }
+
+  given JsonEncoder[JsonRpcRequest] = JsonEncoder[Json].contramap { request =>
+    var obj = Json.Obj(
+      "jsonrpc" -> Json.Str(A2AProtocol.JsonRpcVersion),
+      "method"  -> Json.Str(request.method),
+    )
+    request.params.foreach(value => obj = obj.add("params", value))
+    request.id.foreach(value => obj = obj.add("id", value.toJson))
+    obj
+  }
+
+  given JsonDecoder[JsonRpcRequest] = JsonDecoder[Json].mapOrFail { json =>
+    JsonRpcJson.objectFields(json, "JsonRpcRequest").flatMap { fields =>
+      for
+        version <- JsonRpcJson.jsonRpcVersion(fields)
+        method  <- JsonRpcJson.requiredString(fields, "method")
+        id      <- JsonRpcJson.optionalId(fields)
+      yield JsonRpcRequest(jsonrpc = version, method = method, params = fields.get("params"), id = id)
+    }
+  }
 
   /** Create a request with auto-generated ID */
   def apply(method: String, params: Json): JsonRpcRequest =
@@ -23,6 +86,7 @@ object JsonRpcRequest:
   /** Create a notification (no response expected) */
   def notification(method: String, params: Json): JsonRpcRequest =
     JsonRpcRequest(method = method, params = Some(params), id = None)
+end JsonRpcRequest
 
 /** JSON-RPC 2.0 response structure */
 final case class JsonRpcResponse(
@@ -43,8 +107,35 @@ final case class JsonRpcResponse(
       case None      => result.toRight(JsonRpcError(A2AErrorCode.InternalError, "No result"))
 
 object JsonRpcResponse:
-  given JsonEncoder[JsonRpcResponse] = DeriveJsonEncoder.gen[JsonRpcResponse]
-  given JsonDecoder[JsonRpcResponse] = DeriveJsonDecoder.gen[JsonRpcResponse]
+  given JsonEncoder[JsonRpcResponse] = JsonEncoder[Json].contramap { response =>
+    var obj = Json.Obj("jsonrpc" -> Json.Str(A2AProtocol.JsonRpcVersion))
+    response.error match
+      case Some(error) =>
+        obj = obj.add("error", error.toJsonAST.toOption.get)
+      case None =>
+        response.result.foreach(value => obj = obj.add("result", value))
+    response.id.foreach(value => obj = obj.add("id", value.toJson))
+    obj
+  }
+
+  given JsonDecoder[JsonRpcResponse] = JsonDecoder[Json].mapOrFail { json =>
+    JsonRpcJson.objectFields(json, "JsonRpcResponse").flatMap { fields =>
+      val result = fields.get("result")
+      val error  = fields.get("error")
+
+      for
+        version <- JsonRpcJson.jsonRpcVersion(fields)
+        _       <-
+          if result.isDefined == error.isDefined then
+            Left("JSON-RPC response must include exactly one of result or error")
+          else Right(())
+        decodedError <- error match
+          case Some(value) => value.as[JsonRpcError].map(Some(_))
+          case None        => Right(None)
+        id <- JsonRpcJson.optionalId(fields)
+      yield JsonRpcResponse(jsonrpc = version, result = result, error = decodedError, id = id)
+    }
+  }
 
   /** Create a success response */
   def success(id: Option[JsonRpcId], result: Json): JsonRpcResponse =
@@ -80,8 +171,23 @@ final case class JsonRpcError(
   def toA2AError: A2AError = A2AError(code, message, data.map(_.toString))
 
 object JsonRpcError:
-  given JsonEncoder[JsonRpcError] = DeriveJsonEncoder.gen[JsonRpcError]
-  given JsonDecoder[JsonRpcError] = DeriveJsonDecoder.gen[JsonRpcError]
+  given JsonEncoder[JsonRpcError] = JsonEncoder[Json].contramap { error =>
+    var obj = Json.Obj(
+      "code"    -> Json.Num(java.math.BigDecimal.valueOf(error.code.toLong)),
+      "message" -> Json.Str(error.message),
+    )
+    error.data.foreach(value => obj = obj.add("data", value))
+    obj
+  }
+
+  given JsonDecoder[JsonRpcError] = JsonDecoder[Json].mapOrFail { json =>
+    JsonRpcJson.objectFields(json, "JsonRpcError").flatMap { fields =>
+      for
+        code    <- JsonRpcJson.requiredInt(fields, "code")
+        message <- JsonRpcJson.requiredString(fields, "message")
+      yield JsonRpcError(code, message, fields.get("data"))
+    }
+  }
 
 /** JSON-RPC ID - can be string or number */
 enum JsonRpcId:
@@ -106,8 +212,9 @@ object JsonRpcId:
 
   given JsonDecoder[JsonRpcId] = JsonDecoder[Json].mapOrFail {
     case Json.Str(s) => Right(Str(s))
-    case Json.Num(n) => Right(Num(n.longValue))
-    case other       => Left(s"Invalid JSON-RPC id: $other")
+    case Json.Num(n) =>
+      Try(n.longValueExact).toEither.left.map(_ => "JSON-RPC id number must be an integer").map(Num(_))
+    case other => Left(s"Invalid JSON-RPC id: $other")
   }
 
 /** A2A protocol methods */

@@ -165,10 +165,9 @@ private final class A2AClientLive(
     ZIO.succeed(currentCard)
 
   override def send(message: A2AMessage, config: Option[MessageSendConfiguration]): Task[A2ATask] =
-    val effective = config.getOrElse(MessageSendConfiguration.default.copy(returnImmediately = false))
     rpc[A2ARequest.MessageSend, A2AResponse.SendMessageResult](
       A2AMethod.MessageSend,
-      A2ARequest.MessageSend(message = message, configuration = Some(effective), tenant = iface.tenant),
+      A2ARequest.MessageSend(message = message, configuration = config, tenant = iface.tenant),
     ).map {
       case A2AResponse.SendMessageResult.TaskResult(task)               => task
       case A2AResponse.SendMessageResult.MessageResult(responseMessage) =>
@@ -179,10 +178,9 @@ private final class A2AClientLive(
     message: A2AMessage,
     config: Option[MessageSendConfiguration],
   ): ZStream[Any, Throwable, A2AResponse.StreamEvent] =
-    val effective = config.getOrElse(MessageSendConfiguration.default.copy(returnImmediately = false))
     rpcStream[A2ARequest.MessageSend](
       A2AMethod.MessageStream,
-      A2ARequest.MessageSend(message = message, configuration = Some(effective), tenant = iface.tenant),
+      A2ARequest.MessageSend(message = message, configuration = config, tenant = iface.tenant),
     )
 
   override def getTask(taskId: TaskId, historyLength: Option[Int]): Task[A2ATask] =

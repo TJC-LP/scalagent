@@ -1,6 +1,7 @@
 package com.tjclp.scalagent.a2a
 
 import scala.collection.mutable
+import scala.util.Try
 
 import zio.*
 import zio.stream.*
@@ -263,6 +264,10 @@ private[a2a] final class InMemoryTaskStoreImpl extends A2ATaskStore:
   private val tasks = mutable.Map.empty[(String, String), A2ATask]
   private val lock  = new AnyRef
 
+  private enum PageToken derives CanEqual:
+    case Offset(value: Int)
+    case Cursor(timestamp: String, taskId: String)
+
   private def key(id: TaskId, tenant: Option[String]): (String, String) =
     (tenant.getOrElse(""), id.value)
 
@@ -276,7 +281,8 @@ private[a2a] final class InMemoryTaskStoreImpl extends A2ATaskStore:
     ZIO.succeed(lock.synchronized { tasks.remove(key(taskId, tenant)); () })
 
   def list(params: A2ARequest.TasksList, tenant: Option[String]): Task[A2AResponse.ListTasksResult] =
-    validateListParams(params) *> ZIO.succeed {
+    for statusTimestampAfter <- validateListParams(params)
+    yield
       val pageSize = params.pageSize.getOrElse(50)
       val all      = lock.synchronized {
         tasks.collect {
@@ -286,24 +292,35 @@ private[a2a] final class InMemoryTaskStoreImpl extends A2ATaskStore:
       val filtered = all
         .filter(task => params.contextId.forall(_ == task.contextId))
         .filter(task => params.status.forall(_ == task.status.state))
-        .filter(task => params.statusTimestampAfter.forall { after => task.status.timestamp.exists(_ >= after) })
-        .sortBy(task => (task.status.timestamp.getOrElse(""), task.id.value))
+        .filter(task =>
+          statusTimestampAfter.forall(after => task.status.timestamp.flatMap(parseTimestamp).exists(!_.isBefore(after)))
+        )
+        .sortBy(taskSortKey)
         .reverse
-      val offset = params.pageToken.flatMap(_.toIntOption).getOrElse(0)
-      val page   = filtered.slice(offset, offset + pageSize)
-      val next   = Option.when(offset + pageSize < filtered.length)((offset + pageSize).toString)
+      val pageSource = decodePageToken(params.pageToken.getOrElse("")).getOrElse(PageToken.Offset(0)) match
+        case PageToken.Offset(offset) =>
+          filtered.drop(offset)
+        case PageToken.Cursor(timestamp, taskId) =>
+          filtered.filter(task =>
+            summon[Ordering[(Long, Int, String)]].lt(taskSortKey(task), cursorSortKey(timestamp, taskId))
+          )
+      val page = pageSource.take(pageSize)
+      val next = page.lastOption
+        .filter(_ => pageSource.length > pageSize)
+        .map(task => encodePageToken(taskCursor(task)))
+      val includeArtifacts = params.includeArtifacts.getOrElse(false)
       A2AResponse.ListTasksResult(
         tasks = page.map { task =>
           val withHistory = A2ATaskStore.applyHistoryLength(task, params.historyLength)
-          if params.includeArtifacts.getOrElse(false) then withHistory else withHistory.copy(artifacts = Nil)
+          if includeArtifacts then withHistory else withHistory.copy(artifacts = Nil)
         },
         nextPageToken = next,
         pageSize = pageSize,
         totalSize = filtered.length,
+        includeArtifacts = includeArtifacts,
       )
-    }
 
-  private def validateListParams(params: A2ARequest.TasksList): Task[Unit] =
+  private def validateListParams(params: A2ARequest.TasksList): Task[Option[java.time.Instant]] =
     params.pageSize match
       case Some(size) if size < 1 || size > 100 =>
         ZIO.fail(A2AError.invalidParams(s"pageSize must be between 1 and 100 inclusive, got $size"))
@@ -314,9 +331,76 @@ private[a2a] final class InMemoryTaskStoreImpl extends A2ATaskStore:
           case _ =>
             params.pageToken match
               case Some(token) if token.nonEmpty && token.toIntOption.isEmpty =>
+                decodePageToken(token) match
+                  case Some(_) => validateStatusTimestampAfter(params.statusTimestampAfter)
+                  case None    => ZIO.fail(A2AError.invalidParams("Invalid pageToken"))
+              case Some(token) if token.toIntOption.exists(_ < 0) =>
                 ZIO.fail(A2AError.invalidParams("Invalid pageToken"))
               case _ =>
-                ZIO.unit
+                validateStatusTimestampAfter(params.statusTimestampAfter)
+
+  private def validateStatusTimestampAfter(value: Option[String]): Task[Option[java.time.Instant]] =
+    value match
+      case Some(raw) =>
+        ZIO
+          .fromOption(parseTimestamp(raw))
+          .map(Some(_))
+          .orElseFail(
+            A2AError.invalidParams(s"statusTimestampAfter must be an ISO 8601 UTC timestamp ending in Z, got $raw")
+          )
+      case None =>
+        ZIO.succeed(None)
+
+  private def parseTimestamp(value: String): Option[java.time.Instant] =
+    if value.endsWith("Z") then Try(java.time.Instant.parse(value)).toOption
+    else None
+
+  private def timestampSortKey(value: String): (Long, Int) =
+    parseTimestamp(value).map(instant => (instant.getEpochSecond, instant.getNano)).getOrElse((Long.MinValue, 0))
+
+  private def taskSortKey(task: A2ATask): (Long, Int, String) =
+    val (epochSecond, nano) = task.status.timestamp.map(timestampSortKey).getOrElse((Long.MinValue, 0))
+    (epochSecond, nano, task.id.value)
+
+  private def cursorSortKey(timestamp: String, taskId: String): (Long, Int, String) =
+    val (epochSecond, nano) = timestampSortKey(timestamp)
+    (epochSecond, nano, taskId)
+
+  private def taskCursor(task: A2ATask): PageToken.Cursor =
+    val timestamp = task.status.timestamp
+      .flatMap(parseTimestamp)
+      .map(_.toString)
+      .getOrElse(task.status.timestamp.getOrElse(""))
+    PageToken.Cursor(timestamp, task.id.value)
+
+  private def encodePageToken(cursor: PageToken.Cursor): String =
+    s"v1:${hexEncode(cursor.timestamp)}:${hexEncode(cursor.taskId)}"
+
+  private def decodePageToken(raw: String): Option[PageToken] =
+    if raw.isEmpty then Some(PageToken.Offset(0))
+    else raw.toIntOption.filter(_ >= 0).map(PageToken.Offset.apply).orElse(decodeCursor(raw))
+
+  private def decodeCursor(raw: String): Option[PageToken.Cursor] =
+    if !raw.startsWith("v1:") then None
+    else
+      raw.drop("v1:".length).split(":", -1).toList match
+        case timestampHex :: taskIdHex :: Nil =>
+          for
+            timestamp <- hexDecode(timestampHex).filter(value => value.isEmpty || parseTimestamp(value).isDefined)
+            taskId    <- hexDecode(taskIdHex).filter(_.nonEmpty)
+          yield PageToken.Cursor(timestamp, taskId)
+        case _ =>
+          None
+
+  private def hexEncode(value: String): String =
+    value.flatMap { char =>
+      val hex = char.toInt.toHexString
+      "0" * (4 - hex.length) + hex
+    }
+
+  private def hexDecode(value: String): Option[String] =
+    if value.length % 4 != 0 then None
+    else Try(value.grouped(4).map(Integer.parseInt(_, 16).toChar).mkString).toOption
 end InMemoryTaskStoreImpl
 
 /**
@@ -327,6 +411,99 @@ private[a2a] final case class ServerCallContext(
   tenant: Option[String] = None,
   requestedVersion: Option[String] = None,
   requestedExtensions: List[String] = Nil)
+
+private[a2a] object A2AServerAgentCard:
+  def apply(
+    name: String,
+    description: String,
+    baseUrl: String,
+    capabilities: AgentCapabilities,
+    skills: List[AgentSkill],
+    tenant: Option[String],
+  ): AgentCard =
+    AgentCard(
+      name = name,
+      description = description,
+      supportedInterfaces = supportedInterfaces(baseUrl, tenant),
+      capabilities = capabilities,
+      skills = AgentCard.requiredSkills(name, description, skills),
+    )
+
+  def supportedInterfaces(baseUrl: String, tenant: Option[String]): List[AgentInterface] =
+    List(
+      AgentInterface.jsonRpc(baseUrl, tenant),
+      AgentInterface.rest(baseUrl, tenant),
+    )
+end A2AServerAgentCard
+
+private[a2a] object A2AServiceParameters:
+  def validate(
+    agentCard: AgentCard,
+    capabilities: AgentCapabilities,
+    context: ServerCallContext,
+    binding: A2ATransport,
+  ): Either[A2AError, Unit] =
+    validateVersionAndTenant(agentCard, context, binding).flatMap(_ =>
+      validateRequiredExtensions(capabilities, context)
+    )
+
+  def validateVersion(
+    agentCard: AgentCard,
+    context: ServerCallContext,
+    binding: A2ATransport,
+  ): Either[A2AError, Unit] =
+    val requested = requestedVersion(context)
+    if matchingInterfaces(agentCard, context, binding).nonEmpty then Right(())
+    else Left(A2AError.versionNotSupported(requested))
+
+  def validateVersionAndTenant(
+    agentCard: AgentCard,
+    context: ServerCallContext,
+    binding: A2ATransport,
+  ): Either[A2AError, Unit] =
+    val requested = requestedVersion(context)
+    val matching  = matchingInterfaces(agentCard, context, binding)
+    if matching.isEmpty then Left(A2AError.versionNotSupported(requested))
+    else validateInterfaceTenant(matching, context)
+
+  def validateRequiredExtensions(
+    capabilities: AgentCapabilities,
+    context: ServerCallContext,
+  ): Either[A2AError, Unit] =
+    val requested = context.requestedExtensions.toSet
+    capabilities.extensions.find(extension => extension.required && !requested.contains(extension.uri)) match
+      case Some(extension) => Left(A2AError.extensionSupportRequired(extension.uri))
+      case None            => Right(())
+
+  def activatedExtensions(capabilities: AgentCapabilities, context: ServerCallContext): List[String] =
+    val supported = capabilities.extensions.map(_.uri).toSet
+    context.requestedExtensions.filter(supported.contains).distinct
+
+  private def requestedVersion(context: ServerCallContext): String =
+    context.requestedVersion.map(_.trim).filter(_.nonEmpty).getOrElse("0.3")
+
+  private def matchingInterfaces(
+    agentCard: AgentCard,
+    context: ServerCallContext,
+    binding: A2ATransport,
+  ): List[AgentInterface] =
+    val version = A2AProtocol.negotiationVersion(requestedVersion(context))
+    agentCard.supportedInterfaces.filter(iface =>
+      iface.protocolBinding == binding && A2AProtocol.negotiationVersion(iface.protocolVersion) == version
+    )
+
+  private def validateInterfaceTenant(
+    interfaces: List[AgentInterface],
+    context: ServerCallContext,
+  ): Either[A2AError, Unit] =
+    val tenants = interfaces.flatMap(_.tenant.map(_.trim).filter(_.nonEmpty)).distinct
+    if tenants.size < interfaces.size then Right(())
+    else
+      context.tenant.map(_.trim).filter(_.nonEmpty) match
+        case None => Left(A2AError.invalidParams("tenant is required for selected AgentInterface"))
+        case Some(tenant) if tenants.contains(tenant) => Right(())
+        case Some(_) => Left(A2AError.invalidParams("tenant must match selected AgentInterface tenant"))
+end A2AServiceParameters
 
 private[a2a] type TaskRuntimeKey = (String, String)
 

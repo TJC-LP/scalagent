@@ -105,11 +105,14 @@ end A2AClientV03
 
 private final class A2AClientV03Live(jsClient: JsA2AClient) extends A2AClientV03:
   private def toJsConfig(config: MessageSendConfiguration): JsMessageSendConfiguration =
+    val pushConfig = config.taskPushNotificationConfig.map(A2AConverters.toJs)
     JsBuilders.messageSendConfiguration(
-      acceptedOutputModes = Some(config.acceptedOutputModes),
+      acceptedOutputModes = Option(config.acceptedOutputModes).filter(_.nonEmpty),
       blocking = config.blocking,
+      returnImmediately = Some(config.returnImmediately),
       historyLength = config.historyLength,
-      pushNotificationConfig = config.pushNotificationConfig.map(A2AConverters.toJs),
+      pushNotificationConfig = pushConfig,
+      taskPushNotificationConfig = pushConfig,
     )
 
   override def agentCard: Task[AgentCard] =
@@ -213,8 +216,8 @@ object A2AServerV03:
   final case class Config(
     name: String,
     description: String,
-    host: String = "localhost",
-    port: Int = 3000,
+    host: String = A2AServerDefaults.JsHost,
+    port: Int = A2AServerDefaults.Port,
     agentOptions: AgentOptions = AgentOptions.default,
     executionMode: ExecutionMode = ExecutionMode.Default,
     taskTimeout: Option[Duration] = None,
@@ -231,7 +234,7 @@ object A2AServerV03:
         description = description,
         supportedInterfaces = List(AgentInterface(url = url, protocolVersion = "0.3.0")),
         capabilities = capabilities,
-        skills = skills,
+        skills = AgentCard.requiredSkills(name, description, skills),
       )
   end Config
 
@@ -337,7 +340,7 @@ private final class A2AServerV03Live(config: A2AServerV03.Config, runtime: Runti
           .ensuring(invocation.cleanup.ignore)
       }
 
-    withTaskTimeout(taskId, effect).flatMap {
+    A2ATaskTimeout(taskId, config.taskTimeout, effect).flatMap {
       case (result, artifacts) =>
         val responseText =
           result.outcome.resultText
@@ -368,13 +371,6 @@ private final class A2AServerV03Live(config: A2AServerV03.Config, runtime: Runti
           publishStatusUpdate(taskId, contextId, bus, TaskStatus.working(Some(statusMessage)))
         )
       }
-
-  private def withTaskTimeout[A](taskId: TaskId, effect: Task[A]): Task[A] =
-    config.taskTimeout match
-      case Some(timeout) =>
-        effect.timeoutFail(new TimeoutException(s"A2A task ${taskId.value} timed out after $timeout"))(timeout)
-      case None =>
-        effect
 
   private def publishFailure(
     taskId: TaskId,
@@ -495,9 +491,13 @@ trait A2AServerAppV03[Self <: Singleton] extends ZIOAppDefault:
   def name: String = getClass.getSimpleName.stripSuffix("$")
   def description: String
   def host: String =
-    sys.env.get("A2A_HOST").orElse(sys.env.get("SERVICE_HOST")).getOrElse("localhost")
+    sys.env.get("A2A_HOST").orElse(sys.env.get("SERVICE_HOST")).getOrElse(A2AServerDefaults.JsHost)
   def port: Int =
-    sys.env.get("A2A_PORT").orElse(sys.env.get("SERVICE_PORT")).flatMap(_.toIntOption).getOrElse(3000)
+    sys.env
+      .get("A2A_PORT")
+      .orElse(sys.env.get("SERVICE_PORT"))
+      .flatMap(_.toIntOption)
+      .getOrElse(A2AServerDefaults.Port)
   def agentOptions: AgentOptions                                                  = AgentOptions.default
   def agentOptionsZIO: Task[AgentOptions]                                         = ZIO.succeed(agentOptions)
   def skills: List[AgentSkill]                                                    = Nil

@@ -24,14 +24,14 @@ trait A2AServerApp[Self <: Singleton] extends ZIOAppDefault:
   def description: String
 
   def host: String =
-    sys.env.get("A2A_HOST").orElse(sys.env.get("SERVICE_HOST")).getOrElse("localhost")
+    sys.env.get("A2A_HOST").orElse(sys.env.get("SERVICE_HOST")).getOrElse(A2AServerDefaults.JsHost)
 
   def port: Int =
     sys.env
       .get("A2A_PORT")
       .orElse(sys.env.get("SERVICE_PORT"))
       .flatMap(_.toIntOption)
-      .getOrElse(3000)
+      .getOrElse(A2AServerDefaults.Port)
 
   def agentOptions: AgentOptions = AgentOptions.default
 

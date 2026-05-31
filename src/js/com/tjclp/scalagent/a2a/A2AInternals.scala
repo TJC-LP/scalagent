@@ -122,15 +122,24 @@ private[scalagent] object A2AJsonRpcRequests:
   private def normalizeConfiguration(params: js.Dynamic, blocking: Boolean): Boolean =
     val configValue = params.selectDynamic("configuration").asInstanceOf[js.Any]
     if configValue == null || js.isUndefined(configValue) then
-      params.updateDynamic("configuration")(js.Dynamic.literal(blocking = blocking))
+      params.updateDynamic("configuration")(js.Dynamic.literal(blocking = blocking, returnImmediately = !blocking))
       true
     else
-      val config        = configValue.asInstanceOf[js.Dynamic]
-      val blockingValue = config.selectDynamic("blocking").asInstanceOf[js.Any]
-      if blockingValue == null || js.isUndefined(blockingValue) then
-        config.updateDynamic("blocking")(blocking)
-        true
-      else false
+      val config                 = configValue.asInstanceOf[js.Dynamic]
+      val blockingValue          = config.selectDynamic("blocking").asInstanceOf[js.Any]
+      val returnImmediatelyValue = config.selectDynamic("returnImmediately").asInstanceOf[js.Any]
+      val setBlocking            =
+        if blockingValue == null || js.isUndefined(blockingValue) then
+          config.updateDynamic("blocking")(blocking)
+          true
+        else false
+      val setReturnImmediately =
+        if returnImmediatelyValue == null || js.isUndefined(returnImmediatelyValue) then
+          config.updateDynamic("returnImmediately")(!blocking)
+          true
+        else false
+      setBlocking || setReturnImmediately
+  end normalizeConfiguration
 end A2AJsonRpcRequests
 
 private[scalagent] object BunJsonRpcResponses:
@@ -251,10 +260,10 @@ private[scalagent] object BunJsonRpcResponses:
     else js.Promise.resolve(())
 
   private def formatSseEvent(event: js.Any): String =
-    s"data: ${JsJSON.stringify(event)}\n\n"
+    A2AHttpBinding.sseDataFrame(JsJSON.stringify(event))
 
   private def formatSseErrorEvent(error: js.Any): String =
-    s"event: error\ndata: ${JsJSON.stringify(error)}\n\n"
+    A2AHttpBinding.sseErrorFrame(JsJSON.stringify(error))
 
   private def jsonRpcErrorBody(requestId: js.Any, error: js.Any): js.Any =
     js.Dynamic.literal(

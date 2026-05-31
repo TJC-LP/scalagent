@@ -1,5 +1,7 @@
 package com.tjclp.scalagent.a2a
 
+import scala.util.Try
+
 import zio.*
 import zio.stream.*
 
@@ -29,9 +31,13 @@ private[a2a] final class A2ARequestHandler(
   runtimeRegistry: A2ARuntimeRegistry,
   pushSender: A2APushNotificationSender,
   agentCardProvider: () => AgentCard,
+  extendedAgentCardProvider: () => Option[AgentCard],
   executeRun: A2ARequestHandler.ExecuteRun):
 
   import A2ARequestHandler.PreparedRun
+
+  private enum PushConfigPageToken derives CanEqual:
+    case Offset(value: Int)
 
   private val eventPersister: Option[EventStorePersister] =
     config.eventStore.map(EventStorePersister(_, config.eventStoreAppendTimeout))
@@ -83,8 +89,41 @@ private[a2a] final class A2ARequestHandler(
   def getTask(params: A2ARequest.TasksGet, context: ServerCallContext): Task[A2ATask] =
     validateHistoryLength(params.historyLength) *>
       taskStore.load(params.id, context.tenant).flatMap {
-        case Some(task) => ZIO.succeed(A2ATaskStore.applyHistoryLength(task, params.historyLength))
-        case None       => ZIO.fail(A2AError.taskNotFound(params.id))
+        case Some(task) =>
+          reconcileOrphaned(task, context).map(A2ATaskStore.applyHistoryLength(_, params.historyLength))
+        case None => ZIO.fail(A2AError.taskNotFound(params.id))
+      }
+
+  /**
+   * Durable-completion safety net. A non-terminal task with no active runtime
+   * bus is orphaned: its forked execution ended without writing a terminal
+   * status — the server was restarted/recycled, or the run died — so it would
+   * otherwise report `working` forever. Transition it to terminal `failed` and
+   * persist, so a `tasks/get` poll self-heals. An active bus means the run is
+   * legitimately in flight (or just reserved in `prepare`), so leave it alone.
+   *
+   * Scope: correct for a single web-tier replica (the registry reflects every
+   * active run on this process). A multi-replica deployment would need a shared
+   * runtime registry before relying on this, or a run on replica B looks
+   * orphaned to replica A. A live run that hangs WITHOUT ending is not covered
+   * here (its bus is still active) — bound that with `Config.taskTimeout`.
+   */
+  private def reconcileOrphaned(task: A2ATask, context: ServerCallContext): Task[A2ATask] =
+    if task.isTerminal then ZIO.succeed(task)
+    else
+      runtimeRegistry.bus(taskRuntimeKey(task.id, context)).flatMap {
+        case Some(_) => ZIO.succeed(task)
+        case None    =>
+          val message = A2AMessage
+            .agentText(
+              "Task interrupted: no active run (the server restarted or the run ended without " +
+                "completing). Resend the message to retry.",
+              Some(task.contextId),
+            )
+            .copy(taskId = Some(task.id))
+          val failed = task.copy(status = TaskStatus.failed(message))
+          ZIO.logWarning(s"Reconciling orphaned non-terminal task ${task.id.value} -> failed") *>
+            taskStore.save(failed, context.tenant).as(failed)
       }
 
   def listTasks(params: A2ARequest.TasksList, context: ServerCallContext): Task[A2AResponse.ListTasksResult] =
@@ -124,6 +163,8 @@ private[a2a] final class A2ARequestHandler(
   def resubscribe(params: A2ARequest.TasksResubscribe, context: ServerCallContext)
     : Task[ZStream[Any, Throwable, A2AResponse.StreamEvent]] =
     requireStreaming *> taskStore.load(params.id, context.tenant).flatMap {
+      case Some(task) if task.isTerminal =>
+        ZIO.fail(A2AError.unsupportedOperation(s"Task ${params.id.value} is terminal and cannot be subscribed"))
       case Some(task) =>
         runtimeRegistry.bus(taskRuntimeKey(params.id, context)).flatMap {
           case Some(bus) => ZIO.succeed(ZStream.succeed(A2AResponse.StreamEvent.TaskSnapshot(task)) ++ bus.stream)
@@ -192,32 +233,40 @@ private[a2a] final class A2ARequestHandler(
       pushStore.load(params.taskId, context.tenant).flatMap { configs =>
         configs.find(_.id.contains(params.id)) match
           case Some(config) => ZIO.succeed(config)
-          case None         => ZIO.fail(A2AError.invalidParams(s"Push notification config not found: ${params.id}"))
+          case None         => ZIO.fail(A2AError.pushNotificationConfigNotFound(params.id))
       }
 
   def listPushConfigs(params: A2ARequest.PushNotificationConfigList, context: ServerCallContext)
     : Task[A2AResponse.PushNotificationConfigListResult] =
-    requirePush *> ensureTask(params.taskId, context) *>
+    requirePush *> ensureTask(params.taskId, context) *> validatePushConfigListParams(params) *>
       pushStore
         .load(params.taskId, context.tenant)
-        .map(configs => A2AResponse.PushNotificationConfigListResult(configs))
+        .map(paginatePushConfigs(_, params))
 
   def deletePushConfig(params: A2ARequest.PushNotificationConfigDelete, context: ServerCallContext): Task[Unit] =
     requirePush *> ensureTask(params.taskId, context) *> pushStore.delete(params.taskId, context.tenant, params.id)
 
   def getExtendedAgentCard(context: ServerCallContext): Task[AgentCard] =
-    if config.capabilities.extendedAgentCard then ZIO.succeed(agentCard)
-    else ZIO.fail(A2AError.authenticatedExtendedCardNotConfigured)
+    if !agentCard.capabilities.extendedAgentCard then
+      ZIO.fail(A2AError.unsupportedOperation(A2AMethod.GetAuthenticatedExtendedCard))
+    else ZIO.fromOption(extendedAgentCardProvider()).orElseFail(A2AError.authenticatedExtendedCardNotConfigured)
 
   private def prepare(params: A2ARequest.MessageSend, context: ServerCallContext): Task[PreparedRun] =
     val incoming = params.message
-    val taskId   = incoming.taskId.getOrElse(TaskId.generate)
-    val key      = taskRuntimeKey(taskId, context)
     for
       _        <- validateHistoryLength(params.configuration.flatMap(_.historyLength))
       _        <- validateInlinePushConfig(params.configuration)
-      existing <- taskStore.load(taskId, context.tenant)
-      _        <- existing match
+      _        <- validateInboundMessage(incoming)
+      existing <- incoming.taskId match
+        case Some(id) =>
+          taskStore.load(id, context.tenant).flatMap {
+            case Some(task) => ZIO.succeed(Some(task))
+            case None       => ZIO.fail(A2AError.taskNotFound(id))
+          }
+        case None => ZIO.none
+      taskId = incoming.taskId.getOrElse(TaskId.generate)
+      key    = taskRuntimeKey(taskId, context)
+      _ <- existing match
         case Some(task) if task.isTerminal =>
           ZIO.fail(A2AError.unsupportedOperation(s"Task ${task.id.value} is terminal and cannot be modified"))
         case Some(task) if incoming.contextId.exists(_ != task.contextId) =>
@@ -287,6 +336,51 @@ private[a2a] final class A2ARequestHandler(
   private def cleanupPrepared(prepared: PreparedRun, context: ServerCallContext): UIO[Unit] =
     runtimeRegistry.remove(taskRuntimeKey(prepared.task.id, context)) *> prepared.bus.finish
 
+  private def validateInboundMessage(message: A2AMessage): Task[Unit] =
+    if message.role != A2ARole.User then
+      ZIO.fail(A2AError.invalidParams("message.role must be ROLE_USER for SendMessage"))
+    else if message.parts.isEmpty then ZIO.fail(A2AError.invalidParams("message.parts must contain at least one part"))
+    else ZIO.unit
+
+  private def validatePushConfigListParams(params: A2ARequest.PushNotificationConfigList): Task[Unit] =
+    params.pageSize match
+      case Some(size) if size < 1 || size > 100 =>
+        ZIO.fail(A2AError.invalidParams(s"pageSize must be between 1 and 100 inclusive, got $size"))
+      case _ =>
+        params.pageToken match
+          case Some(token) if decodePushConfigPageToken(token).isEmpty =>
+            ZIO.fail(A2AError.invalidParams("Invalid pageToken"))
+          case _ =>
+            ZIO.unit
+
+  private def paginatePushConfigs(
+    configs: List[TaskPushNotificationConfig],
+    params: A2ARequest.PushNotificationConfigList,
+  ): A2AResponse.PushNotificationConfigListResult =
+    val pageSize = params.pageSize.getOrElse(50)
+    val offset   = decodePushConfigPageToken(params.pageToken.getOrElse(""))
+      .getOrElse(PushConfigPageToken.Offset(0)) match
+      case PushConfigPageToken.Offset(value) => value
+    val page = configs.drop(offset).take(pageSize)
+    val next =
+      if configs.length > offset + pageSize then Some(encodePushConfigPageToken(offset + pageSize))
+      else None
+    A2AResponse.PushNotificationConfigListResult(page, next)
+
+  private def encodePushConfigPageToken(offset: Int): String =
+    s"v1:${offset.toHexString}"
+
+  private def decodePushConfigPageToken(raw: String): Option[PushConfigPageToken] =
+    if raw.isEmpty then Some(PushConfigPageToken.Offset(0))
+    else raw.toIntOption.filter(_ >= 0).map(PushConfigPageToken.Offset.apply).orElse(decodePushConfigCursor(raw))
+
+  private def decodePushConfigCursor(raw: String): Option[PushConfigPageToken] =
+    if !raw.startsWith("v1:") then None
+    else
+      Try(Integer.parseInt(raw.drop("v1:".length), 16)).toOption
+        .filter(_ >= 0)
+        .map(PushConfigPageToken.Offset.apply)
+
   private def saveInlinePushConfig(
     messageConfig: Option[MessageSendConfiguration],
     taskId: TaskId,
@@ -301,7 +395,11 @@ private[a2a] final class A2ARequestHandler(
   private def validateInlinePushConfig(messageConfig: Option[MessageSendConfiguration]): Task[Unit] =
     messageConfig.flatMap(_.taskPushNotificationConfig) match
       case Some(pushConfig) if agentCard.capabilities.pushNotifications =>
-        config.pushNotificationUrlPolicy.validate(pushConfig.url)
+        pushConfig.taskId match
+          case Some(taskId) if taskId.nonEmpty =>
+            ZIO.fail(A2AError.invalidParams("taskPushNotificationConfig.taskId must be empty for SendMessage"))
+          case _ =>
+            config.pushNotificationUrlPolicy.validate(pushConfig.url)
       case Some(_) =>
         ZIO.fail(A2AError.pushNotificationNotSupported)
       case None =>

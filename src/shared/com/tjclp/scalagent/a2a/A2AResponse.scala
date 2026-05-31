@@ -1,5 +1,7 @@
 package com.tjclp.scalagent.a2a
 
+import scala.util.Try
+
 import zio.json.*
 import zio.json.ast.Json
 
@@ -19,16 +21,18 @@ object A2AResponse:
 
     given JsonDecoder[SendMessageResult] = JsonDecoder[Json].mapOrFail { json =>
       val fields = json.asObject.map(_.toMap).getOrElse(Map.empty)
-      fields.get("message") match
-        case Some(message) => message.as[A2AMessage].map(MessageResult(_))
-        case None          =>
-          fields.get("task") match
-            case Some(task) => task.as[A2ATask].map(TaskResult(_))
-            case None       =>
-              fields.get("kind").flatMap(_.asString) match
-                case Some("message") => json.as[A2AMessage].map(MessageResult(_))
-                case Some("task")    => json.as[A2ATask].map(TaskResult(_))
-                case _               => Left("SendMessageResult must contain message or task")
+      fields.keys.filter(Set("message", "task")).toList match
+        case "message" :: Nil =>
+          fields("message").as[A2AMessage].map(MessageResult(_))
+        case "task" :: Nil =>
+          fields("task").as[A2ATask].map(TaskResult(_))
+        case Nil =>
+          fields.get("kind").flatMap(_.asString) match
+            case Some("message") => json.as[A2AMessage].map(MessageResult(_))
+            case Some("task")    => json.as[A2ATask].map(TaskResult(_))
+            case _               => Left("SendMessageResult must contain exactly one of message or task")
+        case _ =>
+          Left("SendMessageResult must contain exactly one of message or task")
     }
   end SendMessageResult
   type SendMessageResponse = SendMessageResult
@@ -38,11 +42,49 @@ object A2AResponse:
     tasks: List[A2ATask],
     nextPageToken: Option[String] = None,
     pageSize: Int = 0,
-    totalSize: Int = 0)
+    totalSize: Int = 0,
+    includeArtifacts: Boolean = false)
   object ListTasksResult:
+    private def decodeList[A: JsonDecoder](fields: Map[String, Json], name: String): Either[String, List[A]] =
+      fields
+        .get(name)
+        .toRight(s"Missing $name")
+        .flatMap(_.asArray.toRight(s"$name must be an array"))
+        .flatMap(values =>
+          values.toList.map(_.as[A]).foldRight[Either[String, List[A]]](Right(Nil)) {
+            case (Right(value), Right(values)) => Right(value :: values)
+            case (Left(error), _)              => Left(error)
+            case (_, Left(error))              => Left(error)
+          }
+        )
+
+    private def requiredString(
+      fields: Map[String, Json],
+      name: String,
+      aliases: String*
+    ): Either[String, String] =
+      (name +: aliases).iterator.flatMap(fields.get).nextOption() match
+        case Some(value) => value.asString.toRight(s"$name must be a string")
+        case None        => Left(s"Missing $name")
+
+    private def requiredInt(
+      fields: Map[String, Json],
+      name: String,
+      aliases: String*
+    ): Either[String, Int] =
+      (name +: aliases).iterator.flatMap(fields.get).nextOption() match
+        case Some(value) =>
+          value.asNumber
+            .toRight(s"$name must be an int32")
+            .flatMap(number => Try(number.value.intValueExact).toEither.left.map(_ => s"$name must be an int32"))
+        case None =>
+          Left(s"Missing $name")
+
     given JsonEncoder[ListTasksResult] = JsonEncoder[Json].contramap { result =>
       Json.Obj(
-        "tasks"         -> Json.Arr(result.tasks.map(_.toJsonAST.toOption.get)*),
+        "tasks" -> Json.Arr(
+          result.tasks.map(A2ATask.toJsonObject(_, includeEmptyArtifacts = result.includeArtifacts))*
+        ),
         "nextPageToken" -> Json.Str(result.nextPageToken.getOrElse("")),
         "pageSize"      -> Json.Num(java.math.BigDecimal.valueOf(result.pageSize.toLong)),
         "totalSize"     -> Json.Num(java.math.BigDecimal.valueOf(result.totalSize.toLong)),
@@ -52,36 +94,16 @@ object A2AResponse:
     given JsonDecoder[ListTasksResult] = JsonDecoder[Json].mapOrFail { json =>
       json.asObject.toRight("ListTasksResult must be an object").flatMap { obj =>
         val fields = obj.toMap
-        for tasks <- fields
-            .get("tasks")
-            .flatMap(_.asArray)
-            .map(values =>
-              values.toList.map(_.as[A2ATask]).foldRight[Either[String, List[A2ATask]]](Right(Nil)) {
-                case (Right(task), Right(tasks)) => Right(task :: tasks)
-                case (Left(error), _)            => Left(error)
-                case (_, Left(error))            => Left(error)
-              }
-            )
-            .getOrElse(Right(Nil))
+        for
+          tasks         <- decodeList[A2ATask](fields, "tasks")
+          nextPageToken <- requiredString(fields, "nextPageToken", "next_page_token")
+          pageSize      <- requiredInt(fields, "pageSize", "page_size")
+          totalSize     <- requiredInt(fields, "totalSize", "total_size")
         yield ListTasksResult(
           tasks = tasks,
-          nextPageToken = fields
-            .get("nextPageToken")
-            .orElse(fields.get("next_page_token"))
-            .flatMap(_.asString)
-            .filter(_.nonEmpty),
-          pageSize = fields
-            .get("pageSize")
-            .orElse(fields.get("page_size"))
-            .flatMap(_.asNumber)
-            .map(_.value.intValue)
-            .getOrElse(0),
-          totalSize = fields
-            .get("totalSize")
-            .orElse(fields.get("total_size"))
-            .flatMap(_.asNumber)
-            .map(_.value.intValue)
-            .getOrElse(0),
+          nextPageToken = Option(nextPageToken).filter(_.nonEmpty),
+          pageSize = pageSize,
+          totalSize = totalSize,
         )
       }
     }
@@ -93,6 +115,27 @@ object A2AResponse:
     configs: List[TaskPushNotificationConfig],
     nextPageToken: Option[String] = None)
   object PushNotificationConfigListResult:
+    private def optionalString(
+      fields: Map[String, Json],
+      name: String,
+      aliases: String*
+    ): Either[String, Option[String]] =
+      (name +: aliases).iterator.flatMap(fields.get).nextOption() match
+        case Some(value) => value.asString.map(Some(_)).toRight(s"$name must be a string")
+        case None        => Right(None)
+
+    private def optionalList[A: JsonDecoder](fields: Map[String, Json], name: String): Either[String, List[A]] =
+      fields.get(name) match
+        case Some(value) =>
+          value.asArray.toRight(s"$name must be an array").flatMap { values =>
+            values.toList.map(_.as[A]).foldRight[Either[String, List[A]]](Right(Nil)) {
+              case (Right(value), Right(values)) => Right(value :: values)
+              case (Left(error), _)              => Left(error)
+              case (_, Left(error))              => Left(error)
+            }
+          }
+        case None => Right(Nil)
+
     given JsonEncoder[PushNotificationConfigListResult] = JsonEncoder[Json].contramap { result =>
       Json.Obj(
         "configs"       -> Json.Arr(result.configs.map(_.toJsonAST.toOption.get)*),
@@ -103,26 +146,12 @@ object A2AResponse:
     given JsonDecoder[PushNotificationConfigListResult] = JsonDecoder[Json].mapOrFail { json =>
       json.asObject.toRight("PushNotificationConfigListResult must be an object").flatMap { obj =>
         val fields = obj.toMap
-        for configs <- fields
-            .get("configs")
-            .flatMap(_.asArray)
-            .map(values =>
-              values.toList
-                .map(_.as[TaskPushNotificationConfig])
-                .foldRight[Either[String, List[TaskPushNotificationConfig]]](Right(Nil)) {
-                  case (Right(config), Right(configs)) => Right(config :: configs)
-                  case (Left(error), _)                => Left(error)
-                  case (_, Left(error))                => Left(error)
-                }
-            )
-            .getOrElse(Right(Nil))
+        for
+          configs       <- optionalList[TaskPushNotificationConfig](fields, "configs")
+          nextPageToken <- optionalString(fields, "nextPageToken", "next_page_token")
         yield PushNotificationConfigListResult(
           configs = configs,
-          nextPageToken = fields
-            .get("nextPageToken")
-            .orElse(fields.get("next_page_token"))
-            .flatMap(_.asString)
-            .filter(_.nonEmpty),
+          nextPageToken = nextPageToken.filter(_.nonEmpty),
         )
       }
     }
@@ -143,7 +172,7 @@ object A2AResponse:
       contextId: ContextId,
       artifact: Artifact,
       append: Boolean = false,
-      lastChunk: Boolean = true,
+      lastChunk: Boolean = false,
       metadata: Option[Json] = None)
     case TaskMessage(
       id: TaskId,
@@ -171,19 +200,38 @@ object A2AResponse:
         else artifactObj.add("artifactId", Json.Str(taskId.value))
       }
 
-    private def nestedBooleanField(json: Json, field: String): Option[Boolean] =
-      json.asObject.flatMap(_.toMap.get(field)).flatMap(_.asBoolean)
+    private def nestedBooleanField(
+      json: Json,
+      field: String,
+      aliases: String*
+    ): Either[String, Option[Boolean]] =
+      json.asObject match
+        case Some(obj) => A2AJson.optionalBoolean(obj.toMap, field, aliases*)
+        case None      => Right(None)
+
+    private def requiredNonEmptyString(
+      fields: Map[String, Json],
+      name: String,
+      aliases: String*
+    ): Either[String, String] =
+      A2AJson.field(fields, (name +: aliases)*) match
+        case Some(value) =>
+          value.asString.toRight(s"$name must be a string").flatMap {
+            case value if value.nonEmpty => Right(value)
+            case _                       => Left(s"Missing $name")
+          }
+        case None =>
+          Left(s"Missing $name")
 
     given JsonEncoder[StreamEvent] = JsonEncoder[Json].contramap {
       case TaskSnapshot(task) =>
         Json.Obj("task" -> task.toJsonAST.toOption.get)
-      case TaskStatusUpdate(id, contextId, status, isFinal, metadata) =>
+      case TaskStatusUpdate(id, contextId, status, _, metadata) =>
         var update = Json.Obj(
           "taskId"    -> Json.Str(id.value),
           "contextId" -> Json.Str(contextId.value),
           "status"    -> status.toJsonAST.toOption.get,
         )
-        if isFinal then update = update.add("final", Json.Bool(true))
         metadata.foreach(value => update = update.add("metadata", value))
         Json.Obj("statusUpdate" -> update)
       case TaskArtifactUpdate(id, contextId, artifact, append, lastChunk, metadata) =>
@@ -191,9 +239,9 @@ object A2AResponse:
           "taskId"    -> Json.Str(id.value),
           "contextId" -> Json.Str(contextId.value),
           "artifact"  -> artifact.toJsonAST.toOption.get,
-          "append"    -> Json.Bool(append),
-          "lastChunk" -> Json.Bool(lastChunk),
         )
+        if append then update = update.add("append", Json.Bool(true))
+        if lastChunk then update = update.add("lastChunk", Json.Bool(true))
         metadata.foreach(value => update = update.add("metadata", value))
         Json.Obj("artifactUpdate" -> update)
       case TaskMessage(id, contextId, message) =>
@@ -205,76 +253,84 @@ object A2AResponse:
     }
 
     given JsonDecoder[StreamEvent] = JsonDecoder[Json].mapOrFail { json =>
-      val fields = json.asObject.map(_.toMap).getOrElse(Map.empty)
-      fields.get("task") match
-        case Some(taskJson) =>
+      val fields   = json.asObject.map(_.toMap).getOrElse(Map.empty)
+      val payloads = List(
+        fields.get("task").map("task" -> _),
+        fields.get("message").map("message" -> _),
+        fields.get("statusUpdate").map("statusUpdate" -> _),
+        fields.get("status_update").map("statusUpdate" -> _),
+        fields.get("artifactUpdate").map("artifactUpdate" -> _),
+        fields.get("artifact_update").map("artifactUpdate" -> _),
+      ).flatten
+      payloads match
+        case ("task", taskJson) :: Nil =>
           taskJson.as[A2ATask].map(TaskSnapshot(_))
-        case None =>
-          fields.get("message") match
-            case Some(messageJson) =>
-              messageJson.as[A2AMessage].map { message =>
-                TaskMessage(A2AEventIds.taskIdFor(message), A2AEventIds.contextIdFor(message), message)
-              }
-            case None =>
-              fields.get("statusUpdate").orElse(fields.get("status_update")) match
-                case Some(updateJson) =>
-                  decodeStatusUpdate(updateJson)
-                case None =>
-                  fields.get("artifactUpdate").orElse(fields.get("artifact_update")) match
-                    case Some(updateJson) => decodeArtifactUpdate(updateJson, legacyDefaultLastChunk = false)
-                    case None             => decodeLegacy(json, fields)
+        case ("message", messageJson) :: Nil =>
+          messageJson.as[A2AMessage].map { message =>
+            TaskMessage(A2AEventIds.taskIdFor(message), A2AEventIds.contextIdFor(message), message)
+          }
+        case ("statusUpdate", updateJson) :: Nil =>
+          decodeStatusUpdate(updateJson, requireContextId = true)
+        case ("artifactUpdate", updateJson) :: Nil =>
+          decodeArtifactUpdate(updateJson, legacyDefaultLastChunk = false, requireContextId = true)
+        case Nil =>
+          decodeLegacy(json, fields)
+        case _ =>
+          Left("StreamResponse must contain exactly one of task, message, statusUpdate, or artifactUpdate")
     }
 
-    private def decodeStatusUpdate(json: Json): Either[String, StreamEvent] =
+    private def decodeStatusUpdate(json: Json, requireContextId: Boolean): Either[String, StreamEvent] =
       val fields = json.asObject.map(_.toMap).getOrElse(Map.empty)
       for
-        taskId <- fields
-          .get("taskId")
-          .orElse(fields.get("task_id"))
-          .flatMap(_.asString)
-          .map(TaskId(_))
-          .toRight("Missing taskId")
-        status <- fields.get("status").toRight("Missing status").flatMap(_.as[TaskStatus])
-        contextId = fields
+        taskId    <- requiredNonEmptyString(fields, "taskId", "task_id").map(TaskId(_))
+        status    <- fields.get("status").toRight("Missing status").flatMap(_.as[TaskStatus])
+        contextId <- fields
           .get("contextId")
-          .orElse(fields.get("context_id"))
-          .flatMap(_.asString)
-          .map(ContextId(_))
-          .getOrElse(ContextId(taskId.value))
-        isFinal  = fields.get("final").flatMap(_.asBoolean).getOrElse(false)
-        metadata = fields.get("metadata")
+          .orElse(fields.get("context_id")) match
+          case Some(value) =>
+            value.asString
+              .filter(_.nonEmpty)
+              .map(ContextId(_))
+              .toRight("contextId must be a non-empty string")
+          case None if requireContextId =>
+            Left("Missing contextId")
+          case None =>
+            Right(ContextId(taskId.value))
+        isFinal  <- A2AJson.optionalBoolean(fields, "final").map(_.getOrElse(false))
+        metadata <- A2AJson.optionalStruct(fields, "metadata")
       yield TaskStatusUpdate(taskId, contextId, status, isFinal, metadata)
+      end for
+    end decodeStatusUpdate
 
-    private def decodeArtifactUpdate(json: Json, legacyDefaultLastChunk: Boolean): Either[String, StreamEvent] =
+    private def decodeArtifactUpdate(
+      json: Json,
+      legacyDefaultLastChunk: Boolean,
+      requireContextId: Boolean,
+    ): Either[String, StreamEvent] =
       val fields = json.asObject.map(_.toMap).getOrElse(Map.empty)
       for
-        taskId <- fields
-          .get("taskId")
-          .orElse(fields.get("task_id"))
-          .flatMap(_.asString)
-          .map(TaskId(_))
-          .toRight("Missing taskId")
-        artifactJson <- fields.get("artifact").toRight("Missing artifact")
-        artifact     <- artifactJsonWithFallbackId(taskId, artifactJson).flatMap(_.as[Artifact])
-        append = fields
-          .get("append")
-          .flatMap(_.asBoolean)
-          .orElse(nestedBooleanField(artifactJson, "append"))
-          .getOrElse(false)
-        lastChunk = fields
-          .get("lastChunk")
-          .orElse(fields.get("last_chunk"))
-          .flatMap(_.asBoolean)
-          .orElse(nestedBooleanField(artifactJson, "lastChunk"))
-          .orElse(nestedBooleanField(artifactJson, "last_chunk"))
-          .getOrElse(legacyDefaultLastChunk)
-        contextId = fields
+        taskId         <- requiredNonEmptyString(fields, "taskId", "task_id").map(TaskId(_))
+        artifactJson   <- fields.get("artifact").toRight("Missing artifact")
+        artifact       <- artifactJsonWithFallbackId(taskId, artifactJson).flatMap(_.as[Artifact])
+        topLevelAppend <- A2AJson.optionalBoolean(fields, "append")
+        nestedAppend   <- nestedBooleanField(artifactJson, "append")
+        append = topLevelAppend.orElse(nestedAppend).getOrElse(false)
+        topLevelLastChunk <- A2AJson.optionalBoolean(fields, "lastChunk", "last_chunk")
+        nestedLastChunk   <- nestedBooleanField(artifactJson, "lastChunk", "last_chunk")
+        lastChunk = topLevelLastChunk.orElse(nestedLastChunk).getOrElse(legacyDefaultLastChunk)
+        contextId <- fields
           .get("contextId")
-          .orElse(fields.get("context_id"))
-          .flatMap(_.asString)
-          .map(ContextId(_))
-          .getOrElse(ContextId(taskId.value))
-        metadata = fields.get("metadata")
+          .orElse(fields.get("context_id")) match
+          case Some(value) =>
+            value.asString
+              .filter(_.nonEmpty)
+              .map(ContextId(_))
+              .toRight("contextId must be a non-empty string")
+          case None if requireContextId =>
+            Left("Missing contextId")
+          case None =>
+            Right(ContextId(taskId.value))
+        metadata <- A2AJson.optionalStruct(fields, "metadata")
       yield TaskArtifactUpdate(taskId, contextId, artifact, append, lastChunk, metadata)
       end for
     end decodeArtifactUpdate
@@ -286,9 +342,9 @@ object A2AResponse:
         case "task" =>
           json.as[A2ATask].map(TaskSnapshot(_))
         case "status-update" | "status" =>
-          decodeStatusUpdate(json)
+          decodeStatusUpdate(json, requireContextId = false)
         case "artifact-update" | "artifact" =>
-          decodeArtifactUpdate(json, legacyDefaultLastChunk = true)
+          decodeArtifactUpdate(json, legacyDefaultLastChunk = true, requireContextId = false)
         case "message" =>
           for
             message <- fields.get("message").toRight("Missing message").flatMap(_.as[A2AMessage])

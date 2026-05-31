@@ -6,7 +6,6 @@ import scala.scalajs.js.JSConverters.*
 import scala.scalajs.js.JSON as JsJSON
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext.Implicits.global
-import java.util.concurrent.TimeoutException
 import zio.*
 import zio.stream.*
 import com.tjclp.scalagent.core.*
@@ -176,13 +175,6 @@ private final class DslA2AEndpointLive[O](
       )
     )
 
-  private def withTaskTimeout[A](taskId: TaskId, effect: Task[A]): Task[A] =
-    config.taskTimeout match
-      case Some(timeout) =>
-        effect.timeoutFail(new TimeoutException(s"A2A task ${taskId.value} timed out after $timeout"))(timeout)
-      case None =>
-        effect
-
   private def loadTask(taskStore: JsTaskStore, taskId: String): Task[Option[A2ATask]] =
     ZIO
       .fromPromiseJS(taskStore.load(taskId))
@@ -214,8 +206,9 @@ private final class DslA2AEndpointLive[O](
 
         Unsafe.unsafe { implicit unsafe =>
           val runEffect =
-            withTaskTimeout(
+            A2ATaskTimeout(
               taskId,
+              config.taskTimeout,
               ZIO.scoped {
                 val run = agent.run((), prompt, policy)
 

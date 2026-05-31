@@ -29,7 +29,7 @@ private[a2a] object A2AProgress:
     else
       val textOnlyKey =
         Option.when(mapped.parts.forall(_.isInstanceOf[Part.Text])) {
-          mapped.parts.collect { case Part.Text(text, _) => text }.mkString("\n")
+          mapped.parts.collect { case Part.Text(text, _, _, _) => text }.mkString("\n")
         }
 
       textOnlyKey match
