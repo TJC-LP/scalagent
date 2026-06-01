@@ -113,10 +113,45 @@ class A2AServiceParametersSpec extends FunSuite:
       Right(()),
     )
 
-  test("shared A2A error HTTP status mapping covers REST response classes"):
+  test("shared A2A error status mapping covers REST and gRPC response classes"):
     assertEquals(A2AError.httpStatus(A2AError.taskNotFound(TaskId("missing"))), 404)
+    assertEquals(A2AError.grpcStatus(A2AError.taskNotFound(TaskId("missing"))), A2AGrpcStatus.NOT_FOUND)
+    assertEquals(A2AError.httpStatus(A2AError.taskNotCancelable(TaskId("task-1"))), 400)
+    assertEquals(A2AError.grpcStatus(A2AError.taskNotCancelable(TaskId("task-1"))), A2AGrpcStatus.FAILED_PRECONDITION)
+    assertEquals(A2AError.httpStatus(A2AError.pushNotificationNotSupported), 400)
+    assertEquals(A2AError.grpcStatus(A2AError.pushNotificationNotSupported), A2AGrpcStatus.FAILED_PRECONDITION)
     assertEquals(A2AError.httpStatus(A2AError.internalError("boom")), 500)
+    assertEquals(A2AError.grpcStatus(A2AError.internalError("boom")), A2AGrpcStatus.INTERNAL)
+    assertEquals(A2AError.httpStatus(A2AError.unauthenticated("missing credentials")), 401)
+    assertEquals(A2AError.grpcStatus(A2AError.unauthenticated("missing credentials")), A2AGrpcStatus.UNAUTHENTICATED)
     assertEquals(A2AError.httpStatus(A2AError.invalidParams("bad")), 400)
+    assertEquals(A2AError.grpcStatus(A2AError.invalidParams("bad")), A2AGrpcStatus.INVALID_ARGUMENT)
     assertEquals(A2AError.httpStatusName(404), "NOT_FOUND")
     assertEquals(A2AError.httpStatusName(500), "INTERNAL")
     assertEquals(A2AError.httpStatusName(400), "INVALID_ARGUMENT")
+
+  test("shared operation catalog classifies JSON-RPC and gRPC service methods"):
+    assertEquals(A2AOperation.methodNames, A2AOperation.grpcMethodNames)
+    assertEquals(
+      A2AOperation.streamingMethodNames,
+      Set(A2AMethod.MessageStream, A2AMethod.TasksResubscribe),
+    )
+    assertEquals(
+      A2AOperation.methodNames,
+      Set(
+        A2AMethod.MessageSend,
+        A2AMethod.MessageStream,
+        A2AMethod.TasksGet,
+        A2AMethod.TasksList,
+        A2AMethod.TasksCancel,
+        A2AMethod.TasksResubscribe,
+        A2AMethod.PushNotificationConfigSet,
+        A2AMethod.PushNotificationConfigGet,
+        A2AMethod.PushNotificationConfigList,
+        A2AMethod.PushNotificationConfigDelete,
+        A2AMethod.GetAuthenticatedExtendedCard,
+      ),
+    )
+    assertEquals(A2AOperation.fromMethodName(A2AMethod.TasksGet), Some(A2AOperation.TasksGet))
+    assertEquals(A2AOperation.fromGrpcMethodName(A2AMethod.TasksGet), Some(A2AOperation.TasksGet))
+    assertEquals(A2AOperation.fromMethodName("unknown"), None)

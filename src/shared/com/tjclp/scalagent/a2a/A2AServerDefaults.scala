@@ -18,5 +18,21 @@ object A2AServerDefaults:
     PushNotificationUrlPolicy.externalOnly
 
   def url(host: String, port: Int): String =
-    s"http://$host:$port"
+    url(host, port, "http")
+
+  def url(
+    host: String,
+    port: Int,
+    scheme: String,
+  ): String =
+    s"$scheme://$host:$port"
+
+  def publicUrl(
+    host: String,
+    configuredPort: Int,
+    advertisedUrl: Option[String],
+    boundPort: Option[Int] = None,
+    scheme: String = "http",
+  ): String =
+    advertisedUrl.getOrElse(url(host, boundPort.getOrElse(configuredPort), scheme))
 end A2AServerDefaults

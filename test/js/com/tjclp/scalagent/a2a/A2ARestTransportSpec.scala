@@ -56,6 +56,46 @@ class A2ARestTransportSpec extends FunSuite:
           )
       }
 
+  private def fetchTextWithStreamBody(
+    url: String,
+    method: String,
+    chunks: List[String],
+    headers: Map[String, String],
+  ): Task[(Int, String, String)] =
+    ZIO
+      .fromPromiseJS {
+        val encoder = js.Dynamic.newInstance(js.Dynamic.global.TextEncoder)()
+        val body = js.Dynamic.newInstance(js.Dynamic.global.ReadableStream)(
+          js.Dynamic.literal(
+            start = (controller: js.Dynamic) =>
+              chunks.foreach(chunk => controller.enqueue(encoder.encode(chunk)))
+              controller.close()
+          )
+        )
+        js.Dynamic.global
+          .fetch(
+            url,
+            js.Dynamic.literal(
+              method = method,
+              headers = jsHeaders(headers),
+              body = body,
+              duplex = "half",
+            ),
+          )
+          .asInstanceOf[js.Promise[js.Dynamic]]
+      }
+      .flatMap(response =>
+        ZIO
+          .fromPromiseJS(response.text().asInstanceOf[js.Promise[String]])
+          .map(body =>
+            (
+              response.status.asInstanceOf[Int],
+              response.headers.get("content-type").asInstanceOf[String],
+              body,
+            )
+          )
+      )
+
   private def readFirstSseData(response: js.Dynamic): Task[String] =
     for
       step <- ZIO.fromPromiseJS(response.body.getReader().read().asInstanceOf[js.Promise[js.Dynamic]])
@@ -141,7 +181,9 @@ class A2ARestTransportSpec extends FunSuite:
       port = 0,
       executionOverride = Some(completedExecution),
     )
-    val request = A2ARequest.MessageSend(A2AMessage.userText("rest hello")).toJson
+    val request = A2ARequest
+      .MessageSend(A2AMessage.userText("rest hello"), configuration = Some(MessageSendConfiguration.default))
+      .toJson
     val headers = Map(
       "Content-Type" -> A2AContentType.A2AJson,
       A2AHeader.Version -> A2AProtocol.Version,
@@ -179,7 +221,13 @@ class A2ARestTransportSpec extends FunSuite:
       port = 0,
       executionOverride = Some(completedExecution),
     )
-    val request = A2ARequest.MessageSend(A2AMessage.userText("body tenant"), tenant = Some("tenant-body")).toJson
+    val request = A2ARequest
+      .MessageSend(
+        A2AMessage.userText("body tenant"),
+        configuration = Some(MessageSendConfiguration.default),
+        tenant = Some("tenant-body"),
+      )
+      .toJson
     val headers = Map(
       "Content-Type" -> A2AContentType.A2AJson,
       A2AHeader.Version -> A2AProtocol.Version,
@@ -408,7 +456,9 @@ class A2ARestTransportSpec extends FunSuite:
       assertEquals(malformed.error.map(_.code), Some(A2AErrorCode.ParseError))
       assertEquals(invalid.error.map(_.code), Some(A2AErrorCode.InvalidRequest))
       assertEquals(missing.error.map(_.code), Some(A2AErrorCode.InvalidRequest))
-      assertEquals(missing.id, None)
+      assertEquals(malformed.id, JsonRpcId.Unknown)
+      assertEquals(invalid.id, JsonRpcId.Unknown)
+      assertEquals(missing.id, JsonRpcId.Unknown)
     }
 
   test("REST rejects unsupported request body content type"):
@@ -440,6 +490,68 @@ class A2ARestTransportSpec extends FunSuite:
       assert(body.contains("CONTENT_TYPE_NOT_SUPPORTED"))
     }
 
+  test("JSON-RPC enforces maxRequestBodyBytes"):
+    val body = JsonRpcRequest(
+      method = A2AMethod.TasksList,
+      params = A2ARequest.TasksList().toJsonAST.toOption,
+      id = Some(JsonRpcId.Num(20)),
+    ).toJson
+
+    val config = A2AServer.Config(
+      name = "BodyLimitTest",
+      description = "Body limit test server",
+      host = "127.0.0.1",
+      port = 0,
+      maxRequestBodyBytes = 8,
+    )
+
+    val program =
+      ZIO.scoped {
+        for
+          server <- A2AServer.create(config)
+          result <- fetchText(
+            server.url + "/",
+            method = "POST",
+            body = Some(body),
+            headers = Map("Content-Type" -> A2AContentType.Json, A2AHeader.Version -> A2AProtocol.Version),
+          )
+          response <- ZIO.fromEither(result._3.fromJson[JsonRpcResponse].left.map(new RuntimeException(_)))
+        yield response
+      }
+
+    runTask(program).map { response =>
+      assertEquals(response.error.map(_.code), Some(A2AErrorCode.InvalidRequest))
+      assert(response.error.exists(_.message.contains("Request body exceeds 8 byte limit")))
+    }
+
+  test("JSON-RPC enforces maxRequestBodyBytes on chunked body before full buffering"):
+    val config = A2AServer.Config(
+      name = "ChunkedBodyLimitTest",
+      description = "Chunked body limit test server",
+      host = "127.0.0.1",
+      port = 0,
+      maxRequestBodyBytes = 8,
+    )
+
+    val program =
+      ZIO.scoped {
+        for
+          server <- A2AServer.create(config)
+          result <- fetchTextWithStreamBody(
+            server.url + "/",
+            method = "POST",
+            chunks = List("{\"jsonrp", "c\":\"2.0\",\"method\":\"ListTasks\",\"id\":21}"),
+            headers = Map("Content-Type" -> A2AContentType.Json, A2AHeader.Version -> A2AProtocol.Version),
+          )
+          response <- ZIO.fromEither(result._3.fromJson[JsonRpcResponse].left.map(new RuntimeException(_)))
+        yield response
+      }
+
+    runTask(program).map { response =>
+      assertEquals(response.error.map(_.code), Some(A2AErrorCode.InvalidRequest))
+      assert(response.error.exists(_.message.contains("Request body exceeds 8 byte limit")))
+    }
+
   test("REST errors use google.rpc-style bodies"):
     val config = A2AServer.Config(
       name = "RestErrorTest",
@@ -462,6 +574,9 @@ class A2ARestTransportSpec extends FunSuite:
     runTask(program).map { case (status, contentType, body) =>
       assertEquals(status, 404)
       assert(contentType.startsWith(A2AContentType.A2AJson))
+      assert(body.contains(""""type":"https://a2a-protocol.org/errors/task-not-found""""))
+      assert(body.contains(""""title":"Not Found""""))
+      assert(body.contains(""""status":404"""))
       assert(body.contains(""""error""""))
       assert(body.contains(""""status":"NOT_FOUND""""))
       assert(body.contains(""""details""""))

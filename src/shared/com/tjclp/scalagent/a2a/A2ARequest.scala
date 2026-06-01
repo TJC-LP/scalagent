@@ -15,8 +15,9 @@ object A2ARequest:
 
   private def optionalString(fields: Map[String, Json], names: String*): Either[String, Option[String]] =
     field(fields, names*) match
-      case Some(value) => value.asString.map(Some(_)).toRight(s"${names.head} must be a string")
-      case None        => Right(None)
+      case Some(Json.Null) => Right(None)
+      case Some(value)     => value.asString.map(Some(_)).toRight(s"${names.head} must be a string")
+      case None            => Right(None)
 
   private def requiredString(
     fields: Map[String, Json],
@@ -30,7 +31,8 @@ object A2ARequest:
 
   private def optionalInt(fields: Map[String, Json], names: String*): Either[String, Option[Int]] =
     field(fields, names*) match
-      case Some(value) =>
+      case Some(Json.Null) => Right(None)
+      case Some(value)     =>
         value.asNumber
           .toRight(s"${names.head} must be an int32")
           .flatMap(number => Try(number.value.intValueExact).toEither.left.map(_ => s"${names.head} must be an int32"))
@@ -75,8 +77,9 @@ object A2ARequest:
 
   private def optionalBool(fields: Map[String, Json], names: String*): Either[String, Option[Boolean]] =
     field(fields, names*) match
-      case Some(value) => value.asBoolean.map(Some(_)).toRight(s"${names.head} must be a boolean")
-      case None        => Right(None)
+      case Some(Json.Null) => Right(None)
+      case Some(value)     => value.asBoolean.map(Some(_)).toRight(s"${names.head} must be a boolean")
+      case None            => Right(None)
 
   /** Parameters for SendMessage and SendStreamingMessage. */
   final case class MessageSend(
@@ -95,15 +98,42 @@ object A2ARequest:
     given JsonDecoder[MessageSend] = JsonDecoder[Json].mapOrFail { json =>
       objectFields(json, "SendMessageRequest").flatMap { fields =>
         for
-          message       <- field(fields, "message").toRight("Missing message").flatMap(_.as[A2AMessage])
-          configuration <- field(fields, "configuration") match
-            case Some(value) => value.as[MessageSendConfiguration].map(Some(_))
-            case None        => Right(None)
+          decodedMessage <- field(fields, "message").toRight("Missing message").flatMap(_.as[A2AMessage])
+          topTaskId      <- optionalString(fields, "taskId", "task_id")
+          topContextId   <- optionalString(fields, "contextId", "context_id")
+          message        <- mergeMessageRouting(decodedMessage, topTaskId, topContextId)
+          configuration  <- field(fields, "configuration") match
+            case Some(Json.Null) => Right(None)
+            case Some(value)     => value.as[MessageSendConfiguration].map(Some(_))
+            case None            => Right(None)
           metadata <- A2AJson.optionalStruct(fields, "metadata")
           tenant   <- optionalString(fields, "tenant")
         yield MessageSend(message, configuration, metadata, tenant)
       }
     }
+
+    private def mergeMessageRouting(
+      message: A2AMessage,
+      topTaskId: Option[String],
+      topContextId: Option[String],
+    ): Either[String, A2AMessage] =
+      val taskId    = topTaskId.filter(_.nonEmpty).map(TaskId(_))
+      val contextId = topContextId.filter(_.nonEmpty).map(ContextId(_))
+      for
+        mergedTaskId    <- mergeOptional("taskId", message.taskId, taskId)
+        mergedContextId <- mergeOptional("contextId", message.contextId, contextId)
+      yield message.copy(taskId = mergedTaskId, contextId = mergedContextId)
+
+    private def mergeOptional[A](
+      label: String,
+      nested: Option[A],
+      topLevel: Option[A],
+    ): Either[String, Option[A]] =
+      (nested, topLevel) match
+        case (Some(existing), Some(alias)) if existing != alias =>
+          Left(s"$label conflicts between SendMessageRequest and message")
+        case (Some(existing), _) => Right(Some(existing))
+        case (None, alias)       => Right(alias)
   end MessageSend
 
   /** Alias for streaming (same params). */
@@ -168,8 +198,9 @@ object A2ARequest:
         for
           contextId <- optionalString(fields, "contextId", "context_id")
           status    <- field(fields, "status") match
-            case Some(value) => value.as[TaskState].flatMap(TaskState.requireSpecified(_, "status")).map(Some(_))
-            case None        => Right(None)
+            case Some(Json.Null) => Right(None)
+            case Some(value)     => value.as[TaskState].flatMap(TaskState.requireSpecified(_, "status")).map(Some(_))
+            case None            => Right(None)
           pageSize             <- optionalBoundedInt(fields, "pageSize", 1, 100, "page_size")
           pageToken            <- optionalString(fields, "pageToken", "page_token")
           historyLength        <- optionalNonNegativeInt(fields, "historyLength", "history_length")
@@ -350,6 +381,79 @@ object A2ARequest:
   type GetExtendedAgentCardRequest = GetAuthenticatedExtendedCard
 end A2ARequest
 
+private[scalagent] object A2AMessageSendDefaults:
+  def normalizeJsonRpcBodyForMode(body: String, executionMode: ExecutionMode): String =
+    normalizeJsonRpcBody(body, returnImmediately = executionMode == ExecutionMode.Asynchronous)
+
+  def normalizeMessageSendBodyForMode(body: String, executionMode: ExecutionMode): String =
+    normalizeMessageSendBody(body, returnImmediately = executionMode == ExecutionMode.Asynchronous)
+
+  def normalizeJsonRpcBody(body: String, returnImmediately: Boolean): String =
+    transform(body)(normalizeJsonRpcValue(_, returnImmediately))
+
+  def normalizeMessageSendBody(body: String, returnImmediately: Boolean): String =
+    transform(body)(normalizeMessageSendValue(_, returnImmediately))
+
+  private def transform(body: String)(f: Json => Option[Json]): String =
+    body.fromJson[Json].toOption.flatMap(f).map(_.toJson).getOrElse(body)
+
+  private def normalizeJsonRpcValue(json: Json, returnImmediately: Boolean): Option[Json] =
+    json.asArray match
+      case Some(values) =>
+        val normalized = values.toList.map(value => normalizeJsonRpcObject(value, returnImmediately).getOrElse(value))
+        Option.when(normalized != values.toList)(Json.Arr(normalized*))
+      case None =>
+        normalizeJsonRpcObject(json, returnImmediately)
+
+  private def normalizeJsonRpcObject(json: Json, returnImmediately: Boolean): Option[Json] =
+    json.asObject.flatMap: obj =>
+      val fields = obj.toMap
+      fields.get("method").flatMap(_.asString) match
+        case Some(method) if method == A2AMethod.MessageSend || method == "message/send" =>
+          fields.get("params") match
+            case Some(params) =>
+              normalizeMessageSendValue(params, returnImmediately).map(normalized =>
+                Json.Obj((fields + ("params" -> normalized)).toSeq*)
+              )
+            case None =>
+              None
+        case _ =>
+          None
+
+  private def normalizeMessageSendValue(json: Json, returnImmediately: Boolean): Option[Json] =
+    json.asObject.flatMap: obj =>
+      val fields = obj.toMap
+      fields.get("configuration") match
+        case Some(configuration) =>
+          normalizeConfiguration(configuration, returnImmediately).map(normalized =>
+            Json.Obj((fields + ("configuration" -> normalized)).toSeq*)
+          )
+        case None =>
+          Some(Json.Obj((fields + ("configuration" -> defaultConfiguration(returnImmediately))).toSeq*))
+
+  private def normalizeConfiguration(json: Json, returnImmediately: Boolean): Option[Json] =
+    json.asObject.flatMap: obj =>
+      val fields       = obj.toMap
+      val hasReturn    = fields.contains("returnImmediately") || fields.contains("return_immediately")
+      val hasBlocking  = fields.contains("blocking")
+      val withBlocking =
+        if hasReturn && !hasBlocking then
+          val explicitReturn = fields
+            .get("returnImmediately")
+            .orElse(fields.get("return_immediately"))
+            .flatMap(_.asBoolean)
+            .getOrElse(returnImmediately)
+          fields + ("blocking" -> Json.Bool(!explicitReturn))
+        else fields
+      Option.when(withBlocking != fields)(Json.Obj(withBlocking.toSeq*))
+
+  private def defaultConfiguration(returnImmediately: Boolean): Json =
+    Json.Obj(
+      "blocking"          -> Json.Bool(!returnImmediately),
+      "returnImmediately" -> Json.Bool(returnImmediately),
+    )
+end A2AMessageSendDefaults
+
 /** Message send configuration (A2A v1 SendMessageConfiguration). */
 final case class MessageSendConfiguration(
   acceptedOutputModes: List[String] = Nil,
@@ -373,23 +477,26 @@ object MessageSendConfiguration:
     names: String*
   ): Either[String, Option[List[String]]] =
     field(fields, names*) match
-      case Some(value) => value.as[List[String]].map(Some(_))
-      case None        => Right(None)
+      case Some(Json.Null) => Right(None)
+      case Some(value)     => value.as[List[String]].map(Some(_))
+      case None            => Right(None)
 
   private def optionalBool(
     fields: Map[String, Json],
     names: String*
   ): Either[String, Option[Boolean]] =
     field(fields, names*) match
-      case Some(value) => value.asBoolean.map(Some(_)).toRight(s"${names.head} must be a boolean")
-      case None        => Right(None)
+      case Some(Json.Null) => Right(None)
+      case Some(value)     => value.asBoolean.map(Some(_)).toRight(s"${names.head} must be a boolean")
+      case None            => Right(None)
 
   private def optionalInt(
     fields: Map[String, Json],
     names: String*
   ): Either[String, Option[Int]] =
     field(fields, names*) match
-      case Some(value) =>
+      case Some(Json.Null) => Right(None)
+      case Some(value)     =>
         value.asNumber
           .toRight(s"${names.head} must be an int32")
           .flatMap(number => Try(number.value.intValueExact).toEither.left.map(_ => s"${names.head} must be an int32"))
@@ -431,8 +538,9 @@ object MessageSendConfiguration:
           "task_push_notification_config",
           "pushNotificationConfig",
         ) match
-          case Some(value) => value.as[TaskPushNotificationConfig].map(Some(_))
-          case None        => Right(None)
+          case Some(Json.Null) => Right(None)
+          case Some(value)     => value.as[TaskPushNotificationConfig].map(Some(_))
+          case None            => Right(None)
         historyLength             <- optionalNonNegativeInt(fields, "historyLength", "history_length")
         explicitReturnImmediately <- optionalBool(fields, "returnImmediately", "return_immediately")
         blocking                  <- optionalBool(fields, "blocking")
@@ -442,6 +550,7 @@ object MessageSendConfiguration:
         historyLength = historyLength,
         returnImmediately = explicitReturnImmediately.orElse(blocking.map(value => !value)).getOrElse(false),
       )
+      end for
     }
   }
 

@@ -3,8 +3,10 @@ package com.tjclp.scalagent.interop.a2a
 import munit.FunSuite
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import scala.scalajs.js
 import zio.*
 import zio.stream.*
+import zio.json.*
 import com.tjclp.scalagent.a2a.*
 import com.tjclp.scalagent.core.*
 import com.tjclp.scalagent.errors.AgentError
@@ -15,6 +17,48 @@ class A2AInterpreterSpec extends FunSuite:
   private def runTask[A](task: Task[A]): Future[A] =
     Unsafe.unsafe { implicit unsafe =>
       runtime.unsafe.runToFuture(task)
+    }
+
+  private def fetchText(url: String): Task[(Int, String)] =
+    ZIO
+      .fromPromiseJS(js.Dynamic.global.fetch(url).asInstanceOf[js.Promise[js.Dynamic]])
+      .flatMap { response =>
+        ZIO
+          .fromPromiseJS(response.text().asInstanceOf[js.Promise[String]])
+          .map(body => response.status.asInstanceOf[Int] -> body)
+      }
+
+  private val echoAgent: Agent[Any, String, String] = new Agent[Any, String, String]:
+    def run(
+      principal: Any,
+      input: String,
+      policy: ExecutionPolicy,
+    ): AgentRun[Any, String] =
+      AgentRun(ZStream.empty, ZIO.succeed(s"echo: $input"))
+
+  test("A2AServerAdapter advertises the actual Bun port when configured with port 0"):
+    val config = A2AServerAdapter.Config(
+      name = "AdapterEphemeralPort",
+      description = "Adapter ephemeral port test",
+      host = "127.0.0.1",
+      port = 0,
+    )
+
+    val program =
+      ZIO.scoped {
+        for
+          endpoint <- A2AServerAdapter.expose(echoAgent, config)
+          url = endpoint.url
+          fetched <- fetchText(url + A2APaths.AgentCard)
+          card <- ZIO.fromEither(fetched._2.fromJson[AgentCard].left.map(new RuntimeException(_)))
+        yield (url, fetched._1, card)
+      }
+
+    runTask(program).map { case (url, status, card) =>
+      assertEquals(status, 200)
+      assert(!url.endsWith(":0"))
+      assert(card.supportedInterfaces.nonEmpty)
+      assert(card.supportedInterfaces.forall(_.url == url))
     }
 
   private final class CountingA2AClient(events: List[A2AResponse.StreamEvent]) extends A2AClient:

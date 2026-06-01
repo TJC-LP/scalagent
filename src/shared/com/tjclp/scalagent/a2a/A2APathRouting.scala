@@ -1,5 +1,7 @@
 package com.tjclp.scalagent.a2a
 
+import scala.collection.mutable
+
 import zio.json.*
 import zio.json.ast.Json
 
@@ -22,9 +24,11 @@ private[a2a] object A2APathRouting:
 
   final case class RoutedRest(pathTenant: Option[String], route: Option[RestRoute])
 
-  final class Query(valueOf: String => Option[String]):
+  final class Query(valueOf: String => Option[String], entries: Iterable[(String, String)]):
     def string(name: String, aliases: String*): Option[String] =
-      (name +: aliases).iterator.flatMap(valueOf).nextOption()
+      A2AJson
+        .caseInsensitiveEntryLookup(entries, name, aliases*)
+        .orElse(A2AJson.caseInsensitiveLookup(valueOf, name, aliases*))
 
     def int(name: String, aliases: String*): Either[A2AError, Option[Int]] =
       string(name, aliases*) match
@@ -58,8 +62,11 @@ private[a2a] object A2APathRouting:
           Right(None)
   end Query
 
-  def query(valueOf: String => Option[String]): Query =
-    new Query(valueOf)
+  def query(valueOf: String => Option[String], entries: Iterable[(String, String)] = Iterable.empty): Query =
+    new Query(valueOf, entries)
+
+  def query(entries: Iterable[(String, String)]): Query =
+    new Query(name => entries.iterator.collectFirst { case (key, value) if key == name => value }, entries)
 
   def route(method: String, pathname: String): RoutedRest =
     val (pathTenant, path) = splitTenant(pathname)
@@ -117,17 +124,25 @@ private[a2a] object A2APathRouting:
     queryTenant: Option[String],
     requestTenant: Option[String] = None,
   ): Either[A2AError, Option[String]] =
-    val sources = List(pathTenant, queryTenant, requestTenant.filter(_.nonEmpty)).flatten.distinct
-    sources match
-      case Nil          => Right(None)
-      case value :: Nil => Right(Some(value))
-      case _            => Left(A2AError.invalidParams("Conflicting tenant values in REST request"))
+    decodeOptionalPathParameter(pathTenant, "tenant").flatMap { decodedPathTenant =>
+      val sources = List(decodedPathTenant, queryTenant, requestTenant.filter(_.nonEmpty)).flatten.distinct
+      sources match
+        case Nil          => Right(None)
+        case value :: Nil => Right(Some(value))
+        case _            => Left(A2AError.invalidParams("Conflicting tenant values in REST request"))
+    }
 
   def queryTenant(query: Query): Option[String] =
     query.string("tenant").filter(_.nonEmpty)
 
   def requestedVersion(query: Query): Option[String] =
     query.string(A2AHeader.Version).orElse(query.string("a2aVersion"))
+
+  def requestedExtensions(query: Query): List[String] =
+    query
+      .string(A2AHeader.StandardExtensions, A2AHeader.Extensions, "a2aExtensions")
+      .toList
+      .flatMap(A2AHttpBinding.parseExtensionsHeader)
 
   def tasksList(query: Query, tenant: Option[String]): Either[A2AError, A2ARequest.TasksList] =
     for
@@ -223,10 +238,130 @@ private[a2a] object A2APathRouting:
     yield A2ARequest.PushNotificationConfigDelete(id, configId, tenant)
 
   def taskId(raw: String): Either[A2AError, TaskId] =
-    if raw.isEmpty then Left(A2AError.invalidParams("Missing task ID"))
-    else Right(TaskId(raw))
+    decodePathParameter(raw, "task ID").flatMap { decoded =>
+      if decoded.isEmpty then Left(A2AError.invalidParams("Missing task ID"))
+      else Right(TaskId(decoded))
+    }
 
   def pushConfigId(raw: String): Either[A2AError, String] =
-    if raw.isEmpty then Left(A2AError.invalidParams("Missing push notification config ID"))
-    else Right(raw)
+    decodePathParameter(raw, "push notification config ID").flatMap { decoded =>
+      if decoded.isEmpty then Left(A2AError.invalidParams("Missing push notification config ID"))
+      else Right(decoded)
+    }
+
+  private def decodeOptionalPathParameter(raw: Option[String], label: String): Either[A2AError, Option[String]] =
+    raw.filter(_.nonEmpty) match
+      case Some(value) => decodePathParameter(value, label).map(decoded => Some(decoded).filter(_.nonEmpty))
+      case None        => Right(None)
+
+  private def decodePathParameter(raw: String, label: String): Either[A2AError, String] =
+    if !raw.contains("%") then Right(raw)
+    else
+      val out   = new StringBuilder(raw.length)
+      val bytes = mutable.ArrayBuffer.empty[Byte]
+      var i     = 0
+      var error = Option.empty[A2AError]
+
+      def flushBytes(): Unit =
+        if bytes.nonEmpty then
+          strictUtf8Decode(bytes.toArray, label) match
+            case Right(decoded) => out.append(decoded)
+            case Left(err)      => error = Some(err)
+          bytes.clear()
+
+      def invalidPercentEncoding: A2AError =
+        A2AError.invalidParams(s"Invalid percent-encoding in $label")
+
+      while i < raw.length && error.isEmpty do
+        raw.charAt(i) match
+          case '%' =>
+            if i + 2 >= raw.length then error = Some(invalidPercentEncoding)
+            else
+              (hexValue(raw.charAt(i + 1)), hexValue(raw.charAt(i + 2))) match
+                case (Some(hi), Some(lo)) =>
+                  bytes += (((hi << 4) | lo) & 0xff).toByte
+                  i += 3
+                case _ =>
+                  error = Some(invalidPercentEncoding)
+          case ch =>
+            flushBytes()
+            if error.isEmpty then out.append(ch)
+            i += 1
+
+      error match
+        case Some(value) => Left(value)
+        case None        =>
+          flushBytes()
+          error match
+            case Some(value) => Left(value)
+            case None        => Right(out.result())
+
+  private def strictUtf8Decode(bytes: Array[Byte], label: String): Either[A2AError, String] =
+    val out = new StringBuilder(bytes.length)
+    var i   = 0
+
+    def byteAt(index: Int): Int =
+      bytes(index) & 0xff
+
+    def invalid: Either[A2AError, String] =
+      Left(A2AError.invalidParams(s"Invalid UTF-8 percent-encoding in $label"))
+
+    def continuation(index: Int): Option[Int] =
+      if index < bytes.length then
+        val value = byteAt(index)
+        Option.when((value & 0xc0) == 0x80)(value)
+      else None
+
+    def appendCodePoint(codePoint: Int): Unit =
+      if codePoint <= 0xffff then out.append(codePoint.toChar)
+      else
+        val shifted = codePoint - 0x10000
+        out.append(((shifted >> 10) + 0xd800).toChar)
+        out.append(((shifted & 0x3ff) + 0xdc00).toChar)
+
+    while i < bytes.length do
+      val b0 = byteAt(i)
+      if b0 <= 0x7f then
+        out.append(b0.toChar)
+        i += 1
+      else if b0 >= 0xc2 && b0 <= 0xdf then
+        continuation(i + 1) match
+          case Some(b1) =>
+            appendCodePoint(((b0 & 0x1f) << 6) | (b1 & 0x3f))
+            i += 2
+          case None => return invalid
+      else if b0 >= 0xe0 && b0 <= 0xef then
+        (continuation(i + 1), continuation(i + 2)) match
+          case (Some(b1), Some(b2))
+              if (b0 != 0xe0 || b1 >= 0xa0) &&
+                (b0 != 0xed || b1 <= 0x9f) =>
+            appendCodePoint(((b0 & 0x0f) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f))
+            i += 3
+          case _ => return invalid
+      else if b0 >= 0xf0 && b0 <= 0xf4 then
+        (continuation(i + 1), continuation(i + 2), continuation(i + 3)) match
+          case (Some(b1), Some(b2), Some(b3))
+              if (b0 != 0xf0 || b1 >= 0x90) &&
+                (b0 != 0xf4 || b1 <= 0x8f) =>
+            appendCodePoint(
+              ((b0 & 0x07) << 18) |
+                ((b1 & 0x3f) << 12) |
+                ((b2 & 0x3f) << 6) |
+                (b3 & 0x3f)
+            )
+            i += 4
+          case _ => return invalid
+      else return invalid
+      end if
+    end while
+
+    Right(out.result())
+  end strictUtf8Decode
+
+  private def hexValue(ch: Char): Option[Int] =
+    ch match
+      case value if value >= '0' && value <= '9' => Some(value - '0')
+      case value if value >= 'a' && value <= 'f' => Some(value - 'a' + 10)
+      case value if value >= 'A' && value <= 'F' => Some(value - 'A' + 10)
+      case _                                     => None
 end A2APathRouting

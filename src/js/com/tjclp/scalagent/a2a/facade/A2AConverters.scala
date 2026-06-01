@@ -262,17 +262,10 @@ object A2AConverters:
     obj.asInstanceOf[JsMessage]
 
   private def toScalaRole(role: String): A2ARole =
-    role match
-      case "user" | "ROLE_USER"               => A2ARole.User
-      case "agent" | "ROLE_AGENT"             => A2ARole.Agent
-      case "unspecified" | "ROLE_UNSPECIFIED" => A2ARole.Unspecified
-      case _                                  => A2ARole.Unspecified
+    A2ARole.fromWireValue(role).getOrElse(A2ARole.Unspecified)
 
   private def toJsRole(role: A2ARole): String =
-    role match
-      case A2ARole.User        => "user"
-      case A2ARole.Agent       => "agent"
-      case A2ARole.Unspecified => "unspecified"
+    role.lowerValue
 
   def toScalaPart(js: JsPart): Part =
     val partDyn  = js.asInstanceOf[scala.scalajs.js.Dynamic]
@@ -382,28 +375,10 @@ object A2AConverters:
     obj.asInstanceOf[JsTaskStatus]
 
   def toScalaTaskState(s: String): TaskState =
-    s match
-      case "submitted"      => TaskState.Submitted
-      case "working"        => TaskState.Working
-      case "input-required" => TaskState.InputRequired
-      case "completed"      => TaskState.Completed
-      case "canceled"       => TaskState.Canceled
-      case "failed"         => TaskState.Failed
-      case "rejected"       => TaskState.Rejected
-      case "auth-required"  => TaskState.AuthRequired
-      case _                => TaskState.Unknown
+    TaskState.fromWireValue(s).getOrElse(TaskState.Unknown)
 
   def toJsTaskState(s: TaskState): String =
-    s match
-      case TaskState.Submitted     => "submitted"
-      case TaskState.Working       => "working"
-      case TaskState.InputRequired => "input-required"
-      case TaskState.Completed     => "completed"
-      case TaskState.Canceled      => "canceled"
-      case TaskState.Failed        => "failed"
-      case TaskState.Rejected      => "rejected"
-      case TaskState.AuthRequired  => "auth-required"
-      case TaskState.Unknown       => "unknown"
+    s.lowerKebabValue
 
   // ==================== Artifact ====================
 

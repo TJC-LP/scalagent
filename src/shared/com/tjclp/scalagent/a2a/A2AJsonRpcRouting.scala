@@ -27,7 +27,7 @@ private[a2a] object A2AJsonRpcRouting:
         effectiveContext =>
           val extensions = A2AServiceParameters.activatedExtensions(capabilities, effectiveContext)
           val routed     =
-            if isStreamingMethod(request.method) then
+            if A2AOperation.fromMethodName(request.method).exists(_.streaming) then
               streamWithContext(request, effectiveContext, requestHandler)
                 .map(events => A2AJsonRpcDispatch.Stream(request.id, events, extensions))
             else
@@ -58,7 +58,7 @@ private[a2a] object A2AJsonRpcRouting:
     ZIO.fromEither(contextFor(request, context)).flatMap(streamWithContext(request, _, requestHandler))
 
   def contextFor(request: JsonRpcRequest, context: ServerCallContext): Either[A2AError, ServerCallContext] =
-    if !isKnownMethod(request.method) then Right(context)
+    if A2AOperation.fromMethodName(request.method).isEmpty then Right(context)
     else
       tenantFromParams(request.params).flatMap {
         case None         => Right(context)
@@ -80,58 +80,58 @@ private[a2a] object A2AJsonRpcRouting:
     context: ServerCallContext,
     requestHandler: A2ARequestHandler,
   ): Task[JsonRpcResponse] =
-    request.method match
-      case A2AMethod.MessageSend =>
+    A2AOperation.fromMethodName(request.method) match
+      case Some(A2AOperation.MessageSend) =>
         paramsAs[A2ARequest.MessageSend](request)
           .flatMap(requestHandler.sendMessage(_, context))
           .map(JsonRpcResponse.success(request.id, _))
-      case A2AMethod.TasksGet =>
+      case Some(A2AOperation.TasksGet) =>
         paramsAs[A2ARequest.TasksGet](request)
           .flatMap(requestHandler.getTask(_, context))
           .map(JsonRpcResponse.success(request.id, _))
-      case A2AMethod.TasksList =>
+      case Some(A2AOperation.TasksList) =>
         paramsAs[A2ARequest.TasksList](request)
           .flatMap(requestHandler.listTasks(_, context))
           .map(JsonRpcResponse.success(request.id, _))
-      case A2AMethod.TasksCancel =>
+      case Some(A2AOperation.TasksCancel) =>
         paramsAs[A2ARequest.TasksCancel](request)
           .flatMap(requestHandler.cancelTask(_, context))
           .map(JsonRpcResponse.success(request.id, _))
-      case A2AMethod.PushNotificationConfigSet =>
+      case Some(A2AOperation.PushNotificationConfigSet) =>
         paramsAs[TaskPushNotificationConfig](request)
           .flatMap(requestHandler.createPushConfig(_, context))
           .map(JsonRpcResponse.success(request.id, _))
-      case A2AMethod.PushNotificationConfigGet =>
+      case Some(A2AOperation.PushNotificationConfigGet) =>
         paramsAs[A2ARequest.PushNotificationConfigGet](request)
           .flatMap(requestHandler.getPushConfig(_, context))
           .map(JsonRpcResponse.success(request.id, _))
-      case A2AMethod.PushNotificationConfigList =>
+      case Some(A2AOperation.PushNotificationConfigList) =>
         paramsAs[A2ARequest.PushNotificationConfigList](request)
           .flatMap(requestHandler.listPushConfigs(_, context))
           .map(JsonRpcResponse.success(request.id, _))
-      case A2AMethod.PushNotificationConfigDelete =>
+      case Some(A2AOperation.PushNotificationConfigDelete) =>
         paramsAs[A2ARequest.PushNotificationConfigDelete](request)
           .flatMap(requestHandler.deletePushConfig(_, context))
           .as(JsonRpcResponse.success(request.id, Json.Obj()))
-      case A2AMethod.GetAuthenticatedExtendedCard =>
+      case Some(A2AOperation.GetAuthenticatedExtendedCard) =>
         requestHandler.getExtendedAgentCard(context).map(JsonRpcResponse.success(request.id, _))
-      case other =>
-        ZIO.fail(A2AError.methodNotFound(other))
+      case _ =>
+        ZIO.fail(A2AError.methodNotFound(request.method))
 
   private def streamWithContext(
     request: JsonRpcRequest,
     context: ServerCallContext,
     requestHandler: A2ARequestHandler,
   ): Task[ZStream[Any, Throwable, A2AResponse.StreamEvent]] =
-    request.method match
-      case A2AMethod.MessageStream =>
+    A2AOperation.fromMethodName(request.method) match
+      case Some(A2AOperation.MessageStream) =>
         paramsAs[A2ARequest.MessageSend](request)
           .flatMap(requestHandler.sendMessageStream(_, context))
-      case A2AMethod.TasksResubscribe =>
+      case Some(A2AOperation.TasksResubscribe) =>
         paramsAs[A2ARequest.TasksResubscribe](request)
           .flatMap(requestHandler.resubscribe(_, context))
-      case other =>
-        ZIO.fail(A2AError.methodNotFound(other))
+      case _ =>
+        ZIO.fail(A2AError.methodNotFound(request.method))
 
   private def errorDispatch(
     id: Option[JsonRpcId],
@@ -153,16 +153,4 @@ private[a2a] object A2AJsonRpcRouting:
                 value.asString match
                   case Some(tenant) => Right(Some(tenant.trim).filter(_.nonEmpty))
                   case None         => Left(A2AError.invalidParams("tenant must be a string"))
-
-  private def isStreamingMethod(method: String): Boolean =
-    method == A2AMethod.MessageStream || method == A2AMethod.TasksResubscribe
-
-  private def isKnownMethod(method: String): Boolean =
-    method match
-      case A2AMethod.MessageSend | A2AMethod.MessageStream | A2AMethod.TasksGet | A2AMethod.TasksList |
-          A2AMethod.TasksCancel | A2AMethod.TasksResubscribe | A2AMethod.PushNotificationConfigSet |
-          A2AMethod.PushNotificationConfigGet | A2AMethod.PushNotificationConfigList |
-          A2AMethod.PushNotificationConfigDelete | A2AMethod.GetAuthenticatedExtendedCard =>
-        true
-      case _ => false
 end A2AJsonRpcRouting

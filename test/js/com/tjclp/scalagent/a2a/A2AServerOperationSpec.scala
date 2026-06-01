@@ -130,6 +130,35 @@ class A2AServerOperationSpec extends FunSuite:
       assertEquals(card.name, "IdempotentStartTest")
     }
 
+  test("JS server keeps an advertised URL after Bun binds an ephemeral port"):
+    val publicUrl = "https://agent.example.test/a2a"
+    val config = A2AServer.Config(
+      name = "AdvertisedUrlJsTest",
+      description = "Advertised URL JS test server",
+      host = "127.0.0.1",
+      port = 0,
+      advertisedUrl = Some(publicUrl),
+      executionOverride = Some(completedExecution),
+    )
+
+    val program =
+      ZIO.scoped {
+        for
+          server <- A2AServer.create(config)
+          firstUrl = server.url
+          _ <- server.start
+          secondUrl = server.url
+          card = server.agentCard
+        yield (firstUrl, secondUrl, card.url, card.supportedInterfaces.map(_.url))
+      }
+
+    runTask(program).map { case (firstUrl, secondUrl, cardUrl, interfaceUrls) =>
+      assertEquals(firstUrl, publicUrl)
+      assertEquals(secondUrl, publicUrl)
+      assertEquals(cardUrl, publicUrl)
+      assert(interfaceUrls.forall(_ == publicUrl))
+    }
+
   test("send message applies historyLength to immediate and blocking responses"):
     val config = A2AServer.Config(
       name = "HistoryProjectionTest",
@@ -163,7 +192,7 @@ class A2AServerOperationSpec extends FunSuite:
     runTask(program).map { case (zero, one, immediate, full) =>
       assertEquals(zero.history, Nil)
       assertEquals(one.history.length, 1)
-      assertEquals(one.history.head.role, A2ARole.Agent)
+      assertEquals(one.history.head.role, A2ARole.User)
       assertEquals(immediate.history, Nil)
       assert(full.history.nonEmpty)
     }

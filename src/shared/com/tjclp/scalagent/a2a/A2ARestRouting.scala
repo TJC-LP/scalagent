@@ -15,6 +15,7 @@ private[a2a] enum A2ARestDispatch:
 
 private[a2a] trait A2ARestBodyReader:
   def bodyAs[A: JsonDecoder]: Task[A]
+  def messageSendBodyAs(executionMode: ExecutionMode): Task[A2ARequest.MessageSend]
   def optionalBodyAs[A: JsonDecoder]: Task[Option[A]]
 
 private[a2a] object A2ARestRouting:
@@ -25,6 +26,7 @@ private[a2a] object A2ARestRouting:
     bodyReader: A2ARestBodyReader,
     agentCard: AgentCard,
     capabilities: AgentCapabilities,
+    executionMode: ExecutionMode,
     requestHandler: A2ARequestHandler,
   ): Option[UIO[A2ARestDispatch]] =
     import A2APathRouting.RestRoute
@@ -32,7 +34,7 @@ private[a2a] object A2ARestRouting:
     routed.route match
       case Some(RestRoute.MessageSend) =>
         Some(
-          decodeBody[A2ARequest.MessageSend](bodyReader)(request =>
+          decodeMessageSendBody(bodyReader, executionMode)(request =>
             json(contextFor(request.tenant), agentCard, capabilities)(context =>
               requestHandler.sendMessage(request, context)
             )
@@ -40,7 +42,7 @@ private[a2a] object A2ARestRouting:
         )
       case Some(RestRoute.MessageStream) =>
         Some(
-          decodeBody[A2ARequest.MessageSend](bodyReader)(request =>
+          decodeMessageSendBody(bodyReader, executionMode)(request =>
             stream(contextFor(request.tenant), agentCard, capabilities)(context =>
               requestHandler.sendMessageStream(request, context)
             )
@@ -137,6 +139,15 @@ private[a2a] object A2ARestRouting:
   ): UIO[A2ARestDispatch] =
     bodyReader
       .bodyAs[A]
+      .foldZIO(error => ZIO.succeed(A2ARestDispatch.Error(A2AError.fromThrowable(error), Nil)), next)
+
+  private def decodeMessageSendBody(
+    bodyReader: A2ARestBodyReader,
+    executionMode: ExecutionMode,
+  )(next: A2ARequest.MessageSend => UIO[A2ARestDispatch]
+  ): UIO[A2ARestDispatch] =
+    bodyReader
+      .messageSendBodyAs(executionMode)
       .foldZIO(error => ZIO.succeed(A2ARestDispatch.Error(A2AError.fromThrowable(error), Nil)), next)
 
   private def queryJson[A: JsonEncoder](

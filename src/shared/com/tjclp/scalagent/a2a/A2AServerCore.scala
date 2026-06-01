@@ -13,19 +13,34 @@ private[a2a] trait A2AServerCoreConfig:
   def eventStoreAppendTimeout: Duration
   def eventStoreLoadTimeout: Duration
   def pushNotificationUrlPolicy: PushNotificationUrlPolicy
+  def agentCardAuth: A2AAgentCardAuth = A2AAgentCardAuth.permitAll
+  def extendedAgentCardAuth: A2AExtendedAgentCardAuth
+  def requestAuth: A2ARequestAuth
+  def messageResponseOverride: Option[A2ARequest.MessageSend => Task[A2AMessage]]         = None
+  def messageResponseSelector: Option[A2ARequest.MessageSend => Task[Option[A2AMessage]]] =
+    messageResponseOverride.map(responder => params => responder(params).map(Some(_)))
 
 private[a2a] trait A2AServerLiveConfig extends A2AServerCoreConfig:
   def name: String
   def description: String
   def host: String
   def port: Int
+  def advertisedUrl: Option[String]
+  def executionMode: ExecutionMode
   def taskTimeout: Option[Duration]
   def skills: List[AgentSkill]
   def executionOverride: Option[(A2AMessage, TaskId, ContextId, A2AEventPublisher) => Task[Unit]]
   def tenant: Option[String]
+  def maxRequestBodyBytes: Int
 
   def url: String =
-    A2AServerDefaults.url(host, port)
+    publicUrl()
+
+  def publicUrl(
+    boundPort: Option[Int] = None,
+    scheme: String = "http",
+  ): String =
+    A2AServerDefaults.publicUrl(host, port, advertisedUrl, boundPort, scheme)
 
   def toAgentCard: AgentCard =
     toAgentCardAt(url)
@@ -78,6 +93,10 @@ private[a2a] object A2AServerCore:
       eventStoreAppendTimeout = config.eventStoreAppendTimeout,
       eventStoreLoadTimeout = config.eventStoreLoadTimeout,
       pushNotificationUrlPolicy = config.pushNotificationUrlPolicy,
+      agentCardAuth = config.agentCardAuth,
+      extendedAgentCardAuth = config.extendedAgentCardAuth,
+      requestAuth = config.requestAuth,
+      messageResponseSelector = config.messageResponseSelector,
     )
     val requestHandler = A2ARequestHandler(
       requestConfig,

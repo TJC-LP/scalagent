@@ -3,6 +3,7 @@ package com.tjclp.scalagent.a2a
 import scala.util.Try
 
 import zio.*
+import zio.json.ast.Json
 import zio.stream.*
 
 private[a2a] object A2ARequestHandler:
@@ -13,14 +14,20 @@ private[a2a] object A2ARequestHandler:
     eventReplayLimit: Int,
     eventStoreAppendTimeout: Duration,
     eventStoreLoadTimeout: Duration,
-    pushNotificationUrlPolicy: PushNotificationUrlPolicy)
+    pushNotificationUrlPolicy: PushNotificationUrlPolicy,
+    agentCardAuth: A2AAgentCardAuth,
+    extendedAgentCardAuth: A2AExtendedAgentCardAuth,
+    requestAuth: A2ARequestAuth,
+    messageResponseSelector: Option[MessageResponseSelector])
 
   final case class PreparedRun(
     message: A2AMessage,
     task: A2ATask,
     bus: A2AEventBus)
 
-  type ExecuteRun = (PreparedRun, A2AEventPublisher) => Task[Unit]
+  type ExecuteRun              = (PreparedRun, A2AEventPublisher) => Task[Unit]
+  type MessageResponseOverride = A2ARequest.MessageSend => Task[A2AMessage]
+  type MessageResponseSelector = A2ARequest.MessageSend => Task[Option[A2AMessage]]
 end A2ARequestHandler
 
 private[a2a] final class A2ARequestHandler(
@@ -44,50 +51,68 @@ private[a2a] final class A2ARequestHandler(
 
   def agentCard: AgentCard = agentCardProvider()
 
+  def getAgentCard(context: ServerCallContext): Task[AgentCard] =
+    val card = agentCard
+    config.agentCardAuth.authorize(card, context.authorization).as(card)
+
   def sendMessage(
     params: A2ARequest.MessageSend,
     context: ServerCallContext,
   ): Task[A2AResponse.SendMessageResult] =
-    for
-      prepared <- prepare(params, context)
-      result   <-
-        val historyLength = params.configuration.flatMap(_.historyLength)
-        val project       = (task: A2ATask) => A2ATaskStore.applyHistoryLength(task, historyLength)
-        val run           =
+    authorizeRequest(context) *> {
+      messageResponse(params, context).flatMap {
+        case Some(messageResult) =>
+          ZIO.succeed(messageResult)
+        case None =>
           for
-            _ <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
-            stream = prepared.bus.stream
-            _      <- startExecution(prepared, context)
-            result <-
-              if params.configuration.exists(_.returnImmediately) then
-                ZIO.succeed(A2AResponse.SendMessageResult.TaskResult(project(prepared.task)))
-              else
-                waitForFinal(prepared.task.id, stream, context)
-                  .map(task => A2AResponse.SendMessageResult.TaskResult(project(task)))
+            prepared <- prepare(params, context)
+            result   <-
+              val historyLength = params.configuration.flatMap(_.historyLength)
+              val project       = (task: A2ATask) => A2ATaskStore.applyHistoryLength(task, historyLength)
+              val run           =
+                for
+                  _ <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
+                  stream = prepared.bus.stream
+                  _      <- startExecution(prepared, context)
+                  result <-
+                    if params.configuration.exists(_.returnImmediately) then
+                      ZIO.succeed(A2AResponse.SendMessageResult.TaskResult(project(prepared.task)))
+                    else
+                      waitForFinal(prepared.task.id, stream, context)
+                        .map(task => A2AResponse.SendMessageResult.TaskResult(project(task)))
+                yield result
+              run.onError(_ => cleanupPrepared(prepared, context))
           yield result
-        run.onError(_ => cleanupPrepared(prepared, context))
-    yield result
+      }
+    }
 
   def sendMessageStream(
     params: A2ARequest.MessageSend,
     context: ServerCallContext,
   ): Task[ZStream[Any, Throwable, A2AResponse.StreamEvent]] =
-    requireStreaming *> {
-      for
-        prepared <- prepare(params, context)
-        stream   <-
-          val run =
-            for
-              _ <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
-              stream = prepared.bus.stream
-              _ <- startExecution(prepared, context)
-            yield stream
-          run.onError(_ => cleanupPrepared(prepared, context))
-      yield stream
+    authorizeRequest(context) *> requireStreaming *> {
+      messageResponse(params, context).flatMap {
+        case Some(A2AResponse.SendMessageResult.MessageResult(message)) =>
+          ZIO.succeed(ZStream.succeed(A2AResponse.StreamEvent.Message(message)))
+        case Some(A2AResponse.SendMessageResult.TaskResult(task)) =>
+          ZIO.succeed(ZStream.succeed(A2AResponse.StreamEvent.TaskSnapshot(task)))
+        case None =>
+          for
+            prepared <- prepare(params, context)
+            stream   <-
+              val run =
+                for
+                  _ <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
+                  stream = prepared.bus.stream
+                  _ <- startExecution(prepared, context)
+                yield stream
+              run.onError(_ => cleanupPrepared(prepared, context))
+          yield stream
+      }
     }
 
   def getTask(params: A2ARequest.TasksGet, context: ServerCallContext): Task[A2ATask] =
-    validateHistoryLength(params.historyLength) *>
+    authorizeRequest(context) *> validateHistoryLength(params.historyLength) *>
       taskStore.load(params.id, context.tenant).flatMap {
         case Some(task) =>
           reconcileOrphaned(task, context).map(A2ATaskStore.applyHistoryLength(_, params.historyLength))
@@ -95,12 +120,13 @@ private[a2a] final class A2ARequestHandler(
       }
 
   /**
-   * Durable-completion safety net. A non-terminal task with no active runtime
-   * bus is orphaned: its forked execution ended without writing a terminal
-   * status — the server was restarted/recycled, or the run died — so it would
-   * otherwise report `working` forever. Transition it to terminal `failed` and
-   * persist, so a `tasks/get` poll self-heals. An active bus means the run is
-   * legitimately in flight (or just reserved in `prepare`), so leave it alone.
+   * Durable-completion safety net. A task in an active state with no active
+   * runtime bus is orphaned: its forked execution ended without writing a
+   * stream-ending status — the server was restarted/recycled, or the run died —
+   * so it would otherwise report `working` forever. Transition it to terminal
+   * `failed` and persist, so a `tasks/get` poll self-heals. An active bus means
+   * the run is legitimately in flight (or just reserved in `prepare`), so leave
+   * it alone.
    *
    * Scope: correct for a single web-tier replica (the registry reflects every
    * active run on this process). A multi-replica deployment would need a shared
@@ -109,28 +135,42 @@ private[a2a] final class A2ARequestHandler(
    * here (its bus is still active) — bound that with `Config.taskTimeout`.
    */
   private def reconcileOrphaned(task: A2ATask, context: ServerCallContext): Task[A2ATask] =
-    if task.isTerminal then ZIO.succeed(task)
+    if task.isStreamEnding then ZIO.succeed(task)
     else
       runtimeRegistry.bus(taskRuntimeKey(task.id, context)).flatMap {
         case Some(_) => ZIO.succeed(task)
         case None    =>
-          val message = A2AMessage
-            .agentText(
-              "Task interrupted: no active run (the server restarted or the run ended without " +
-                "completing). Resend the message to retry.",
-              Some(task.contextId),
-            )
-            .copy(taskId = Some(task.id))
-          val failed = task.copy(status = TaskStatus.failed(message))
-          ZIO.logWarning(s"Reconciling orphaned non-terminal task ${task.id.value} -> failed") *>
-            taskStore.save(failed, context.tenant).as(failed)
+          // TOCTOU guard: we loaded `task` (non-terminal) BEFORE checking the
+          // bus. A run that finishes in that window persists its terminal status
+          // and THEN removes its bus (terminal-persist happens-before
+          // bus-removal in ResultManager.publish), so "no bus" can mean either
+          // "genuinely orphaned" or "just completed". Re-read the store — the
+          // source of truth — and only fail if it is STILL non-terminal.
+          // Without this we would clobber a real completed/canceled outcome.
+          taskStore.load(task.id, context.tenant).flatMap {
+            case Some(fresh) if fresh.isStreamEnding => ZIO.succeed(fresh)
+            case freshOpt                            =>
+              val current = freshOpt.getOrElse(task)
+              val message = A2AMessage
+                .agentText(
+                  "Task interrupted: no active run (the server restarted or the run ended without " +
+                    "completing). Resend the message to retry.",
+                  Some(current.contextId),
+                )
+                .copy(taskId = Some(current.id))
+              val failed = current.copy(status = TaskStatus.failed(message))
+              ZIO.logWarning(s"Reconciling orphaned non-terminal task ${current.id.value} -> failed") *>
+                taskStore.save(failed, context.tenant).as(failed)
+          }
       }
 
   def listTasks(params: A2ARequest.TasksList, context: ServerCallContext): Task[A2AResponse.ListTasksResult] =
-    taskStore.list(params, context.tenant)
+    authorizeRequest(context) *> taskStore.list(params, context.tenant)
 
   def cancelTask(params: A2ARequest.TasksCancel, context: ServerCallContext): Task[A2ATask] =
-    taskStore.load(params.id, context.tenant).flatMap {
+    authorizeRequest(context) *> taskStore.load(params.id, context.tenant).flatMap {
+      case Some(task) if task.status.state == TaskState.Canceled =>
+        ZIO.succeed(task)
       case Some(task) if task.isTerminal =>
         ZIO.fail(A2AError.taskNotCancelable(params.id))
       case Some(task) =>
@@ -162,22 +202,25 @@ private[a2a] final class A2ARequestHandler(
 
   def resubscribe(params: A2ARequest.TasksResubscribe, context: ServerCallContext)
     : Task[ZStream[Any, Throwable, A2AResponse.StreamEvent]] =
-    requireStreaming *> taskStore.load(params.id, context.tenant).flatMap {
+    authorizeRequest(context) *> requireStreaming *> taskStore.load(params.id, context.tenant).flatMap {
       case Some(task) if task.isTerminal =>
         ZIO.fail(A2AError.unsupportedOperation(s"Task ${params.id.value} is terminal and cannot be subscribed"))
       case Some(task) =>
         runtimeRegistry.bus(taskRuntimeKey(params.id, context)).flatMap {
-          case Some(bus) => ZIO.succeed(ZStream.succeed(A2AResponse.StreamEvent.TaskSnapshot(task)) ++ bus.stream)
-          case None      => durableReplay(task, context)
+          case Some(bus) =>
+            ZIO.succeed(ZStream.succeed(A2AResponse.StreamEvent.TaskSnapshot(task)) ++ bus.stream.filter(notSnapshot))
+          case None => durableReplay(task, context)
         }
       case None =>
         ZIO.fail(A2AError.taskNotFound(params.id))
     }
 
+  private val notSnapshot: A2AResponse.StreamEvent => Boolean =
+    event => !event.isInstanceOf[A2AResponse.StreamEvent.TaskSnapshot]
+
   private def durableReplay(task: A2ATask, context: ServerCallContext)
     : Task[ZStream[Any, Throwable, A2AResponse.StreamEvent]] =
-    val snapshot    = ZStream.succeed(A2AResponse.StreamEvent.TaskSnapshot(task))
-    val notSnapshot = (event: A2AResponse.StreamEvent) => !event.isInstanceOf[A2AResponse.StreamEvent.TaskSnapshot]
+    val snapshot = ZStream.succeed(A2AResponse.StreamEvent.TaskSnapshot(task))
     config.replayProvider match
       case Some(provider) =>
         ZIO.succeed(snapshot ++ provider.replay(task, context.tenant).filter(notSnapshot))
@@ -190,11 +233,11 @@ private[a2a] final class A2ARequestHandler(
               .flatMap {
                 case Some(events) =>
                   val replay = events.filter(notSnapshot)
-                  if task.isTerminal || replay.exists(_.isFinal) then
+                  if task.isStreamEnding || replay.exists(_.isFinal) then
                     ZIO.succeed(snapshot ++ ZStream.fromIterable(replay))
                   else inactiveNonTerminalReplayFailure(task, "the durable event store has no terminal event")
                 case None =>
-                  if task.isTerminal then ZIO.succeed(snapshot)
+                  if task.isStreamEnding then ZIO.succeed(snapshot)
                   else
                     inactiveNonTerminalReplayFailure(
                       task,
@@ -202,7 +245,7 @@ private[a2a] final class A2ARequestHandler(
                     )
               }
           case None =>
-            if task.isTerminal then ZIO.succeed(snapshot)
+            if task.isStreamEnding then ZIO.succeed(snapshot)
             else inactiveNonTerminalReplayFailure(task, "no event store / replay provider is configured")
     end match
   end durableReplay
@@ -219,7 +262,7 @@ private[a2a] final class A2ARequestHandler(
 
   def createPushConfig(configParam: TaskPushNotificationConfig, context: ServerCallContext)
     : Task[TaskPushNotificationConfig] =
-    requirePush *> {
+    authorizeRequest(context) *> requirePush *> {
       val taskId = configParam.taskId.getOrElse(TaskId(""))
       if taskId.isEmpty then ZIO.fail(A2AError.invalidParams("taskId is required"))
       else
@@ -229,7 +272,7 @@ private[a2a] final class A2ARequestHandler(
 
   def getPushConfig(params: A2ARequest.PushNotificationConfigGet, context: ServerCallContext)
     : Task[TaskPushNotificationConfig] =
-    requirePush *> ensureTask(params.taskId, context) *>
+    authorizeRequest(context) *> requirePush *> ensureTask(params.taskId, context) *>
       pushStore.load(params.taskId, context.tenant).flatMap { configs =>
         configs.find(_.id.contains(params.id)) match
           case Some(config) => ZIO.succeed(config)
@@ -238,18 +281,62 @@ private[a2a] final class A2ARequestHandler(
 
   def listPushConfigs(params: A2ARequest.PushNotificationConfigList, context: ServerCallContext)
     : Task[A2AResponse.PushNotificationConfigListResult] =
-    requirePush *> ensureTask(params.taskId, context) *> validatePushConfigListParams(params) *>
+    authorizeRequest(context) *> requirePush *> ensureTask(params.taskId, context) *> validatePushConfigListParams(
+      params
+    ) *>
       pushStore
         .load(params.taskId, context.tenant)
         .map(paginatePushConfigs(_, params))
 
   def deletePushConfig(params: A2ARequest.PushNotificationConfigDelete, context: ServerCallContext): Task[Unit] =
-    requirePush *> ensureTask(params.taskId, context) *> pushStore.delete(params.taskId, context.tenant, params.id)
+    authorizeRequest(context) *> requirePush *> ensureTask(params.taskId, context) *>
+      pushStore.delete(params.taskId, context.tenant, params.id)
 
   def getExtendedAgentCard(context: ServerCallContext): Task[AgentCard] =
-    if !agentCard.capabilities.extendedAgentCard then
-      ZIO.fail(A2AError.unsupportedOperation(A2AMethod.GetAuthenticatedExtendedCard))
-    else ZIO.fromOption(extendedAgentCardProvider()).orElseFail(A2AError.authenticatedExtendedCardNotConfigured)
+    authorizeRequest(context) *> {
+      if !agentCard.capabilities.extendedAgentCard then
+        ZIO.fail(A2AError.unsupportedOperation(A2AMethod.GetAuthenticatedExtendedCard))
+      else
+        ZIO
+          .fromOption(extendedAgentCardProvider())
+          .orElseFail(A2AError.authenticatedExtendedCardNotConfigured)
+          .flatMap(card => config.extendedAgentCardAuth.authorize(agentCard, context.authorization).as(card))
+    }
+
+  private def authorizeRequest(context: ServerCallContext): Task[Unit] =
+    config.requestAuth.authorize(agentCard, context)
+
+  private def messageResponse(
+    params: A2ARequest.MessageSend,
+    context: ServerCallContext,
+  ): Task[Option[A2AResponse.SendMessageResult]] =
+    config.messageResponseSelector match
+      case Some(responder) if canReturnMessageResponse(params) =>
+        for
+          _        <- validateHistoryLength(params.configuration.flatMap(_.historyLength))
+          _        <- validateInboundMessage(params.message)
+          _        <- validateContextReference(params.message, None, context)
+          response <- responder(params)
+          result   <- response match
+            case Some(message) =>
+              val normalized = normalizeMessageResponse(message, params.message.contextId)
+              validateOutboundMessage(normalized).as(Some(A2AResponse.SendMessageResult.MessageResult(normalized)))
+            case None =>
+              ZIO.none
+        yield result
+      case _ =>
+        ZIO.none
+
+  private def canReturnMessageResponse(params: A2ARequest.MessageSend): Boolean =
+    params.message.taskId.isEmpty &&
+      !params.configuration.exists(_.returnImmediately) &&
+      params.configuration.flatMap(_.taskPushNotificationConfig).isEmpty
+
+  private def normalizeMessageResponse(message: A2AMessage, fallbackContextId: Option[ContextId]): A2AMessage =
+    message.copy(
+      contextId = message.contextId.orElse(fallbackContextId),
+      taskId = None,
+    )
 
   private def prepare(params: A2ARequest.MessageSend, context: ServerCallContext): Task[PreparedRun] =
     val incoming = params.message
@@ -273,6 +360,7 @@ private[a2a] final class A2ARequestHandler(
           ZIO.fail(A2AError.invalidParams("contextId does not match task contextId"))
         case _ =>
           ZIO.unit
+      _        <- validateContextReference(incoming, existing, context)
       maybeBus <- runtimeRegistry.reserve(key, config.eventReplayLimit)
       bus      <- maybeBus match
         case Some(bus) => ZIO.succeed(bus)
@@ -340,6 +428,83 @@ private[a2a] final class A2ARequestHandler(
     if message.role != A2ARole.User then
       ZIO.fail(A2AError.invalidParams("message.role must be ROLE_USER for SendMessage"))
     else if message.parts.isEmpty then ZIO.fail(A2AError.invalidParams("message.parts must contain at least one part"))
+    else ZIO.foreachDiscard(message.parts)(validateInboundPartMediaTypes)
+
+  private def validateContextReference(
+    message: A2AMessage,
+    existingTask: Option[A2ATask],
+    context: ServerCallContext,
+  ): Task[Unit] =
+    if existingTask.nonEmpty then ZIO.unit
+    else
+      message.contextId match
+        case Some(contextId) => ensureKnownContextId(contextId, context)
+        case None            => ZIO.unit
+
+  private def ensureKnownContextId(contextId: ContextId, context: ServerCallContext): Task[Unit] =
+    taskStore
+      .list(A2ARequest.TasksList(contextId = Some(contextId), pageSize = Some(1)), context.tenant)
+      .flatMap { result =>
+        if result.tasks.nonEmpty then ZIO.unit
+        else
+          ZIO.fail(
+            A2AError.invalidParams(
+              s"contextId is not known: ${contextId.value}; omit contextId to start a new context"
+            )
+          )
+      }
+
+  private def validateInboundPartMediaTypes(part: Part): Task[Unit] =
+    ZIO.foreachDiscard(explicitMediaTypes(part)) { mediaType =>
+      if supportedInputMediaType(mediaType) then ZIO.unit
+      else ZIO.fail(A2AError.contentTypeNotSupported(mediaType))
+    }
+
+  private def explicitMediaTypes(part: Part): List[String] =
+    val values = part match
+      case Part.Text(_, metadata, _, mediaType) =>
+        mediaType.toList ++ metadataContentTypes(metadata)
+      case Part.File(file, metadata) =>
+        fileMediaType(file).toList ++ metadataContentTypes(metadata)
+      case Part.Data(_, metadata, _, mediaType) =>
+        mediaType.toList ++ metadataContentTypes(metadata)
+    values.map(_.trim).filter(_.nonEmpty).distinct
+
+  private def metadataContentTypes(metadata: Option[Json]): List[String] =
+    metadata.toList.flatMap(_.asObject.toList).flatMap { fields =>
+      A2AJson
+        .caseInsensitiveLookup(name => fields.toMap.get(name).flatMap(_.asString), "contentType", "content_type")
+        .toList
+    }
+
+  private def fileMediaType(file: FileContent): Option[String] =
+    file match
+      case FileContent.Bytes(_, _, mimeType) => mimeType
+      case FileContent.Uri(_, _, mimeType)   => mimeType
+
+  private def supportedInputMediaType(mediaType: String): Boolean =
+    val requested = normalizeMediaType(mediaType)
+    supportedInputMediaTypes.exists(supported => mediaTypeMatches(requested, supported))
+
+  private def supportedInputMediaTypes: List[String] =
+    (agentCard.defaultInputModes ++ agentCard.skills.flatMap(_.inputModes))
+      .map(normalizeMediaType)
+      .filter(_.nonEmpty)
+      .distinct
+
+  private def normalizeMediaType(mediaType: String): String =
+    A2AHttpBinding.mediaType(mediaType)
+
+  private def mediaTypeMatches(requested: String, supported: String): Boolean =
+    supported == requested ||
+      supported == "*/*" ||
+      (supported.endsWith("/*") && requested.startsWith(supported.stripSuffix("*")))
+
+  private def validateOutboundMessage(message: A2AMessage): Task[Unit] =
+    if message.role != A2ARole.Agent then
+      ZIO.fail(A2AError.invalidAgentResponse("message.role must be ROLE_AGENT for SendMessageResponse.message"))
+    else if message.parts.isEmpty then
+      ZIO.fail(A2AError.invalidAgentResponse("message.parts must contain at least one part"))
     else ZIO.unit
 
   private def validatePushConfigListParams(params: A2ARequest.PushNotificationConfigList): Task[Unit] =

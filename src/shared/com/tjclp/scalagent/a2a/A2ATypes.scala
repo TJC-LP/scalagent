@@ -124,8 +124,38 @@ object A2APaths:
   val AgentCard = "/.well-known/agent-card.json"
 
 private[a2a] object A2AJson:
+  def caseVariants(name: String): List[String] =
+    List(name, name.toLowerCase, name.toUpperCase).distinct
+
+  def caseInsensitiveLookup(
+    valueOf: String => Option[String],
+    name: String,
+    aliases: String*
+  ): Option[String] =
+    (name +: aliases).iterator.flatMap(caseVariants).flatMap(valueOf).nextOption()
+
+  def caseInsensitiveEntryLookup(
+    entries: Iterable[(String, String)],
+    name: String,
+    aliases: String*
+  ): Option[String] =
+    val names = name +: aliases
+    entries.iterator.collectFirst {
+      case (key, value) if names.exists(_.equalsIgnoreCase(key)) => value
+    }
+
   def field(fields: Map[String, Json], names: String*): Option[Json] =
     names.iterator.flatMap(fields.get).nextOption()
+
+  def nonNullField(fields: Map[String, Json], names: String*): Option[Json] =
+    field(fields, names*).filter(_ != Json.Null)
+
+  def nonNullNamedField(
+    fields: Map[String, Json],
+    name: String,
+    aliases: String*
+  ): Option[(String, Json)] =
+    nonNullField(fields, (name +: aliases)*).map(name -> _)
 
   def optionalString(
     fields: Map[String, Json],
@@ -133,8 +163,9 @@ private[a2a] object A2AJson:
     aliases: String*
   ): Either[String, Option[String]] =
     field(fields, (name +: aliases)*) match
-      case Some(value) => value.asString.map(Some(_)).toRight(s"$name must be a string")
-      case None        => Right(None)
+      case Some(Json.Null) => Right(None)
+      case Some(value)     => value.asString.map(Some(_)).toRight(s"$name must be a string")
+      case None            => Right(None)
 
   def optionalBoolean(
     fields: Map[String, Json],
@@ -142,8 +173,9 @@ private[a2a] object A2AJson:
     aliases: String*
   ): Either[String, Option[Boolean]] =
     field(fields, (name +: aliases)*) match
-      case Some(value) => value.asBoolean.map(Some(_)).toRight(s"$name must be a boolean")
-      case None        => Right(None)
+      case Some(Json.Null) => Right(None)
+      case Some(value)     => value.asBoolean.map(Some(_)).toRight(s"$name must be a boolean")
+      case None            => Right(None)
 
   def optionalStruct(
     fields: Map[String, Json],
@@ -151,6 +183,7 @@ private[a2a] object A2AJson:
     aliases: String*
   ): Either[String, Option[Json]] =
     field(fields, (name +: aliases)*) match
+      case Some(Json.Null)                         => Right(None)
       case Some(value) if value.asObject.isDefined => Right(Some(value))
       case Some(_)                                 => Left(s"$name must be an object")
       case None                                    => Right(None)
@@ -161,7 +194,8 @@ private[a2a] object A2AJson:
     aliases: String*
   ): Either[String, List[String]] =
     field(fields, (name +: aliases)*) match
-      case Some(value) =>
+      case Some(Json.Null) => Right(Nil)
+      case Some(value)     =>
         value.asArray
           .toRight(s"$name must be an array")
           .flatMap(values =>

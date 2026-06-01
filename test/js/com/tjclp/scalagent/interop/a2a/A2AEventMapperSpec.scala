@@ -69,6 +69,16 @@ class A2AEventMapperSpec extends munit.FunSuite:
         assertEquals(text, "Hello from remote agent")
       case other => fail(s"Expected TextDelta, got $other")
 
+  test("direct message stream event with text maps to TextDelta"):
+    val msg = A2AMessage.agentText("Direct response", Some(testContextId))
+    val event = A2AResponse.StreamEvent.Message(msg)
+    val events = A2AEventMapper.mapStreamEvent(event)
+    assertEquals(events.size, 1)
+    events.head match
+      case AgentEvent.TextDelta(text, _) =>
+        assertEquals(text, "Direct response")
+      case other => fail(s"Expected TextDelta, got $other")
+
   // --- Artifact mapping ---
 
   test("TaskArtifactUpdate maps to Native"):

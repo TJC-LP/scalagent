@@ -133,6 +133,12 @@ enum A2ARole:
   case User
   case Agent
 
+  /** Lowercase value used by the JS SDK facade and accepted as a legacy JSON alias. */
+  def lowerValue: String = this match
+    case Unspecified => "unspecified"
+    case User        => "user"
+    case Agent       => "agent"
+
 object A2ARole:
   private val specifiedJsonValues = List("ROLE_USER", "ROLE_AGENT")
 
@@ -150,12 +156,13 @@ object A2ARole:
     case A2ARole.Agent       => "ROLE_AGENT"
   }
 
-  given JsonDecoder[A2ARole] = StringEnumJsonCodec.decoderOrFail {
+  def fromWireValue(value: String): Either[String, A2ARole] = value match
     case "ROLE_UNSPECIFIED" | "unspecified" | "unknown" => Right(A2ARole.Unspecified)
     case "ROLE_USER" | "user"                           => Right(A2ARole.User)
     case "ROLE_AGENT" | "agent"                         => Right(A2ARole.Agent)
     case other                                          => Left(s"Unknown role: $other")
-  }
+
+  given JsonDecoder[A2ARole] = StringEnumJsonCodec.decoderOrFail(fromWireValue)
 end A2ARole
 
 /** Message part - discriminated union of content types */
@@ -241,49 +248,44 @@ object Part:
             case Some(other) =>
               Left(s"Unknown part kind: $other")
             case None =>
-              fields.keys.filter(Set("text", "raw", "url", "data")).toList match
-                case "text" :: Nil =>
-                  fields
-                    .get("text")
-                    .flatMap(_.asString)
-                    .toRight("text must be a string")
-                    .map(Text(_, metadata, filename, mediaType))
-                case "raw" :: Nil =>
-                  fields
-                    .get("raw")
-                    .toRight("raw must be a string")
-                    .flatMap(FileContent.decodeBase64BytesField(_, "raw"))
-                    .map { raw =>
-                      File(
-                        FileContent.Bytes(
-                          bytes = raw,
-                          name = filename,
-                          mimeType = mediaType,
-                        ),
-                        metadata,
-                      )
-                    }
-                case "url" :: Nil =>
-                  fields
-                    .get("url")
-                    .flatMap(_.asString)
-                    .toRight("url must be a string")
-                    .map { url =>
-                      File(
-                        FileContent.Uri(
-                          uri = url,
-                          name = filename,
-                          mimeType = mediaType,
-                        ),
-                        metadata,
-                      )
-                    }
-                case "data" :: Nil =>
-                  fields.get("data").toRight("Missing 'data' field").map(Data(_, metadata, filename, mediaType))
+              val contentFields = List(
+                A2AJson.nonNullNamedField(fields, "text"),
+                A2AJson.nonNullNamedField(fields, "raw"),
+                A2AJson.nonNullNamedField(fields, "url"),
+                fields.get("data").map("data" -> _),
+              ).flatten
+              contentFields match
+                case ("text", textJson) :: Nil =>
+                  textJson.asString.toRight("text must be a string").map(Text(_, metadata, filename, mediaType))
+                case ("raw", rawJson) :: Nil =>
+                  FileContent.decodeBase64BytesField(rawJson, "raw").map { raw =>
+                    File(
+                      FileContent.Bytes(
+                        bytes = raw,
+                        name = filename,
+                        mimeType = mediaType,
+                      ),
+                      metadata,
+                    )
+                  }
+                case ("url", urlJson) :: Nil =>
+                  urlJson.asString.toRight("url must be a string").map { url =>
+                    File(
+                      FileContent.Uri(
+                        uri = url,
+                        name = filename,
+                        mimeType = mediaType,
+                      ),
+                      metadata,
+                    )
+                  }
+                case ("data", dataJson) :: Nil =>
+                  Right(Data(dataJson, metadata, filename, mediaType))
                 case Nil =>
                   Left("Part must contain exactly one of text, raw, url, or data")
                 case _ =>
                   Left("Part must contain exactly one of text, raw, url, or data")
+              end match
           end match
       yield part
       end for
@@ -338,7 +340,7 @@ object FileContent:
       for
         name     <- A2AJson.optionalString(fields, "name", "filename")
         mimeType <- A2AJson.optionalString(fields, "mimeType", "mediaType", "media_type")
-        content  <- (fields.get("bytes"), fields.get("uri")) match
+        content  <- (A2AJson.nonNullField(fields, "bytes"), A2AJson.nonNullField(fields, "uri")) match
           case (Some(bytesJson), None) =>
             decodeBase64BytesField(bytesJson, "bytes").map(Bytes(_, name, mimeType))
           case (None, Some(uriJson)) =>

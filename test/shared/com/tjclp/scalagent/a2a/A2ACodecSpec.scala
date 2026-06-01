@@ -82,6 +82,29 @@ class A2ACodecSpec extends FunSuite:
     assertEquals(A2AProtocol.negotiationVersion("1"), "1")
     assertEquals(A2AProtocol.negotiationVersion("1.0.0.1"), "1.0.0.1")
 
+  test("shared enum wire aliases cover proto JSON and JS SDK facade values"):
+    assertEquals(TaskState.fromWireValue("TASK_STATE_INPUT_REQUIRED"), Right(TaskState.InputRequired))
+    assertEquals(TaskState.fromWireValue("input-required"), Right(TaskState.InputRequired))
+    assertEquals(TaskState.AuthRequired.lowerKebabValue, "auth-required")
+    assertEquals(A2ARole.fromWireValue("ROLE_AGENT"), Right(A2ARole.Agent))
+    assertEquals(A2ARole.fromWireValue("agent"), Right(A2ARole.Agent))
+    assertEquals(A2ARole.Unspecified.lowerValue, "unspecified")
+
+  test("task lifecycle helpers include interrupted states in stream-ending states"):
+    val inputRequired = task.copy(status = TaskStatus.inputRequired(message.copy(role = A2ARole.Agent)))
+    val authRequired  = task.copy(status = TaskStatus.authRequired(message.copy(role = A2ARole.Agent)))
+    val working       = task.copy(status = TaskStatus.working())
+
+    assert(!inputRequired.isTerminal)
+    assert(inputRequired.isInterrupted)
+    assert(inputRequired.isStreamEnding)
+    assert(!authRequired.isTerminal)
+    assert(authRequired.isInterrupted)
+    assert(authRequired.isStreamEnding)
+    assert(!working.isTerminal)
+    assert(!working.isInterrupted)
+    assert(!working.isStreamEnding)
+
   test("agent card encoder follows ProtoJSON default field presence"):
     val card = AgentCard.minimal("MinimalAgent", "Minimal card", "https://agent.example.test/a2a")
     val json = card.toJson
@@ -1045,6 +1068,147 @@ class A2ACodecSpec extends FunSuite:
     assert(listFalseJson.contains(""""includeArtifacts":false"""))
     assert(!List(messageSendJson, getJson, listEmptyJson, listFalseJson, extendedJson).exists(_.contains("null")))
 
+  test("ProtoJSON null optional fields decode as unset"):
+    val cardJson =
+      s"""{
+        |  "name": "NullOptionalAgent",
+        |  "description": "Null optional fields",
+        |  "supportedInterfaces": [
+        |    {
+        |      "url": "https://agent.example.test/a2a",
+        |      "protocolBinding": "JSONRPC",
+        |      "tenant": null,
+        |      "protocolVersion": "1.0"
+        |    }
+        |  ],
+        |  "version": "1.0.0",
+        |  "provider": null,
+        |  "documentationUrl": null,
+        |  "capabilities": {
+        |    "streaming": null,
+        |    "pushNotifications": null,
+        |    "extensions": null,
+        |    "extendedAgentCard": null
+        |  },
+        |  "securitySchemes": null,
+        |  "securityRequirements": null,
+        |  "defaultInputModes": ["text/plain"],
+        |  "defaultOutputModes": ["text/plain"],
+        |  "skills": [$validSkillJson],
+        |  "signatures": null,
+        |  "iconUrl": null
+        |}""".stripMargin.fromJson[AgentCard]
+
+    val requestJson =
+      """{
+        |  "message": {
+        |    "messageId": "msg-null",
+        |    "role": "ROLE_USER",
+        |    "parts": [
+        |      {
+        |        "text": "hello",
+        |        "metadata": null,
+        |        "filename": null,
+        |        "mediaType": null
+        |      }
+        |    ],
+        |    "contextId": null,
+        |    "taskId": null,
+        |    "referenceTaskIds": null,
+        |    "metadata": null,
+        |    "extensions": null
+        |  },
+        |  "configuration": {
+        |    "acceptedOutputModes": null,
+        |    "taskPushNotificationConfig": null,
+        |    "historyLength": null,
+        |    "returnImmediately": null
+        |  },
+        |  "metadata": null,
+        |  "tenant": null
+        |}""".stripMargin.fromJson[A2ARequest.MessageSend]
+
+    val taskJson =
+      """{
+        |  "id": "task-null",
+        |  "contextId": null,
+        |  "status": {
+        |    "state": "TASK_STATE_WORKING",
+        |    "message": null,
+        |    "timestamp": null
+        |  },
+        |  "artifacts": null,
+        |  "history": null,
+        |  "metadata": null
+        |}""".stripMargin.fromJson[A2ATask]
+
+    val listRequestJson =
+      """{
+        |  "contextId": null,
+        |  "status": null,
+        |  "pageToken": null,
+        |  "includeArtifacts": null,
+        |  "tenant": null
+        |}""".stripMargin.fromJson[A2ARequest.TasksList]
+
+    val pushConfigJson =
+      """{
+        |  "url": "https://callback.example.test/a2a",
+        |  "tenant": null,
+        |  "id": null,
+        |  "taskId": null,
+        |  "token": null,
+        |  "authentication": null
+        |}""".stripMargin.fromJson[TaskPushNotificationConfig]
+
+    val taskPayload = task.toJsonAST.toOption.get
+    val sendResultJson = Json
+      .Obj("message" -> Json.Null, "task" -> taskPayload)
+      .toJson
+      .fromJson[A2AResponse.SendMessageResult]
+    val streamEventJson = Json
+      .Obj("message" -> Json.Null, "task" -> taskPayload)
+      .toJson
+      .fromJson[A2AResponse.StreamEvent]
+    val fileContentJson =
+      """{
+        |  "bytes": null,
+        |  "uri": "https://example.test/file.txt"
+        |}""".stripMargin.fromJson[FileContent]
+    val dataNullPartJson = """{"data":null}""".fromJson[Part]
+    val securitySchemeJson =
+      """{
+        |  "type": "http",
+        |  "scheme": "bearer",
+        |  "httpAuthSecurityScheme": null
+        |}""".stripMargin.fromJson[SecurityScheme]
+    val errorJson =
+      """{
+        |  "code": -32602,
+        |  "message": "Invalid params",
+        |  "data": null
+        |}""".stripMargin.fromJson[A2AError]
+
+    assertEquals(cardJson.map(_.capabilities), Right(AgentCapabilities(streaming = false)))
+    assertEquals(cardJson.map(_.provider), Right(None))
+    assertEquals(cardJson.map(_.supportedInterfaces.head.tenant), Right(None))
+    assertEquals(cardJson.map(_.securitySchemes), Right(Map.empty))
+    assertEquals(cardJson.map(_.securityRequirements), Right(Nil))
+    assertEquals(requestJson.map(_.tenant), Right(None))
+    assertEquals(requestJson.map(_.configuration.exists(_.returnImmediately)), Right(false))
+    assertEquals(requestJson.map(_.configuration.toList.flatMap(_.acceptedOutputModes)), Right(Nil))
+    assertEquals(requestJson.map(_.message.contextId), Right(None))
+    assertEquals(taskJson.map(task => (task.contextId, task.status.message, task.status.timestamp)), Right((ContextId("task-null"), None, None)))
+    assertEquals(taskJson.map(task => (task.artifacts, task.history, task.metadata)), Right((Nil, Nil, None)))
+    assertEquals(listRequestJson.map(request => (request.status, request.includeArtifacts, request.tenant)), Right((None, None, None)))
+    assertEquals(pushConfigJson.map(_.authentication), Right(None))
+    assertEquals(sendResultJson, Right(A2AResponse.SendMessageResult.TaskResult(task)))
+    assertEquals(streamEventJson, Right(A2AResponse.StreamEvent.TaskSnapshot(task)))
+    assertEquals(fileContentJson, Right(FileContent.Uri("https://example.test/file.txt")))
+    assertEquals(dataNullPartJson, Right(Part.Data(Json.Null)))
+    assertEquals(securitySchemeJson, Right(SecurityScheme.Http("bearer")))
+    assertEquals(errorJson.map(_.data), Right(None))
+
   test("edge A2A encoders omit absent optional fields"):
     val providerJson   = AgentProvider("https://provider.example.test", "Provider").toJson
     val extendedJson   = A2ARequest.GetAuthenticatedExtendedCard().toJson
@@ -1136,18 +1300,20 @@ class A2ACodecSpec extends FunSuite:
   test("JSON-RPC encoders omit absent optional fields"):
     val notification = JsonRpcRequest.notification(A2AMethod.TasksList, Json.Obj()).toJson
     val success      = JsonRpcResponse.success(Some(JsonRpcId.Num(1)), Json.Obj("ok" -> Json.Bool(true))).toJson
+    val nullId       = JsonRpcResponse.success(Some(JsonRpcId.Null), Json.Obj("ok" -> Json.Bool(true))).toJson
     val error        = JsonRpcResponse.error(None, JsonRpcError(A2AErrorCode.InvalidRequest, "bad")).toJson
 
     assert(!notification.contains(""""id""""))
     assert(!notification.contains("null"))
     assert(!success.contains(""""error""""))
     assert(!success.contains("null"))
+    assert(nullId.contains(""""id":null"""))
     assert(!error.contains(""""result""""))
     assert(!error.contains(""""id""""))
     assert(!error.contains(""""data""""))
     assert(!error.contains("null"))
 
-  test("JSON-RPC decoders enforce version, oneof response, and exact numeric ids"):
+  test("JSON-RPC decoders enforce version, oneof response, and preserve numeric ids"):
     val invalidVersion =
       """{
         |  "jsonrpc": "1.0",
@@ -1158,11 +1324,23 @@ class A2ACodecSpec extends FunSuite:
         |  "jsonrpc": "2.0",
         |  "method": ""
         |}""".stripMargin.fromJson[JsonRpcRequest]
-    val fractionalId =
+    val fractionalRequestId =
       """{
         |  "jsonrpc": "2.0",
         |  "method": "GetTask",
         |  "id": 1.5
+        |}""".stripMargin.fromJson[JsonRpcRequest]
+    val largeRequestId =
+      """{
+        |  "jsonrpc": "2.0",
+        |  "method": "GetTask",
+        |  "id": 9223372036854775808
+        |}""".stripMargin.fromJson[JsonRpcRequest]
+    val nullRequestId =
+      """{
+        |  "jsonrpc": "2.0",
+        |  "method": "GetTask",
+        |  "id": null
         |}""".stripMargin.fromJson[JsonRpcRequest]
     val bothResponseArms =
       """{
@@ -1190,13 +1368,21 @@ class A2ACodecSpec extends FunSuite:
 
     assert(invalidVersion.left.exists(_.contains("""jsonrpc must be "2.0"""")))
     assert(emptyMethod.left.exists(_.contains("Missing method")))
-    assert(fractionalId.left.exists(_.contains("JSON-RPC id number must be an integer")))
+    assertEquals(
+      fractionalRequestId.map(_.id),
+      Right(Some(JsonRpcId.RawNum(new java.math.BigDecimal("1.5")))),
+    )
+    assertEquals(
+      largeRequestId.map(_.id),
+      Right(Some(JsonRpcId.RawNum(new java.math.BigDecimal("9223372036854775808")))),
+    )
+    assertEquals(nullRequestId.map(_.id), Right(Some(JsonRpcId.Null)))
     assert(bothResponseArms.left.exists(_.contains("exactly one of result or error")))
     assert(missingResponseArm.left.exists(_.contains("exactly one of result or error")))
     assertEquals(nullResult.map(_.result), Right(Some(Json.Null)))
     assert(fractionalErrorCode.left.exists(_.contains("code must be an int32")))
 
-  test("JSON-RPC A2A parser requires a request id"):
+  test("JSON-RPC A2A parser requires an id field and accepts null ids"):
     val decodedNotification =
       """{
         |  "jsonrpc": "2.0",
@@ -1211,16 +1397,28 @@ class A2ACodecSpec extends FunSuite:
           |  "params": {}
           |}""".stripMargin
       )
+    val parsedNullId =
+      JsonRpcRequest.parse(
+        """{
+          |  "jsonrpc": "2.0",
+          |  "method": "ListTasks",
+          |  "params": {},
+          |  "id": null
+          |}""".stripMargin
+      )
 
     assertEquals(decodedNotification.map(_.id), Right(None))
     assertEquals(parsedNotification.left.map(_.code), Left(A2AErrorCode.InvalidRequest))
     assert(parsedNotification.left.exists(_.message.contains("Missing id")))
+    assertEquals(parsedNullId.map(_.id), Right(Some(JsonRpcId.Null)))
 
   test("JSON-RPC A2A-specific errors include google.rpc ErrorInfo details"):
     val taskNotFound = A2AError.taskNotFound(taskId).toJsonRpcError
     val extendedCard = A2AError.authenticatedExtendedCardNotConfigured.toJsonRpcError
+    val unauthenticated = A2AError.unauthenticated("missing credentials").toJsonRpcError
 
     assertEquals(taskNotFound.code, A2AErrorCode.TaskNotFound)
+    assertEquals(A2AError.httpStatus(A2AError.unauthenticated("missing credentials")), 401)
     assertEquals(
       taskNotFound.data.flatMap(_.asArray).flatMap(_.headOption).flatMap(_.asObject).map(_.toMap),
       Some(
@@ -1234,6 +1432,10 @@ class A2ACodecSpec extends FunSuite:
     assertEquals(
       extendedCard.data.flatMap(_.asArray).flatMap(_.headOption).flatMap(_.asObject).flatMap(_.toMap.get("reason")),
       Some(Json.Str("EXTENDED_AGENT_CARD_NOT_CONFIGURED")),
+    )
+    assertEquals(
+      unauthenticated.data.flatMap(_.asArray).flatMap(_.headOption).flatMap(_.asObject).flatMap(_.toMap.get("reason")),
+      Some(Json.Str("UNAUTHENTICATED")),
     )
 
   test("list tasks response emits current v1 proto pagination fields"):
@@ -1315,6 +1517,12 @@ class A2ACodecSpec extends FunSuite:
 
   test("stream response variants round-trip"):
     roundTrip[A2AResponse.StreamResponse](A2AResponse.StreamEvent.TaskSnapshot(task))
+    val directMessage = message.copy(role = A2ARole.Agent, taskId = None)
+    val directEvent: A2AResponse.StreamResponse = A2AResponse.StreamEvent.Message(directMessage)
+    roundTrip[A2AResponse.StreamResponse](directEvent)
+    val directJson = directEvent.toJson
+    assertEquals(directJson.fromJson[A2AResponse.StreamEvent].map(_.isFinal), Right(true))
+    assertEquals(directJson.fromJson[A2AResponse.StreamEvent].map(_.closesStream), Right(true))
     roundTrip[A2AResponse.StreamResponse](
       A2AResponse.StreamEvent.TaskStatusUpdate(taskId, contextId, task.status, metadata = Some(Json.Obj("m" -> Json.Str("v"))))
     )
@@ -1576,6 +1784,45 @@ class A2ACodecSpec extends FunSuite:
 
     assert(decoded.exists(_.configuration.exists(_.returnImmediately)))
     assertEquals(decoded.toOption.flatMap(_.message.taskId), Some(TaskId("task-snake")))
+
+  test("SendMessageRequest decoder accepts top-level taskId and contextId aliases"):
+    val decoded =
+      """{
+        |  "taskId": "task-top",
+        |  "contextId": "ctx-top",
+        |  "message": {
+        |    "role": "ROLE_USER",
+        |    "parts": [{"text": "hello"}],
+        |    "messageId": "msg-top"
+        |  }
+        |}""".stripMargin.fromJson[A2ARequest.MessageSend]
+    val conflict =
+      """{
+        |  "taskId": "task-top",
+        |  "message": {
+        |    "role": "ROLE_USER",
+        |    "parts": [{"text": "hello"}],
+        |    "messageId": "msg-top",
+        |    "taskId": "task-nested"
+        |  }
+        |}""".stripMargin.fromJson[A2ARequest.MessageSend]
+    val snake =
+      """{
+        |  "task_id": "task-snake-top",
+        |  "context_id": "ctx-snake-top",
+        |  "message": {
+        |    "role": "ROLE_USER",
+        |    "parts": [{"text": "hello"}],
+        |    "messageId": "msg-snake-top"
+        |  }
+        |}""".stripMargin.fromJson[A2ARequest.MessageSend]
+
+    assertEquals(decoded.map(value => (value.message.taskId, value.message.contextId)), Right((Some(TaskId("task-top")), Some(ContextId("ctx-top")))))
+    assert(conflict.left.exists(_.contains("taskId conflicts")))
+    assertEquals(
+      snake.map(value => (value.message.taskId, value.message.contextId)),
+      Right((Some(TaskId("task-snake-top")), Some(ContextId("ctx-snake-top")))),
+    )
 
   test("request decoders accept ProtoJSON original field names"):
     val taskGet =

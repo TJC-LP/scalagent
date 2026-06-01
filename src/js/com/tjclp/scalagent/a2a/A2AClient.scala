@@ -3,7 +3,6 @@ package com.tjclp.scalagent.a2a
 import scala.scalajs.js
 import scala.scalajs.js.JSON as JsJSON
 import scala.scalajs.js.JSConverters.*
-import java.util.concurrent.TimeoutException
 import zio.*
 import zio.stream.*
 import zio.json.*
@@ -24,26 +23,16 @@ trait A2AClient:
       .copy(returnImmediately = true)
     send(message, Some(asyncConfig))
 
-  /** Poll a task until it reaches a terminal state. */
+  /** Poll a task until it reaches a stream-ending state. */
   def awaitTask(
     taskId: TaskId,
     pollEvery: Duration = 1.second,
     timeout: Option[Duration] = None,
     historyLength: Option[Int] = None,
   ): Task[A2ATask] =
-    def loop: Task[A2ATask] =
-      getTask(taskId, historyLength).flatMap { task =>
-        if task.isTerminal then ZIO.succeed(task)
-        else ZIO.sleep(pollEvery) *> loop
-      }
+    A2AClientPolling.awaitTask(taskId, pollEvery, timeout, historyLength)(getTask)
 
-    timeout match
-      case Some(duration) =>
-        loop.timeoutFail(new TimeoutException(s"A2A task ${taskId.value} did not finish within $duration"))(duration)
-      case None =>
-        loop
-
-  /** Submit a message and poll `GetTask` until the task reaches a terminal state. */
+  /** Submit a message and poll `GetTask` until the task reaches a stream-ending state. */
   def sendAndPoll(
     message: A2AMessage,
     config: Option[MessageSendConfiguration] = None,
@@ -51,10 +40,7 @@ trait A2AClient:
     timeout: Option[Duration] = None,
     historyLength: Option[Int] = None,
   ): Task[A2ATask] =
-    submit(message, config).flatMap { task =>
-      if task.isTerminal then ZIO.succeed(task)
-      else awaitTask(task.id, pollEvery, timeout, historyLength)
-    }
+    A2AClientPolling.sendAndPoll(message, config, pollEvery, timeout, historyLength)(submit, getTask)
 
   /** Send a message and stream responses. */
   def stream(message: A2AMessage, config: Option[MessageSendConfiguration] = None)
@@ -167,7 +153,11 @@ private final class A2AClientLive(
   override def send(message: A2AMessage, config: Option[MessageSendConfiguration]): Task[A2ATask] =
     rpc[A2ARequest.MessageSend, A2AResponse.SendMessageResult](
       A2AMethod.MessageSend,
-      A2ARequest.MessageSend(message = message, configuration = config, tenant = iface.tenant),
+      A2ARequest.MessageSend(
+        message = message,
+        configuration = Some(config.getOrElse(MessageSendConfiguration.default)),
+        tenant = iface.tenant,
+      ),
     ).map {
       case A2AResponse.SendMessageResult.TaskResult(task)               => task
       case A2AResponse.SendMessageResult.MessageResult(responseMessage) =>
@@ -192,7 +182,7 @@ private final class A2AClientLive(
   override def listTasks(params: A2ARequest.TasksList): Task[A2AResponse.ListTasksResult] =
     rpc[A2ARequest.TasksList, A2AResponse.ListTasksResult](
       A2AMethod.TasksList,
-      params.copy(tenant = params.tenant.orElse(iface.tenant)),
+      params.copy(tenant = iface.tenant),
     )
 
   override def cancelTask(taskId: TaskId): Task[A2ATask] =
@@ -215,7 +205,7 @@ private final class A2AClientLive(
     else
       rpc[TaskPushNotificationConfig, TaskPushNotificationConfig](
         A2AMethod.PushNotificationConfigSet,
-        config.copy(taskId = Some(taskId), tenant = iface.tenant.orElse(config.tenant)),
+        config.copy(taskId = Some(taskId), tenant = iface.tenant),
       )
 
   override def getTaskPushNotificationConfig(taskId: TaskId, configId: String): Task[TaskPushNotificationConfig] =
@@ -257,8 +247,11 @@ private final class A2AClientLive(
             case Some(error) => ZIO.fail(error.toA2AError)
             case None        =>
               response.result match
-                case Some(result) => ZIO.fromEither(result.as[B].left.map(A2AError.invalidAgentResponse))
-                case None         => ZIO.fail(A2AError.invalidAgentResponse(s"Missing result for $method")))
+                case Some(result) =>
+                  ZIO.fromEither(
+                    A2AClientPayloadNormalizer.decode[B](result).left.map(A2AError.invalidAgentResponse)
+                  )
+                case None => ZIO.fail(A2AError.invalidAgentResponse(s"Missing result for $method")))
         }
       }
 
@@ -290,10 +283,16 @@ private final class A2AClientLive(
             case None        =>
               response.result match
                 case Some(result) =>
-                  ZIO.fromEither(result.as[A2AResponse.StreamEvent].left.map(A2AError.invalidAgentResponse))
+                  ZIO.fromEither(
+                    A2AClientPayloadNormalizer
+                      .decode[A2AResponse.StreamEvent](result)
+                      .left
+                      .map(A2AError.invalidAgentResponse)
+                  )
                 case None => ZIO.fail(A2AError.invalidAgentResponse(s"Missing stream result for $method")))
         }
       }
+  end rpcStream
 
   private def ensureResponseId(
     response: JsonRpcResponse,
@@ -311,7 +310,8 @@ private final class A2AClientLive(
         ZIO.fail(A2AError.invalidAgentResponse(s"Missing JSON-RPC response id for $method"))
 
   private def requestHeaders(contentType: String): Map[String, String] =
-    headers ++ Map(
+    val protectedHeaders = Set("content-type", A2AHeader.Version.toLowerCase)
+    headers.filterNot { case (name, _) => protectedHeaders.contains(name.toLowerCase) } ++ Map(
       "Content-Type"    -> contentType,
       A2AHeader.Version -> iface.protocolVersion,
     )
@@ -319,7 +319,9 @@ end A2AClientLive
 
 private object Http:
   def fetchJson[A: JsonDecoder](url: String, headers: Map[String, String]): Task[A] =
-    get(url, headers).flatMap(body => ZIO.fromEither(body.fromJson[A].left.map(A2AError.invalidAgentResponse)))
+    get(url, headers).flatMap(body =>
+      ZIO.fromEither(A2AClientPayloadNormalizer.decodeString[A](body).left.map(A2AError.invalidAgentResponse))
+    )
 
   def get(url: String, headers: Map[String, String]): Task[String] =
     fetchText(url, js.Dynamic.literal(method = "GET", headers = toJsHeaders(headers)))
@@ -440,7 +442,7 @@ extension (client: A2AClient)
   def submitText(text: String, contextId: Option[ContextId] = None): Task[A2ATask] =
     client.submit(A2AMessage.userText(text, contextId))
 
-  /** Submit a text message and poll until terminal state. */
+  /** Submit a text message and poll until a stream-ending state. */
   def sendAndPollText(
     text: String,
     contextId: Option[ContextId] = None,

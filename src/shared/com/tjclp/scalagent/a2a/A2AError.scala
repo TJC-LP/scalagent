@@ -8,7 +8,7 @@ import zio.json.ast.Json
 /**
  * A2A error codes following JSON-RPC 2.0 and A2A specification.
  *
- * Standard JSON-RPC errors: -32700 to -32603 A2A-specific errors: -32001 to -32007
+ * Standard JSON-RPC errors: -32700 to -32603 A2A-specific errors: -32001 to -32009
  */
 object A2AErrorCode:
   // Standard JSON-RPC 2.0 errors
@@ -28,6 +28,7 @@ object A2AErrorCode:
   val AuthenticatedExtendedCardNotConfigured: Int = -32007
   val ExtensionSupportRequired: Int               = -32008
   val VersionNotSupported: Int                    = -32009
+  val Unauthenticated: Int                        = -32010
 
   def message(code: Int): String = code match
     case ParseError                             => "Parse error"
@@ -44,8 +45,22 @@ object A2AErrorCode:
     case AuthenticatedExtendedCardNotConfigured => "Authenticated extended card not configured"
     case VersionNotSupported                    => "Version not supported"
     case ExtensionSupportRequired               => "Extension support required"
+    case Unauthenticated                        => "Unauthenticated"
     case _                                      => "Unknown error"
 end A2AErrorCode
+
+enum A2AGrpcStatus:
+  case INVALID_ARGUMENT
+  case NOT_FOUND
+  case FAILED_PRECONDITION
+  case INTERNAL
+  case UNAUTHENTICATED
+
+  def wireName: String = productPrefix
+
+object A2AGrpcStatus:
+  def fromWireName(value: String): Option[A2AGrpcStatus] =
+    A2AGrpcStatus.values.find(_.wireName == value)
 
 /** A2A error exception */
 final case class A2AError(
@@ -99,8 +114,9 @@ object A2AError:
             case _                       => Left("Missing message")
           }
         data <- fields.get("data") match
-          case Some(value) => value.asString.toRight("data must be a string").map(Option(_).filter(_.nonEmpty))
-          case None        => Right(None)
+          case Some(Json.Null) => Right(None)
+          case Some(value)     => value.asString.toRight("data must be a string").map(Option(_).filter(_.nonEmpty))
+          case None            => Right(None)
       yield A2AError(code, message, data)
     }
   }
@@ -119,17 +135,35 @@ object A2AError:
       case A2AErrorCode.AuthenticatedExtendedCardNotConfigured => Some("EXTENDED_AGENT_CARD_NOT_CONFIGURED")
       case A2AErrorCode.ExtensionSupportRequired               => Some("EXTENSION_SUPPORT_REQUIRED")
       case A2AErrorCode.VersionNotSupported                    => Some("VERSION_NOT_SUPPORTED")
+      case A2AErrorCode.Unauthenticated                        => Some("UNAUTHENTICATED")
       case _                                                   => None
 
   def httpStatus(error: A2AError): Int =
     error.code match
       case A2AErrorCode.TaskNotFound         => 404
+      case A2AErrorCode.Unauthenticated      => 401
       case A2AErrorCode.InvalidAgentResponse => 500
       case A2AErrorCode.InternalError        => 500
       case _                                 => 400
 
+  def grpcStatus(error: A2AError): A2AGrpcStatus =
+    error.code match
+      case A2AErrorCode.TaskNotFound =>
+        A2AGrpcStatus.NOT_FOUND
+      case A2AErrorCode.TaskNotCancelable | A2AErrorCode.PushNotificationNotSupported |
+          A2AErrorCode.UnsupportedOperation | A2AErrorCode.AuthenticatedExtendedCardNotConfigured |
+          A2AErrorCode.ExtensionSupportRequired | A2AErrorCode.VersionNotSupported =>
+        A2AGrpcStatus.FAILED_PRECONDITION
+      case A2AErrorCode.InvalidAgentResponse | A2AErrorCode.InternalError =>
+        A2AGrpcStatus.INTERNAL
+      case A2AErrorCode.Unauthenticated =>
+        A2AGrpcStatus.UNAUTHENTICATED
+      case _ =>
+        A2AGrpcStatus.INVALID_ARGUMENT
+
   def httpStatusName(status: Int): String =
     status match
+      case 401 => "UNAUTHENTICATED"
       case 404 => "NOT_FOUND"
       case 500 => "INTERNAL"
       case _   => "INVALID_ARGUMENT"
@@ -178,6 +212,9 @@ object A2AError:
 
   def authenticatedExtendedCardNotConfigured: A2AError =
     A2AError(A2AErrorCode.AuthenticatedExtendedCardNotConfigured, "Authenticated extended card not configured")
+
+  def unauthenticated(detail: String): A2AError =
+    A2AError(A2AErrorCode.Unauthenticated, s"Unauthenticated: $detail")
 
   def versionNotSupported(version: String): A2AError =
     A2AError(A2AErrorCode.VersionNotSupported, s"Version not supported: $version")

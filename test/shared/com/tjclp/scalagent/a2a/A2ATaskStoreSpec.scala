@@ -85,6 +85,27 @@ class A2ATaskStoreSpec extends FunSuite:
       })
     }
 
+  test("cursor page tokens are stable when newer tasks arrive between pages"):
+    val program =
+      for
+        store <- ZIO.succeed(A2ATaskStore.inMemory)
+        _     <- store.save(taskAt("task-1", "2026-01-01T00:00:01Z"), None)
+        _     <- store.save(taskAt("task-2", "2026-01-01T00:00:02Z"), None)
+        _     <- store.save(taskAt("task-3", "2026-01-01T00:00:03Z"), None)
+        first <- store.list(A2ARequest.TasksList(pageSize = Some(2)), None)
+        _     <- store.save(taskAt("task-4", "2026-01-01T00:00:04Z"), None)
+        second <- store.list(
+          A2ARequest.TasksList(pageSize = Some(2), pageToken = first.nextPageToken),
+          None,
+        )
+      yield (first, second)
+
+    runTask(program).map { case (first, second) =>
+      assertEquals(first.tasks.map(_.id), List(TaskId("task-3"), TaskId("task-2")))
+      assertEquals(second.tasks.map(_.id), List(TaskId("task-1")))
+      assertEquals(second.nextPageToken, None)
+    }
+
   test("in-memory task store filters and sorts status timestamps as instants"):
     val program =
       for

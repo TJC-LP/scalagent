@@ -281,6 +281,7 @@ private[a2a] final class ResultManager(
           _            <- ZIO.when(event.isFinal)(awaitPersist)
           _            <- bus.publish(event)
           _            <- pushSender.send(event, context)
+          _            <- ZIO.when(event.closesStream)(bus.finish)
         yield ()
     }
 
@@ -299,19 +300,16 @@ private[a2a] final class ResultManager(
         }
       case A2AResponse.StreamEvent.TaskStatusUpdate(taskId, _, status, _, _) =>
         taskStore.load(taskId, context.tenant).flatMap {
-          case Some(task) if task.status.state == TaskState.Canceled && status.state != TaskState.Canceled =>
+          case Some(task) if task.status.state.isTerminal =>
             ZIO.unit
           case Some(task) =>
-            val history = status.message match
-              case Some(message) if !task.history.exists(_.messageId == message.messageId) => task.history :+ message
-              case _                                                                       => task.history
-            taskStore.save(task.copy(status = status, history = history), context.tenant)
+            taskStore.save(task.copy(status = status), context.tenant)
           case None =>
             ZIO.unit
         }
       case A2AResponse.StreamEvent.TaskArtifactUpdate(taskId, _, artifact, append, _, _) =>
         taskStore.load(taskId, context.tenant).flatMap {
-          case Some(task) if task.status.state == TaskState.Canceled =>
+          case Some(task) if task.status.state.isTerminal =>
             ZIO.unit
           case Some(task) =>
             val existingIndex = task.artifacts.indexWhere(_.artifactId == artifact.artifactId)
@@ -327,9 +325,11 @@ private[a2a] final class ResultManager(
           case None =>
             ZIO.unit
         }
+      case A2AResponse.StreamEvent.Message(_) =>
+        ZIO.unit
       case A2AResponse.StreamEvent.TaskMessage(taskId, _, message) =>
         taskStore.load(taskId, context.tenant).flatMap {
-          case Some(task) if task.status.state == TaskState.Canceled =>
+          case Some(task) if task.status.state.isTerminal =>
             ZIO.unit
           case Some(task) if !task.history.exists(_.messageId == message.messageId) =>
             taskStore.save(task.copy(history = task.history :+ message), context.tenant)

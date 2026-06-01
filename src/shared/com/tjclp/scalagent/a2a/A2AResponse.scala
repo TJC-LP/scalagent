@@ -20,12 +20,16 @@ object A2AResponse:
     }
 
     given JsonDecoder[SendMessageResult] = JsonDecoder[Json].mapOrFail { json =>
-      val fields = json.asObject.map(_.toMap).getOrElse(Map.empty)
-      fields.keys.filter(Set("message", "task")).toList match
-        case "message" :: Nil =>
-          fields("message").as[A2AMessage].map(MessageResult(_))
-        case "task" :: Nil =>
-          fields("task").as[A2ATask].map(TaskResult(_))
+      val fields   = json.asObject.map(_.toMap).getOrElse(Map.empty)
+      val payloads = List(
+        A2AJson.nonNullNamedField(fields, "message"),
+        A2AJson.nonNullNamedField(fields, "task"),
+      ).flatten
+      payloads match
+        case ("message", messageJson) :: Nil =>
+          messageJson.as[A2AMessage].map(MessageResult(_))
+        case ("task", taskJson) :: Nil =>
+          taskJson.as[A2ATask].map(TaskResult(_))
         case Nil =>
           fields.get("kind").flatMap(_.asString) match
             case Some("message") => json.as[A2AMessage].map(MessageResult(_))
@@ -121,12 +125,14 @@ object A2AResponse:
       aliases: String*
     ): Either[String, Option[String]] =
       (name +: aliases).iterator.flatMap(fields.get).nextOption() match
-        case Some(value) => value.asString.map(Some(_)).toRight(s"$name must be a string")
-        case None        => Right(None)
+        case Some(Json.Null) => Right(None)
+        case Some(value)     => value.asString.map(Some(_)).toRight(s"$name must be a string")
+        case None            => Right(None)
 
     private def optionalList[A: JsonDecoder](fields: Map[String, Json], name: String): Either[String, List[A]] =
       fields.get(name) match
-        case Some(value) =>
+        case Some(Json.Null) => Right(Nil)
+        case Some(value)     =>
           value.asArray.toRight(s"$name must be an array").flatMap { values =>
             values.toList.map(_.as[A]).foldRight[Either[String, List[A]]](Right(Nil)) {
               case (Right(value), Right(values)) => Right(value :: values)
@@ -161,6 +167,7 @@ object A2AResponse:
   /** Stream event for SendStreamingMessage and SubscribeToTask. */
   enum StreamEvent:
     case TaskSnapshot(task: A2ATask)
+    case Message(message: A2AMessage)
     case TaskStatusUpdate(
       id: TaskId,
       contextId: ContextId,
@@ -181,15 +188,27 @@ object A2AResponse:
 
     def taskId: TaskId = this match
       case TaskSnapshot(task)                    => task.id
+      case Message(message)                      => A2AEventIds.taskIdFor(message)
       case TaskStatusUpdate(id, _, _, _, _)      => id
       case TaskArtifactUpdate(id, _, _, _, _, _) => id
       case TaskMessage(id, _, _)                 => id
 
     def isFinal: Boolean = this match
       case TaskSnapshot(task) =>
-        task.status.state.isTerminal || task.status.state == TaskState.InputRequired || task.status.state == TaskState.AuthRequired
+        task.isStreamEnding
+      case Message(_) =>
+        true
       case TaskStatusUpdate(_, _, status, explicit, _) =>
-        explicit || status.state.isTerminal || status.state == TaskState.InputRequired || status.state == TaskState.AuthRequired
+        explicit || status.state.isStreamEnding
+      case _ => false
+
+    def closesStream: Boolean = this match
+      case TaskSnapshot(task) =>
+        task.isStreamEnding
+      case Message(_) =>
+        true
+      case TaskStatusUpdate(_, _, status, explicit, _) =>
+        explicit || status.state.isStreamEnding
       case _ => false
   end StreamEvent
 
@@ -226,6 +245,8 @@ object A2AResponse:
     given JsonEncoder[StreamEvent] = JsonEncoder[Json].contramap {
       case TaskSnapshot(task) =>
         Json.Obj("task" -> task.toJsonAST.toOption.get)
+      case Message(message) =>
+        Json.Obj("message" -> message.toJsonAST.toOption.get)
       case TaskStatusUpdate(id, contextId, status, _, metadata) =>
         var update = Json.Obj(
           "taskId"    -> Json.Str(id.value),
@@ -255,28 +276,30 @@ object A2AResponse:
     given JsonDecoder[StreamEvent] = JsonDecoder[Json].mapOrFail { json =>
       val fields   = json.asObject.map(_.toMap).getOrElse(Map.empty)
       val payloads = List(
-        fields.get("task").map("task" -> _),
-        fields.get("message").map("message" -> _),
-        fields.get("statusUpdate").map("statusUpdate" -> _),
-        fields.get("status_update").map("statusUpdate" -> _),
-        fields.get("artifactUpdate").map("artifactUpdate" -> _),
-        fields.get("artifact_update").map("artifactUpdate" -> _),
+        A2AJson.nonNullNamedField(fields, "task"),
+        A2AJson.nonNullNamedField(fields, "message"),
+        A2AJson.nonNullNamedField(fields, "statusUpdate", "status_update"),
+        A2AJson.nonNullNamedField(fields, "artifactUpdate", "artifact_update"),
       ).flatten
-      payloads match
-        case ("task", taskJson) :: Nil =>
-          taskJson.as[A2ATask].map(TaskSnapshot(_))
-        case ("message", messageJson) :: Nil =>
-          messageJson.as[A2AMessage].map { message =>
-            TaskMessage(A2AEventIds.taskIdFor(message), A2AEventIds.contextIdFor(message), message)
-          }
-        case ("statusUpdate", updateJson) :: Nil =>
-          decodeStatusUpdate(updateJson, requireContextId = true)
-        case ("artifactUpdate", updateJson) :: Nil =>
-          decodeArtifactUpdate(updateJson, legacyDefaultLastChunk = false, requireContextId = true)
-        case Nil =>
-          decodeLegacy(json, fields)
-        case _ =>
-          Left("StreamResponse must contain exactly one of task, message, statusUpdate, or artifactUpdate")
+      if fields.contains("kind") then decodeLegacy(json, fields)
+      else
+        payloads match
+          case ("task", taskJson) :: Nil =>
+            taskJson.as[A2ATask].map(TaskSnapshot(_))
+          case ("message", messageJson) :: Nil =>
+            messageJson.as[A2AMessage].map { message =>
+              message.taskId match
+                case Some(taskId) => TaskMessage(taskId, A2AEventIds.contextIdFor(message), message)
+                case None         => Message(message)
+            }
+          case ("statusUpdate", updateJson) :: Nil =>
+            decodeStatusUpdate(updateJson, requireContextId = true)
+          case ("artifactUpdate", updateJson) :: Nil =>
+            decodeArtifactUpdate(updateJson, legacyDefaultLastChunk = false, requireContextId = true)
+          case Nil =>
+            decodeLegacy(json, fields)
+          case _ =>
+            Left("StreamResponse must contain exactly one of task, message, statusUpdate, or artifactUpdate")
     }
 
     private def decodeStatusUpdate(json: Json, requireContextId: Boolean): Either[String, StreamEvent] =
@@ -347,7 +370,7 @@ object A2AResponse:
           decodeArtifactUpdate(json, legacyDefaultLastChunk = true, requireContextId = false)
         case "message" =>
           for
-            message <- fields.get("message").toRight("Missing message").flatMap(_.as[A2AMessage])
+            message <- fields.get("message").getOrElse(json).as[A2AMessage]
             id = fields
               .get("taskId")
               .orElse(fields.get("id"))

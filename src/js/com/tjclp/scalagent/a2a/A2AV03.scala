@@ -6,7 +6,6 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import scala.scalajs.js.JSON as JsJSON
 import scala.scalajs.js.annotation.*
-import java.util.concurrent.TimeoutException
 import zio.*
 import zio.stream.*
 import com.tjclp.scalagent.{ClaudeAgent, CollectionPolicy, QueryCollector}
@@ -31,17 +30,7 @@ trait A2AClientV03:
     timeout: Option[Duration] = None,
     historyLength: Option[Int] = None,
   ): Task[A2ATask] =
-    def loop: Task[A2ATask] =
-      getTask(taskId, historyLength).flatMap { task =>
-        if task.isTerminal then ZIO.succeed(task)
-        else ZIO.sleep(pollEvery) *> loop
-      }
-
-    timeout match
-      case Some(duration) =>
-        loop.timeoutFail(new TimeoutException(s"A2A task ${taskId.value} did not finish within $duration"))(duration)
-      case None =>
-        loop
+    A2AClientPolling.awaitTask(taskId, pollEvery, timeout, historyLength)(getTask)
 
   def sendAndPoll(
     message: A2AMessage,
@@ -50,10 +39,7 @@ trait A2AClientV03:
     timeout: Option[Duration] = None,
     historyLength: Option[Int] = None,
   ): Task[A2ATask] =
-    submit(message, config).flatMap { task =>
-      if task.isTerminal then ZIO.succeed(task)
-      else awaitTask(task.id, pollEvery, timeout, historyLength)
-    }
+    A2AClientPolling.sendAndPoll(message, config, pollEvery, timeout, historyLength)(submit, getTask)
 
   def stream(message: A2AMessage, config: Option[MessageSendConfiguration] = None)
     : ZStream[Any, Throwable, A2AResponse.StreamEvent]
@@ -463,11 +449,8 @@ private final class A2AServerV03Live(config: A2AServerV03.Config, runtime: Runti
         )
 
   private def handleJsonRpc(body: String, transportHandler: JsJsonRpcTransportHandler): js.Promise[js.Dynamic] =
-    val normalizedBody =
-      if config.executionMode == ExecutionMode.Asynchronous then
-        A2AJsonRpcRequests.withDefaultMessageSendBlocking(body, blocking = false)
-      else body
-    val requestId = BunJsonRpcResponses.requestIdOf(normalizedBody)
+    val normalizedBody = A2AJsonRpcRequests.withDefaultMessageSendExecutionMode(body, config.executionMode)
+    val requestId      = BunJsonRpcResponses.requestIdOf(normalizedBody)
     transportHandler
       .handle(normalizedBody)
       .`then`[js.Dynamic](result => BunJsonRpcResponses.fromResult(result, requestId))
@@ -491,11 +474,10 @@ trait A2AServerAppV03[Self <: Singleton] extends ZIOAppDefault:
   def name: String = getClass.getSimpleName.stripSuffix("$")
   def description: String
   def host: String =
-    sys.env.get("A2A_HOST").orElse(sys.env.get("SERVICE_HOST")).getOrElse(A2AServerDefaults.JsHost)
+    A2AProcessEnv.first("A2A_HOST", "SERVICE_HOST").getOrElse(A2AServerDefaults.JsHost)
   def port: Int =
-    sys.env
-      .get("A2A_PORT")
-      .orElse(sys.env.get("SERVICE_PORT"))
+    A2AProcessEnv
+      .first("A2A_PORT", "SERVICE_PORT")
       .flatMap(_.toIntOption)
       .getOrElse(A2AServerDefaults.Port)
   def agentOptions: AgentOptions                                                  = AgentOptions.default

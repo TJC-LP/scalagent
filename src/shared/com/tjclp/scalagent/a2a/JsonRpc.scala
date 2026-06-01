@@ -189,33 +189,41 @@ object JsonRpcError:
     }
   }
 
-/** JSON-RPC ID - can be string or number */
+/** JSON-RPC ID - can be string, number, or null. */
 enum JsonRpcId:
   case Str(value: String)
   case Num(value: Long)
+  case RawNum(value: java.math.BigDecimal)
+  case Null
 
   def toJson: Json = this match
-    case Str(s) => Json.Str(s)
-    case Num(n) => Json.Num(java.math.BigDecimal.valueOf(n))
+    case Str(s)    => Json.Str(s)
+    case Num(n)    => Json.Num(java.math.BigDecimal.valueOf(n))
+    case RawNum(n) => Json.Num(n)
+    case Null      => Json.Null
 
 object JsonRpcId:
-  private var counter = 0L
+  private var counter            = 0L
+  val Unknown: Option[JsonRpcId] = Some(Null)
 
   def generate: JsonRpcId =
     counter += 1
     Num(counter)
 
-  def apply(s: String): JsonRpcId = Str(s)
-  def apply(n: Long): JsonRpcId   = Num(n)
+  def apply(s: String): JsonRpcId               = Str(s)
+  def apply(n: Long): JsonRpcId                 = Num(n)
+  def apply(n: java.math.BigDecimal): JsonRpcId =
+    Try(n.longValueExact).toOption.fold(RawNum(n))(Num(_))
 
   given JsonEncoder[JsonRpcId] = JsonEncoder[Json].contramap(_.toJson)
 
   given JsonDecoder[JsonRpcId] = JsonDecoder[Json].mapOrFail {
     case Json.Str(s) => Right(Str(s))
-    case Json.Num(n) =>
-      Try(n.longValueExact).toEither.left.map(_ => "JSON-RPC id number must be an integer").map(Num(_))
-    case other => Left(s"Invalid JSON-RPC id: $other")
+    case Json.Num(n) => Right(JsonRpcId(n))
+    case Json.Null   => Right(Null)
+    case other       => Left(s"Invalid JSON-RPC id: $other")
   }
+end JsonRpcId
 
 /** A2A protocol methods */
 object A2AMethod:

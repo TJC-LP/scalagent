@@ -2,10 +2,20 @@ package com.tjclp.scalagent.a2a
 
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import java.io.File
 import java.net.{InetAddress, ServerSocket, URI}
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
+import java.nio.file.Files
 import java.time.{Duration as JavaDuration}
 
+import com.google.protobuf.util.JsonFormat
+import com.google.lf.a2a.v1.{
+  SendMessageRequest as ProtoSendMessageRequest,
+  StreamResponse as ProtoStreamResponse,
+}
+import io.grpc.netty.shaded.io.grpc.netty.{GrpcSslContexts, NettyChannelBuilder}
+import io.grpc.stub.ClientCalls
+import io.grpc.CallOptions
 import munit.FunSuite
 import zio.*
 import zio.http.*
@@ -22,9 +32,10 @@ class A2AServerLiveSpec extends FunSuite:
 
   private def testServer(config: A2AServerLive.Config): Task[A2AServerLiveImpl] =
     for
-      registry <- A2ARuntimeRegistry.make
-      scopeRef <- Ref.Synchronized.make(Option.empty[Scope.Closeable])
-      server   <- ZIO.attempt(A2AServerLiveImpl(config, runtime, registry, scopeRef))
+      registry      <- A2ARuntimeRegistry.make
+      scopeRef      <- Ref.Synchronized.make(Option.empty[Scope.Closeable])
+      grpcServerRef <- Ref.Synchronized.make(Option.empty[io.grpc.Server])
+      server        <- ZIO.attempt(A2AServerLiveImpl(config, runtime, registry, scopeRef, grpcServerRef))
     yield server
 
   private def dispatch(server: A2AServerLiveImpl, request: JsonRpcRequest): Task[JsonRpcResponse] =
@@ -47,6 +58,40 @@ class A2AServerLiveSpec extends FunSuite:
       val response = client.send(request, HttpResponse.BodyHandlers.ofString())
       response.statusCode() -> response.body()
     }
+
+  private def grpcStreamingResponse(
+    port: Int,
+    message: A2AMessage,
+    trustCert: Option[File] = None,
+    authority: Option[String] = None,
+  ): Task[ProtoStreamResponse] =
+    ZIO.attemptBlocking {
+      val builder = NettyChannelBuilder.forAddress("127.0.0.1", port)
+      trustCert match
+        case Some(cert) =>
+          builder.sslContext(GrpcSslContexts.forClient().trustManager(cert).build())
+          authority.foreach(builder.overrideAuthority)
+        case None =>
+          builder.usePlaintext()
+      val channel = builder.build()
+      try
+        val iterator = ClientCalls.blockingServerStreamingCall(
+          channel,
+          A2AGrpcJavaService.SendStreamingMessageMethod,
+          CallOptions.DEFAULT,
+          sendMessageRequest(message),
+        )
+        if !iterator.hasNext then throw new RuntimeException("gRPC stream returned no responses")
+        val first = iterator.next()
+        if iterator.hasNext then throw new RuntimeException("gRPC stream returned more than one response")
+        first
+      finally channel.shutdownNow()
+    }
+
+  private def sendMessageRequest(message: A2AMessage): ProtoSendMessageRequest =
+    val builder = ProtoSendMessageRequest.newBuilder()
+    JsonFormat.parser().merge(A2ARequest.MessageSend(message).toJson, builder)
+    builder.build()
 
   private def resultAs[A: JsonDecoder](response: JsonRpcResponse): Task[A] =
     ZIO.fromEither(
@@ -418,6 +463,7 @@ class A2AServerLiveSpec extends FunSuite:
             description = "Configured extended card JVM test server",
             capabilities = AgentCapabilities.default.copy(extendedAgentCard = true),
             extendedAgentCard = Some(extendedCard),
+            extendedAgentCardAuth = A2AExtendedAgentCardAuth.permitAll,
           )
         )
         card <- dispatch(
@@ -586,7 +632,9 @@ class A2AServerLiveSpec extends FunSuite:
       assertEquals(malformed.error.map(_.code), Some(A2AErrorCode.ParseError))
       assertEquals(invalid.error.map(_.code), Some(A2AErrorCode.InvalidRequest))
       assertEquals(missing.error.map(_.code), Some(A2AErrorCode.InvalidRequest))
-      assertEquals(missing.id, None)
+      assertEquals(malformed.id, JsonRpcId.Unknown)
+      assertEquals(invalid.id, JsonRpcId.Unknown)
+      assertEquals(missing.id, JsonRpcId.Unknown)
     }
 
   test("JVM REST rejects unsupported request body content type"):
@@ -696,6 +744,80 @@ class A2AServerLiveSpec extends FunSuite:
       assert(card.skills.forall(_.tags.nonEmpty))
     }
 
+  test("JVM create can start and advertise an A2A gRPC service"):
+    val responder: A2ARequest.MessageSend => Task[A2AMessage] =
+      _ => ZIO.succeed(A2AMessage.agentText("pong"))
+    val program =
+      ZIO.scoped {
+        for
+          httpPort <- freeLocalPort
+          grpcPort <- freeLocalPort
+          config = A2AServerLive.Config(
+            name = "GrpcStartupJvmTest",
+            description = "gRPC startup JVM test server",
+            host = "127.0.0.1",
+            port = httpPort,
+            grpcPort = Some(grpcPort),
+            messageResponseOverride = Some(responder),
+          )
+          _ <- A2AServerLive
+                 .create(config)
+                 .timeoutFail(new RuntimeException("server did not become ready"))(10.seconds)
+          result   <- get(s"http://127.0.0.1:$httpPort${A2APaths.AgentCard}")
+          card     <- ZIO.fromEither(result._2.fromJson[AgentCard].left.map(new RuntimeException(_)))
+          response <- grpcStreamingResponse(grpcPort, A2AMessage.userText("ping"))
+        yield (card, grpcPort, response)
+      }
+
+    runTask(program).map { case (card, grpcPort, response) =>
+      assertEquals(card.supportedInterfaces.map(_.protocolBinding), List(A2ATransport.JSONRPC, A2ATransport.HTTP_JSON, A2ATransport.GRPC))
+      assertEquals(card.supportedInterfaces.last.url, s"http://127.0.0.1:$grpcPort")
+      assert(response.hasMessage)
+      assertEquals(response.getMessage.getParts(0).getText, "pong")
+    }
+
+  test("JVM create can start and advertise a TLS A2A gRPC service"):
+    val responder: A2ARequest.MessageSend => Task[A2AMessage] =
+      _ => ZIO.succeed(A2AMessage.agentText("pong"))
+    val program =
+      ZIO.scoped {
+        for
+          httpPort <- freeLocalPort
+          grpcPort <- freeLocalPort
+          tls <- testTlsFiles
+          config = A2AServerLive.Config(
+            name = "GrpcTlsStartupJvmTest",
+            description = "gRPC TLS startup JVM test server",
+            host = "127.0.0.1",
+            port = httpPort,
+            grpcPort = Some(grpcPort),
+            grpcTls = Some(
+              A2AServerLive.GrpcTlsConfig(
+                tls.cert.getAbsolutePath,
+                tls.key.getAbsolutePath,
+              )
+            ),
+            messageResponseOverride = Some(responder),
+          )
+          _ <- A2AServerLive
+                 .create(config)
+                 .timeoutFail(new RuntimeException("TLS gRPC server did not become ready"))(10.seconds)
+          result <- get(s"http://127.0.0.1:$httpPort${A2APaths.AgentCard}")
+          card   <- ZIO.fromEither(result._2.fromJson[AgentCard].left.map(new RuntimeException(_)))
+          response <- grpcStreamingResponse(
+                        grpcPort,
+                        A2AMessage.userText("ping"),
+                        trustCert = Some(tls.cert),
+                      )
+        yield (card, grpcPort, response)
+      }
+
+    runTask(program).map { case (card, grpcPort, response) =>
+      assertEquals(card.supportedInterfaces.last.url, s"https://127.0.0.1:$grpcPort")
+      assert(response.hasMessage)
+      assertEquals(response.getMessage.getParts(0).getText, "pong")
+    }
+
   test("JVM start is idempotent for the same server instance"):
     val program =
       for
@@ -747,7 +869,9 @@ class A2AServerLiveSpec extends FunSuite:
     }
 
   test("JVM REST message send is tenant-scoped"):
-    val request = A2ARequest.MessageSend(A2AMessage.userText("rest hello")).toJson
+    val request = A2ARequest
+      .MessageSend(A2AMessage.userText("rest hello"), configuration = Some(MessageSendConfiguration.default))
+      .toJson
 
     val program =
       for
@@ -788,7 +912,13 @@ class A2AServerLiveSpec extends FunSuite:
     }
 
   test("JVM REST honors tenant request fields outside path bindings"):
-    val request = A2ARequest.MessageSend(A2AMessage.userText("body tenant"), tenant = Some("tenant-body")).toJson
+    val request = A2ARequest
+      .MessageSend(
+        A2AMessage.userText("body tenant"),
+        configuration = Some(MessageSendConfiguration.default),
+        tenant = Some("tenant-body"),
+      )
+      .toJson
 
     val program =
       for
@@ -1257,4 +1387,77 @@ class A2AServerLiveSpec extends FunSuite:
       assert(body.contains(""""statusUpdate""""))
       assert(!body.contains(""""final""""))
     }
+
+  private final case class TestTlsFiles(cert: File, key: File)
+
+  private def testTlsFiles: ZIO[Scope, Throwable, TestTlsFiles] =
+    ZIO.acquireRelease {
+      ZIO.attempt {
+        val cert = Files.createTempFile("scalagent-a2a-test-", ".cert.pem")
+        val key  = Files.createTempFile("scalagent-a2a-test-", ".key.pem")
+        Files.writeString(cert, TestTlsCertPem)
+        Files.writeString(key, TestTlsKeyPem)
+        TestTlsFiles(cert.toFile, key.toFile)
+      }
+    } { files =>
+      ZIO
+        .attempt {
+          Files.deleteIfExists(files.cert.toPath)
+          Files.deleteIfExists(files.key.toPath)
+        }
+        .ignore
+    }
+
+  private val TestTlsCertPem =
+    """-----BEGIN CERTIFICATE-----
+      |MIIDJTCCAg2gAwIBAgIUZaYnYx5IJbkwfibIB+0Ibjgv2XowDQYJKoZIhvcNAQEL
+      |BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDYwMTEwMjEyNloXDTM2MDUy
+      |OTEwMjEyNlowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
+      |AAOCAQ8AMIIBCgKCAQEAuhxP3IKnszz3BBb8OuFoYlIrJZcZsEoLqpWRL3a04+P7
+      |I6p5bZ9ghwzDD1Enicdd1Z/vVE9AtzDPeFk5ghfDSosqjK6wTdQGXAQ1rMD5+OCN
+      |ClDD9VlGpbtaUYP3CTJ7BJtKqmabQbFSQXJLKsOlacyhPe9o9w+m36UajVLZcoFo
+      |F/RcRNq9l1IaH482HoWqu7MvJKcfEXH68YLQifyscG+wcFhkDKqp+vY8F/o/QcWB
+      |wNAyMou5BX96OqyovciEeOekMDtctsfE5mvGbTkNgBjG+43yXvZbhXYj/UbBrQz0
+      |3gLFrFfl/LBc08gN+RExxBYKpDR34J3+Oz/pUDNfBwIDAQABo28wbTAdBgNVHQ4E
+      |FgQU2BO5TKsvA6oMZ7JTkOMSTzEPb14wHwYDVR0jBBgwFoAU2BO5TKsvA6oMZ7JT
+      |kOMSTzEPb14wDwYDVR0TAQH/BAUwAwEB/zAaBgNVHREEEzARgglsb2NhbGhvc3SH
+      |BH8AAAEwDQYJKoZIhvcNAQELBQADggEBAF2wQTwOqWFlqCGaEC97/ZB99ATvTTiF
+      |GF9TmiOb/86cDtzBAMWdAeZRdefbCfQcRljLSIcXfGk+NpnUK+ZMWiEH9tDKK/eu
+      |hcJg2Q5jYLnxKDrd/3oloJwPKls1NYi3qHw31CG2C+em6mMWSE3oF3iWRvJVoeRJ
+      |fHaaCV1rTTvvc8jwdv88p0YRNLgtZzjcFT9eMGcp6x1o0s0ZeT/syzEGiLVq7Twf
+      |psvQNi/ylPqhfSALLms+cyzA54zkDcCHOlFaDlTI/fni8sCn4yM5LXvNF+TMvKJw
+      |h9pyoMNYZgp4aV1qJVfF2Hlc9Rb/CCggWhxtXUeuRaVHxs8Ov7SzdY8=
+      |-----END CERTIFICATE-----
+      |""".stripMargin
+
+  private val TestTlsKeyPem =
+    """-----BEGIN PRIVATE KEY-----
+      |MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC6HE/cgqezPPcE
+      |Fvw64WhiUisllxmwSguqlZEvdrTj4/sjqnltn2CHDMMPUSeJx13Vn+9UT0C3MM94
+      |WTmCF8NKiyqMrrBN1AZcBDWswPn44I0KUMP1WUalu1pRg/cJMnsEm0qqZptBsVJB
+      |cksqw6VpzKE972j3D6bfpRqNUtlygWgX9FxE2r2XUhofjzYehaq7sy8kpx8Rcfrx
+      |gtCJ/Kxwb7BwWGQMqqn69jwX+j9BxYHA0DIyi7kFf3o6rKi9yIR456QwO1y2x8Tm
+      |a8ZtOQ2AGMb7jfJe9luFdiP9RsGtDPTeAsWsV+X8sFzTyA35ETHEFgqkNHfgnf47
+      |P+lQM18HAgMBAAECggEAJbttuZBHvcAjeJHMa4edqSltk/5xd9tbSCdwuwW/IODs
+      |3stGOSJx6I9+0JEsifOAo7n8RMSYo0tjFMxKK4Tz1B4o70LPfcf5zhgQZcjuJTYp
+      |gijjwc9q0lkMs7AkmpnAdSui1K9e1M/FlH0+nhnyZGPXYP4z8rsaowcPPg3JBjy7
+      |wuMhIbHYfzGHItIVC85pDbCX4SzLkwQw1m0XG8Go9GvKHcG/txFInlWPgJQXxOt3
+      |dLZQHYc8ZA2XRPvrCA/zi5IJDH2bAwwc0zSQxLOZ172MVo80qxWFXuhQl4ATXQZi
+      |mKVFWh/28k0TRJw2SM1R2x+I+bNfBaHW0p+KRmIGmQKBgQDao/TOzxNk/iKTL4Ww
+      |XqLgY8zysOtBMmM7AWF4nQg7e7E2wbccjxwegCLxEnlJdx16oLImJlLaMei9hewd
+      |tEaVWZSz4TigDXWR4vMpkiFRUIvhc1UrfMLUUDHWtG4bGGF4AWPXEYcV0dlBih1Y
+      |yaEcbdWMbanxPsyz11NeAuvQZQKBgQDZ6WTWrYmmTR6G/R2BPkSwQQRb0rnoAmXR
+      |5vXny34b8txeBgcJyC2A1SBJdUxkp0cWq6JCnWRRpui7J1Q+RymBnkNDQxJkLMvf
+      |Xp2WJVI4Fb6Qt4fr0BFDQ7kbmUDyAkjPSQTubHj5RySbSMCFHS4tfTiwIRIwmudD
+      |8j3y8Lcc+wKBgQCHa6XlsjzBAOdJYtXbN8KKWUZHy2zrJNpxYZmNqzW+Ig7Ra4qP
+      |FdTEz3jU+CxHZI/NtFqjZnlKzD7rpFdqzo4pUyLXh1gbSjrX8UnLJcedJdZ9/YFz
+      |PgMunb1AzuCjx6YXPkUooKKa0S9PeMxUgg5YHW93WzU3Rz5i5autPwHwQQKBgQDX
+      |XxLYDtpeMBh86EwyAd4XqZrqOiKdyUjjJXdjaj8w1l6w2xo3s84tZ/eqQrGHRcFA
+      |CdCsMC0HeoTI/L0JdIH0ZvwpzW+u7ItvMG9mB2r0naEkHRDMo298YMHiIh0LU/Cs
+      |Von2L+V80rC+fTAyID4UnY/anEUDHwZ1pEVQCFOi4wKBgQCPUtiseh92aYxgb6/c
+      |IInNyJN5HL7fz7ToJqv9RFgTQK1GJIklGGXp4fgW2qKKAUDVcJ4mrJa9PsaqyJ3z
+      |IaCybn/aDzqVP3y/rMUoPN67MwL7VNp8VsVbuN49W01Lk8es2xkil21oJ5Xpvf6C
+      |O21Pk46ptm5eCd1GLyPFiNHVgQ==
+      |-----END PRIVATE KEY-----
+      |""".stripMargin
 end A2AServerLiveSpec

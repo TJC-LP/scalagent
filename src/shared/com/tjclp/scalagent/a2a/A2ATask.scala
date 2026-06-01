@@ -35,11 +35,18 @@ final case class A2ATask(
   /** Check if task is in a terminal state */
   def isTerminal: Boolean = status.state.isTerminal
 
+  /** Check if task is paused awaiting external input or authentication. */
+  def isInterrupted: Boolean = status.state.isInterrupted
+
+  /** Check if the current server stream should end for this task state. */
+  def isStreamEnding: Boolean = status.state.isStreamEnding
+
   /** Check if task is still running */
   def isRunning: Boolean = !isTerminal
 
   /** Get the final message (if completed) */
   def finalMessage: Option[A2AMessage] = status.message
+end A2ATask
 
 object A2ATask:
   def toJsonObject(task: A2ATask, includeEmptyArtifacts: Boolean = false): Json.Obj =
@@ -61,7 +68,8 @@ object A2ATask:
       val fields                                                             = obj.toMap
       def decodeList[A: JsonDecoder](field: String): Either[String, List[A]] =
         fields.get(field) match
-          case Some(value) =>
+          case Some(Json.Null) => Right(Nil)
+          case Some(value)     =>
             value.asArray.toRight(s"$field must be an array").flatMap { values =>
               values.toList.map(_.as[A]).foldRight[Either[String, List[A]]](Right(Nil)) {
                 case (Right(value), Right(values)) => Right(value :: values)
@@ -72,8 +80,9 @@ object A2ATask:
           case None => Right(Nil)
       def optionalString(field: String, aliases: String*): Either[String, Option[String]] =
         (field +: aliases).iterator.flatMap(fields.get).nextOption() match
-          case Some(value) => value.asString.map(Some(_)).toRight(s"$field must be a string")
-          case None        => Right(None)
+          case Some(Json.Null) => Right(None)
+          case Some(value)     => value.asString.map(Some(_)).toRight(s"$field must be a string")
+          case None            => Right(None)
 
       for
         id        <- fields.get("id").flatMap(_.asString).filter(_.nonEmpty).map(TaskId(_)).toRight("Missing id")
@@ -132,10 +141,12 @@ object TaskStatus:
           .flatMap(_.as[TaskState])
           .flatMap(TaskState.requireSpecified(_, "state"))
         message <- fields.get("message") match
-          case Some(value) => value.as[A2AMessage].map(Some(_))
-          case None        => Right(None)
+          case Some(Json.Null) => Right(None)
+          case Some(value)     => value.as[A2AMessage].map(Some(_))
+          case None            => Right(None)
         timestamp <- fields.get("timestamp") match
-          case Some(value) =>
+          case Some(Json.Null) => Right(None)
+          case Some(value)     =>
             value.asString
               .toRight("timestamp must be a string")
               .flatMap(validateTimestamp)
@@ -143,6 +154,7 @@ object TaskStatus:
           case None =>
             Right(None)
       yield TaskStatus(state, message, timestamp)
+      end for
     }
   }
 
@@ -194,6 +206,28 @@ enum TaskState derives CanEqual:
     case Completed | Canceled | Failed | Rejected => true
     case _                                        => false
 
+  /** Check if this is an interrupted state awaiting external input. */
+  def isInterrupted: Boolean = this match
+    case InputRequired | AuthRequired => true
+    case _                            => false
+
+  /** Check if this state ends the current stream. */
+  def isStreamEnding: Boolean =
+    isTerminal || isInterrupted
+
+  /** Lower-kebab value used by the JS SDK facade and accepted as a legacy JSON alias. */
+  def lowerKebabValue: String = this match
+    case Submitted     => "submitted"
+    case Working       => "working"
+    case InputRequired => "input-required"
+    case Completed     => "completed"
+    case Canceled      => "canceled"
+    case Failed        => "failed"
+    case Rejected      => "rejected"
+    case AuthRequired  => "auth-required"
+    case Unknown       => "unknown"
+end TaskState
+
 object TaskState:
   private val specifiedJsonValues = List(
     "TASK_STATE_SUBMITTED",
@@ -226,7 +260,7 @@ object TaskState:
     case Unknown       => "TASK_STATE_UNSPECIFIED"
   }
 
-  given JsonDecoder[TaskState] = StringEnumJsonCodec.decoderOrFail {
+  def fromWireValue(value: String): Either[String, TaskState] = value match
     case "TASK_STATE_SUBMITTED" | "submitted"           => Right(Submitted)
     case "TASK_STATE_WORKING" | "working"               => Right(Working)
     case "TASK_STATE_INPUT_REQUIRED" | "input-required" => Right(InputRequired)
@@ -237,7 +271,8 @@ object TaskState:
     case "TASK_STATE_AUTH_REQUIRED" | "auth-required"   => Right(AuthRequired)
     case "TASK_STATE_UNSPECIFIED" | "unknown"           => Right(Unknown)
     case other                                          => Left(s"Unknown task state: $other")
-  }
+
+  given JsonDecoder[TaskState] = StringEnumJsonCodec.decoderOrFail(fromWireValue)
 end TaskState
 
 /**
@@ -274,8 +309,9 @@ object StateTransition:
             case _                       => Left("Missing timestamp")
           }
         message <- fields.get("message") match
-          case Some(value) => value.as[A2AMessage].map(Some(_))
-          case None        => Right(None)
+          case Some(Json.Null) => Right(None)
+          case Some(value)     => value.as[A2AMessage].map(Some(_))
+          case None            => Right(None)
       yield StateTransition(state, timestamp, message)
     }
   }
@@ -297,8 +333,9 @@ object AuthenticationInfo:
       for
         scheme      <- fields.get("scheme").flatMap(_.asString).filter(_.nonEmpty).toRight("Missing scheme")
         credentials <- fields.get("credentials") match
-          case Some(value) => value.asString.toRight("credentials must be a string")
-          case None        => Right("")
+          case Some(Json.Null) => Right("")
+          case Some(value)     => value.asString.toRight("credentials must be a string")
+          case None            => Right("")
       yield AuthenticationInfo(
         scheme = scheme,
         credentials = credentials,
@@ -336,8 +373,9 @@ object TaskPushNotificationConfig:
         taskId         <- A2AJson.optionalString(fields, "taskId", "task_id")
         token          <- A2AJson.optionalString(fields, "token")
         authentication <- fields.get("authentication") match
-          case Some(value) => value.as[AuthenticationInfo].map(Some(_))
-          case None        => Right(None)
+          case Some(Json.Null) => Right(None)
+          case Some(value)     => value.as[AuthenticationInfo].map(Some(_))
+          case None            => Right(None)
       yield TaskPushNotificationConfig(
         url = url,
         tenant = tenant.filter(_.nonEmpty),
@@ -405,9 +443,11 @@ object PushNotificationAuth:
               )
           }
         credentials <- fields.get("credentials") match
+          case Some(Json.Null) => Right(None)
           case Some(value) => value.asString.toRight("credentials must be a string").map(Option(_).filter(_.nonEmpty))
           case None        => Right(None)
       yield PushNotificationAuth(schemes, credentials)
+      end for
     }
   }
 

@@ -126,18 +126,21 @@ object AgentCard:
           case None if legacyCard => Right("1.0.0")
           case None               => Left("Missing version")
         provider <- field(fields, "provider") match
-          case Some(value) => value.as[AgentProvider].map(Some(_))
-          case None        => Right(None)
+          case Some(Json.Null) => Right(None)
+          case Some(value)     => value.as[AgentProvider].map(Some(_))
+          case None            => Right(None)
         capabilities <- field(fields, "capabilities") match
           case Some(value)        => value.as[AgentCapabilities]
           case None if legacyCard => Right(AgentCapabilities.default)
           case None               => Left("Missing capabilities")
         securitySchemes <- field(fields, "securitySchemes", "security_schemes") match
-          case Some(value) => value.as[Map[String, SecurityScheme]]
-          case None        => Right(Map.empty)
+          case Some(Json.Null) => Right(Map.empty)
+          case Some(value)     => value.as[Map[String, SecurityScheme]]
+          case None            => Right(Map.empty)
         securityRequirements <- field(fields, "securityRequirements", "security_requirements", "security") match
-          case Some(value) => value.as[List[SecurityRequirement]]
-          case None        => Right(Nil)
+          case Some(Json.Null) => Right(Nil)
+          case Some(value)     => value.as[List[SecurityRequirement]]
+          case None            => Right(Nil)
         defaultInputModes <- field(fields, "defaultInputModes", "default_input_modes") match
           case Some(value) =>
             decodeList[String](value, "defaultInputModes").flatMap {
@@ -159,8 +162,9 @@ object AgentCard:
           case None if legacyCard => Right(requiredSkills(name, description, Nil))
           case None               => Left("Missing skills")
         signatures <- field(fields, "signatures") match
-          case Some(value) => value.as[List[AgentCardSignature]]
-          case None        => Right(Nil)
+          case Some(Json.Null) => Right(Nil)
+          case Some(value)     => value.as[List[AgentCardSignature]]
+          case None            => Right(Nil)
         documentationUrl <- A2AJson.optionalString(fields, "documentationUrl", "documentation_url")
         iconUrl          <- A2AJson.optionalString(fields, "iconUrl", "icon_url")
       yield AgentCard(
@@ -270,12 +274,14 @@ object AgentCapabilities:
         aliases: String*
       ): Either[String, Boolean] =
         (name +: aliases).iterator.flatMap(fields.get).nextOption() match
-          case Some(value) => value.asBoolean.toRight(s"$name must be a boolean")
-          case None        => Right(defaultValue)
+          case Some(Json.Null) => Right(defaultValue)
+          case Some(value)     => value.asBoolean.toRight(s"$name must be a boolean")
+          case None            => Right(defaultValue)
       def extensions: Either[String, List[AgentExtension]] =
         fields.get("extensions") match
-          case Some(value) => value.as[List[AgentExtension]]
-          case None        => Right(Nil)
+          case Some(Json.Null) => Right(Nil)
+          case Some(value)     => value.as[List[AgentExtension]]
+          case None            => Right(Nil)
       for
         streaming         <- bool(false, "streaming")
         pushNotifications <- bool(default.pushNotifications, "pushNotifications", "push_notifications")
@@ -312,11 +318,13 @@ object AgentExtension:
       for
         uri         <- fields.get("uri").flatMap(_.asString).filter(_.nonEmpty).toRight("Missing uri")
         description <- fields.get("description") match
-          case Some(value) => value.asString.toRight("description must be a string")
-          case None        => Right("")
+          case Some(Json.Null) => Right("")
+          case Some(value)     => value.asString.toRight("description must be a string")
+          case None            => Right("")
         required <- fields.get("required") match
-          case Some(value) => value.asBoolean.toRight("required must be a boolean")
-          case None        => Right(false)
+          case Some(Json.Null) => Right(false)
+          case Some(value)     => value.asBoolean.toRight("required must be a boolean")
+          case None            => Right(false)
         params <- A2AJson.optionalStruct(fields, "params")
       yield AgentExtension(
         uri = uri,
@@ -383,6 +391,9 @@ object AgentInterface:
 
   def rest(url: String, tenant: Option[String] = None): AgentInterface =
     AgentInterface(url = url, protocolBinding = A2ATransport.HTTP_JSON, tenant = tenant)
+
+  def grpc(url: String, tenant: Option[String] = None): AgentInterface =
+    AgentInterface(url = url, protocolBinding = A2ATransport.GRPC, tenant = tenant)
 end AgentInterface
 
 /** Agent skill/capability description. */
@@ -450,8 +461,9 @@ object AgentSkill:
     aliases: String*
   ): Either[String, List[A]] =
     field(fields, (name +: aliases)*) match
-      case Some(value) => value.as[List[A]]
-      case None        => Right(Nil)
+      case Some(Json.Null) => Right(Nil)
+      case Some(value)     => value.as[List[A]]
+      case None            => Right(Nil)
 
   private def requiredNonEmptyList[A: JsonDecoder](
     fields: Map[String, Json],
@@ -756,23 +768,11 @@ object SecurityScheme:
       val fields     = obj.toMap
       val schemeType = fields.get("type").flatMap(_.asString)
       val schemes    = List(
-        fields
-          .get("apiKeySecurityScheme")
-          .orElse(fields.get("api_key_security_scheme"))
-          .map("apiKeySecurityScheme" -> _),
-        fields
-          .get("httpAuthSecurityScheme")
-          .orElse(fields.get("http_auth_security_scheme"))
-          .map("httpAuthSecurityScheme" -> _),
-        fields
-          .get("oauth2SecurityScheme")
-          .orElse(fields.get("oauth2_security_scheme"))
-          .map("oauth2SecurityScheme" -> _),
-        fields
-          .get("openIdConnectSecurityScheme")
-          .orElse(fields.get("open_id_connect_security_scheme"))
-          .map("openIdConnectSecurityScheme" -> _),
-        fields.get("mtlsSecurityScheme").orElse(fields.get("mtls_security_scheme")).map("mtlsSecurityScheme" -> _),
+        A2AJson.nonNullNamedField(fields, "apiKeySecurityScheme", "api_key_security_scheme"),
+        A2AJson.nonNullNamedField(fields, "httpAuthSecurityScheme", "http_auth_security_scheme"),
+        A2AJson.nonNullNamedField(fields, "oauth2SecurityScheme", "oauth2_security_scheme"),
+        A2AJson.nonNullNamedField(fields, "openIdConnectSecurityScheme", "open_id_connect_security_scheme"),
+        A2AJson.nonNullNamedField(fields, "mtlsSecurityScheme", "mtls_security_scheme"),
       ).flatten
       (schemeType, schemes) match
         case (Some(value), Nil) =>
@@ -838,7 +838,7 @@ object OAuth2Flows:
     json.asObject.toRight("OAuth2Flows must be an object").flatMap { obj =>
       val fields                             = obj.toMap
       def flow(names: String*): Option[Json] =
-        names.iterator.flatMap(fields.get).nextOption()
+        names.iterator.flatMap(fields.get).filter(_ != Json.Null).nextOption()
 
       val candidates = List(
         flow("authorizationCode", "authorization_code").map("authorizationCode" -> _),
@@ -918,19 +918,21 @@ object OAuth2Flow:
       val fields                                                         = obj.toMap
       def optionalString(names: String*): Either[String, Option[String]] =
         names.iterator.flatMap(fields.get).nextOption() match
-          case Some(value) => value.asString.map(Some(_)).toRight(s"${names.head} must be a string")
-          case None        => Right(None)
+          case Some(Json.Null) => Right(None)
+          case Some(value)     => value.asString.map(Some(_)).toRight(s"${names.head} must be a string")
+          case None            => Right(None)
       def optionalBool(names: String*): Either[String, Boolean] =
         names.iterator.flatMap(fields.get).nextOption() match
-          case Some(value) => value.asBoolean.toRight(s"${names.head} must be a boolean")
-          case None        => Right(false)
+          case Some(Json.Null) => Right(false)
+          case Some(value)     => value.asBoolean.toRight(s"${names.head} must be a boolean")
+          case None            => Right(false)
       for
         authorizationUrl       <- optionalString("authorizationUrl", "authorization_url")
         tokenUrl               <- optionalString("tokenUrl", "token_url")
         refreshUrl             <- optionalString("refreshUrl", "refresh_url")
         deviceAuthorizationUrl <- optionalString("deviceAuthorizationUrl", "device_authorization_url")
-        scopes                 <- fields.get("scopes").map(_.as[Map[String, String]]).getOrElse(Right(Map.empty))
-        pkceRequired           <- optionalBool("pkceRequired", "pkce_required")
+        scopes <- fields.get("scopes").filter(_ != Json.Null).map(_.as[Map[String, String]]).getOrElse(Right(Map.empty))
+        pkceRequired <- optionalBool("pkceRequired", "pkce_required")
       yield OAuth2Flow(
         authorizationUrl = authorizationUrl,
         tokenUrl = tokenUrl,

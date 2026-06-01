@@ -375,6 +375,7 @@ class A2AServerValidationSpec extends FunSuite:
             Map(
               "Content-Type" -> A2AContentType.Json,
               A2AHeader.Version -> A2AProtocol.Version,
+              "Authorization" -> "Bearer test-token",
             ),
           )
           response <- ZIO.fromEither(body.fromJson[JsonRpcResponse].left.map(new RuntimeException(_)))

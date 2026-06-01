@@ -11,8 +11,19 @@ private[a2a] trait A2AHttpRequestView:
   def methodName: String
   def path: String
   def header(name: String): Option[String]
+  def headerEntries: Iterable[(String, String)] = Iterable.empty
   def queryParam(name: String): Option[String]
+  def queryParams: Iterable[(String, String)] = Iterable.empty
   def readBody: Task[String]
+
+private[a2a] trait A2ALimitedHttpRequestView extends A2AHttpRequestView:
+  def maxRequestBodyBytes: Int
+
+  final def readBody: Task[String] =
+    A2AHttpBinding.validateRequestContentLength(this, maxRequestBodyBytes) *>
+      readBodyAfterContentLength(maxRequestBodyBytes)
+
+  protected def readBodyAfterContentLength(maxBytes: Int): Task[String]
 
 private[a2a] enum A2AHttpResponsePlan:
   case Text(
@@ -23,10 +34,12 @@ private[a2a] enum A2AHttpResponsePlan:
   case Sse(
     stream: ZStream[Any, Throwable, String],
     isJsonRpc: Boolean,
-    headers: List[(String, String)])
+    headers: List[(String, String)],
+    errorId: Option[JsonRpcId] = None)
 
 private[a2a] object A2AHttpBinding:
-  private val AgentCardCacheControl = "public, max-age=60"
+  private val AgentCardCacheControl     = "public, max-age=60"
+  private[a2a] val SseKeepAliveInterval = 5.seconds
 
   private val SseHeaders = List(
     "Cache-Control"     -> "no-cache",
@@ -37,11 +50,31 @@ private[a2a] object A2AHttpBinding:
   def mediaType(contentType: String): String =
     contentType.takeWhile(_ != ';').trim.toLowerCase
 
+  private def headerValue(
+    request: A2AHttpRequestView,
+    name: String,
+    aliases: String*
+  ): Option[String] =
+    headerValue(request.header, request.headerEntries, name, aliases*)
+
+  private def headerValue(
+    valueOf: String => Option[String],
+    entries: Iterable[(String, String)],
+    name: String,
+    aliases: String*
+  ): Option[String] =
+    A2AJson
+      .caseInsensitiveEntryLookup(entries, name, aliases*)
+      .orElse(A2AJson.caseInsensitiveLookup(valueOf, name, aliases*))
+
   def requestContentType(request: A2AHttpRequestView): Option[String] =
-    request.header("content-type").orElse(request.header("Content-Type"))
+    headerValue(request, "Content-Type")
 
   def validateRequestContentType(request: A2AHttpRequestView, expected: String): Task[Unit] =
     ZIO.fromEither(validateContentType(requestContentType(request), expected))
+
+  def validateRequestContentLength(request: A2AHttpRequestView, maxBytes: Int): Task[Unit] =
+    ZIO.fromEither(validateContentLengthHeader(headerValue(request, "Content-Length"), maxBytes))
 
   def validateContentType(actual: Option[String], expected: String): Either[A2AError, Unit] =
     actual match
@@ -54,9 +87,20 @@ private[a2a] object A2AHttpBinding:
 
   def validateContentLength(contentLength: Option[Long], maxBytes: Int): Either[A2AError, Unit] =
     contentLength match
+      case Some(length) if length < 0 =>
+        Left(invalidContentLength)
       case Some(length) if maxBytes > 0 && length > maxBytes =>
         Left(bodySizeExceeded(maxBytes))
       case _ =>
+        Right(())
+
+  def validateContentLengthHeader(value: Option[String], maxBytes: Int): Either[A2AError, Unit] =
+    value match
+      case Some(raw) =>
+        raw.trim.toLongOption match
+          case Some(length) => validateContentLength(Some(length), maxBytes)
+          case None         => Left(invalidContentLength)
+      case None =>
         Right(())
 
   def validateBodyLength(length: Long, maxBytes: Int): Either[A2AError, Unit] =
@@ -65,6 +109,9 @@ private[a2a] object A2AHttpBinding:
 
   def bodySizeExceeded(maxBytes: Int): A2AError =
     A2AError.invalidRequest(s"Request body exceeds ${maxBytes} byte limit")
+
+  private def invalidContentLength: A2AError =
+    A2AError.invalidRequest("Content-Length must be a valid non-negative integer")
 
   def extensionsHeader(extensions: List[String]): Option[String] =
     Option.when(extensions.nonEmpty)(extensions.mkString(","))
@@ -102,11 +149,13 @@ private[a2a] object A2AHttpBinding:
     stream: ZStream[Any, Throwable, String],
     isJsonRpc: Boolean,
     extensions: List[String],
+    errorId: Option[JsonRpcId] = None,
   ): A2AHttpResponsePlan =
     A2AHttpResponsePlan.Sse(
       stream,
       isJsonRpc,
       responseHeaders(Some(A2AContentType.Sse), extensions, SseHeaders*),
+      errorId,
     )
 
   def agentCardPlan(
@@ -129,7 +178,7 @@ private[a2a] object A2AHttpBinding:
     )
 
   private def ifNoneMatch(request: A2AHttpRequestView): Option[String] =
-    request.header("If-None-Match").orElse(request.header("if-none-match"))
+    headerValue(request, "If-None-Match")
 
   private def matchesEtag(headerValue: String, etag: String): Boolean =
     headerValue.split(",").iterator.map(normalizeEtag).exists(value => value == "*" || value == normalizeEtag(etag))
@@ -143,13 +192,24 @@ private[a2a] object A2AHttpBinding:
   def sseErrorFrame(errorJson: String): String =
     s"event: error\ndata: $errorJson\n\n"
 
+  def sseKeepAliveFrame: String =
+    ": keep-alive\n\n"
+
   def sseWireStream(
     stream: ZStream[Any, Throwable, String],
     isJsonRpc: Boolean,
+    errorId: Option[JsonRpcId] = None,
+    keepAliveInterval: Duration = SseKeepAliveInterval,
   ): ZStream[Any, Nothing, String] =
-    stream
+    val dataFrames = stream
       .map(sseDataFrame)
-      .catchAll(error => ZStream.succeed(sseErrorFrame(streamErrorJson(error, isJsonRpc))))
+      .catchAll(error => ZStream.succeed(sseErrorFrame(streamErrorJson(error, isJsonRpc, errorId))))
+    if keepAliveInterval <= Duration.Zero then dataFrames
+    else
+      dataFrames.mergeHaltLeft(
+        ZStream.fromZIO(ZIO.sleep(keepAliveInterval)).drain ++
+          ZStream.repeatWithSchedule(sseKeepAliveFrame, Schedule.spaced(keepAliveInterval))
+      )
 
   def jsonRpcResponse(dispatch: A2AJsonRpcDispatch): A2AHttpResponsePlan =
     dispatch match
@@ -160,6 +220,7 @@ private[a2a] object A2AHttpBinding:
           events.map(event => JsonRpcResponse.success(id, event).toJson),
           isJsonRpc = true,
           extensions,
+          errorId = id,
         )
 
   def restResponse(dispatch: A2ARestDispatch): A2AHttpResponsePlan =
@@ -181,27 +242,48 @@ private[a2a] object A2AHttpBinding:
     agentCard: AgentCard,
     capabilities: AgentCapabilities,
     requestHandler: A2ARequestHandler,
+    executionMode: ExecutionMode = ExecutionMode.Default,
   ): UIO[A2AHttpResponsePlan] =
     if request.path == A2APaths.AgentCard && request.methodName == "GET" then
-      ZIO.succeed(agentCardPlan(request, agentCard))
+      requestHandler
+        .getAgentCard(contextFrom(request, None))
+        .map(card => agentCardPlan(request, card))
+        .catchAll(error => ZIO.succeed(restErrorPlan(A2AError.fromThrowable(error))))
     else if request.path == "/" && request.methodName == "POST" then
-      jsonRpcDispatch(request, agentCard, capabilities, requestHandler).map(jsonRpcResponse)
+      jsonRpcDispatch(request, agentCard, capabilities, requestHandler, executionMode).map(jsonRpcResponse)
     else
-      restDispatch(request, agentCard, capabilities, requestHandler) match
+      restDispatch(request, agentCard, capabilities, requestHandler, executionMode) match
         case Some(effect) => effect.map(restResponse)
         case None         => ZIO.succeed(textPlan("Not Found", 404, "text/plain"))
 
   def contextFrom(request: A2AHttpRequestView, tenant: Option[String]): ServerCallContext =
-    contextFromHeaders(request.header, tenant)
+    contextFromHeaders(request.header, tenant, request.headerEntries)
 
-  def contextFromHeaders(header: String => Option[String], tenant: Option[String]): ServerCallContext =
+  def contextFromRequestParameters(request: A2AHttpRequestView, tenant: Option[String]): ServerCallContext =
+    val base  = contextFrom(request, tenant)
+    val query = A2APathRouting.query(request.queryParam, request.queryParams)
+    contextWithRequestParameters(base, query)
+
+  private def contextWithRequestParameters(
+    base: ServerCallContext,
+    query: A2APathRouting.Query,
+  ): ServerCallContext =
+    base.copy(
+      requestedVersion = base.requestedVersion.orElse(A2APathRouting.requestedVersion(query)),
+      requestedExtensions = (base.requestedExtensions ++ A2APathRouting.requestedExtensions(query)).distinct,
+    )
+
+  def contextFromHeaders(
+    header: String => Option[String],
+    tenant: Option[String],
+    entries: Iterable[(String, String)] = Iterable.empty,
+  ): ServerCallContext =
     ServerCallContext(
       tenant = tenant,
-      requestedVersion = header(A2AHeader.Version),
-      requestedExtensions = header(A2AHeader.StandardExtensions)
-        .orElse(header(A2AHeader.Extensions))
-        .toList
+      requestedVersion = headerValue(header, entries, A2AHeader.Version),
+      requestedExtensions = headerValue(header, entries, A2AHeader.StandardExtensions, A2AHeader.Extensions).toList
         .flatMap(parseExtensionsHeader),
+      authorization = headerValue(header, entries, "Authorization"),
     )
 
   def parseExtensionsHeader(value: String): List[String] =
@@ -212,23 +294,31 @@ private[a2a] object A2AHttpBinding:
     agentCard: AgentCard,
     capabilities: AgentCapabilities,
     requestHandler: A2ARequestHandler,
+    executionMode: ExecutionMode = ExecutionMode.Default,
   ): Option[UIO[A2ARestDispatch]] =
     val routed      = A2APathRouting.route(request.methodName, request.path)
     val pathTenant  = routed.pathTenant
-    val query       = A2APathRouting.query(request.queryParam)
+    val query       = A2APathRouting.query(request.queryParam, request.queryParams)
     val queryTenant = A2APathRouting.queryTenant(query)
 
     def contextFor(requestTenant: Option[String] = None): Task[ServerCallContext] =
       ZIO.fromEither(A2APathRouting.resolveTenant(pathTenant, queryTenant, requestTenant)).map { tenant =>
         val baseContext = contextFrom(request, tenant)
-        baseContext.copy(
-          requestedVersion = baseContext.requestedVersion.orElse(A2APathRouting.requestedVersion(query))
-        )
+        contextWithRequestParameters(baseContext, query)
       }
 
-    def restBodyAs[A: JsonDecoder]: Task[A] =
+    def restBodyString: Task[String] =
       validateRequestContentType(request, A2AContentType.A2AJson) *>
-        request.readBody.flatMap { body => ZIO.fromEither(body.fromJson[A].left.map(A2AError.invalidRequest)) }
+        request.readBody
+
+    def restBodyAs[A: JsonDecoder]: Task[A] =
+      restBodyString.flatMap { body => ZIO.fromEither(body.fromJson[A].left.map(A2AError.invalidRequest)) }
+
+    def restMessageSendBodyAs(mode: ExecutionMode): Task[A2ARequest.MessageSend] =
+      restBodyString.flatMap { body =>
+        val normalized = A2AMessageSendDefaults.normalizeMessageSendBodyForMode(body, mode)
+        ZIO.fromEither(normalized.fromJson[A2ARequest.MessageSend].left.map(A2AError.invalidRequest))
+      }
 
     def restOptionalBodyAs[A: JsonDecoder]: Task[Option[A]] =
       request.readBody.flatMap { body =>
@@ -239,10 +329,21 @@ private[a2a] object A2AHttpBinding:
       }
 
     val bodyReader = new A2ARestBodyReader:
-      def bodyAs[A: JsonDecoder]: Task[A]                 = restBodyAs[A]
+      def bodyAs[A: JsonDecoder]: Task[A]                                               = restBodyAs[A]
+      def messageSendBodyAs(executionMode: ExecutionMode): Task[A2ARequest.MessageSend] =
+        restMessageSendBodyAs(executionMode)
       def optionalBodyAs[A: JsonDecoder]: Task[Option[A]] = restOptionalBodyAs[A]
 
-    A2ARestRouting.dispatch(routed, query, contextFor, bodyReader, agentCard, capabilities, requestHandler)
+    A2ARestRouting.dispatch(
+      routed,
+      query,
+      contextFor,
+      bodyReader,
+      agentCard,
+      capabilities,
+      executionMode,
+      requestHandler,
+    )
   end restDispatch
 
   def jsonRpcDispatch(
@@ -250,11 +351,20 @@ private[a2a] object A2AHttpBinding:
     agentCard: AgentCard,
     capabilities: AgentCapabilities,
     requestHandler: A2ARequestHandler,
+    executionMode: ExecutionMode = ExecutionMode.Default,
   ): UIO[A2AJsonRpcDispatch] =
     (validateRequestContentType(request, A2AContentType.Json) *> request.readBody)
       .foldZIO(
-        error => ZIO.succeed(jsonRpcErrorDispatch(None, A2AError.fromThrowable(error))),
-        body => jsonRpcDispatch(body, contextFrom(request, None), agentCard, capabilities, requestHandler),
+        error => ZIO.succeed(jsonRpcErrorDispatch(JsonRpcId.Unknown, A2AError.fromThrowable(error))),
+        body =>
+          jsonRpcDispatch(
+            body,
+            contextFromRequestParameters(request, None),
+            agentCard,
+            capabilities,
+            requestHandler,
+            executionMode,
+          ),
       )
 
   def jsonRpcDispatch(
@@ -263,35 +373,61 @@ private[a2a] object A2AHttpBinding:
     agentCard: AgentCard,
     capabilities: AgentCapabilities,
     requestHandler: A2ARequestHandler,
+    executionMode: ExecutionMode,
   ): UIO[A2AJsonRpcDispatch] =
-    JsonRpcRequest.parse(body) match
-      case Left(error)   => ZIO.succeed(jsonRpcErrorDispatch(None, error))
+    val normalizedBody = A2AMessageSendDefaults.normalizeJsonRpcBodyForMode(body, executionMode)
+    JsonRpcRequest.parse(normalizedBody) match
+      case Left(error)   => ZIO.succeed(jsonRpcErrorDispatch(JsonRpcId.Unknown, error))
       case Right(parsed) =>
         A2AJsonRpcRouting.dispatch(parsed, context, agentCard, capabilities, requestHandler)
 
   def restErrorBody(error: A2AError): Json =
-    val status = A2AError.httpStatus(error)
+    val status     = A2AError.httpStatus(error)
+    val statusName = A2AError.grpcStatus(error).wireName
+    val reason     = A2AError.errorInfoReason(error.code).getOrElse("INVALID_PARAMS")
     Json.Obj(
-      "error" -> Json.Obj(
+      "type"   -> Json.Str(problemType(reason)),
+      "title"  -> Json.Str(problemTitle(statusName)),
+      "status" -> Json.Num(java.math.BigDecimal.valueOf(status.toLong)),
+      "detail" -> Json.Str(error.message),
+      "error"  -> Json.Obj(
         "code"    -> Json.Num(java.math.BigDecimal.valueOf(status.toLong)),
-        "status"  -> Json.Str(A2AError.httpStatusName(status)),
+        "status"  -> Json.Str(statusName),
         "message" -> Json.Str(error.message),
         "details" -> Json.Arr(
           Json.Obj(
             "@type"  -> Json.Str(A2AError.ErrorInfoType),
-            "reason" -> Json.Str(A2AError.errorInfoReason(error.code).getOrElse("INVALID_PARAMS")),
+            "reason" -> Json.Str(reason),
             "domain" -> Json.Str(A2AError.ErrorInfoDomain),
           )
         ),
-      )
+      ),
     )
+  end restErrorBody
 
-  def streamErrorJson(error: A2AError, isJsonRpc: Boolean): String =
-    if isJsonRpc then JsonRpcResponse.fromA2AError(None, error).toJson
+  private def problemType(reason: String): String =
+    s"https://${A2AError.ErrorInfoDomain}/errors/${reason.toLowerCase.replace('_', '-')}"
+
+  private def problemTitle(statusName: String): String =
+    statusName.split("_").iterator.map(_.toLowerCase.capitalize).mkString(" ")
+
+  def streamErrorJson(
+    error: A2AError,
+    isJsonRpc: Boolean,
+    id: Option[JsonRpcId] = None,
+  ): String =
+    if isJsonRpc then JsonRpcResponse.fromA2AError(id, error).toJson
     else restErrorBody(error).toJson
 
   def streamErrorJson(error: Throwable, isJsonRpc: Boolean): String =
-    streamErrorJson(A2AError.fromThrowable(error), isJsonRpc)
+    streamErrorJson(A2AError.fromThrowable(error), isJsonRpc, None)
+
+  def streamErrorJson(
+    error: Throwable,
+    isJsonRpc: Boolean,
+    id: Option[JsonRpcId],
+  ): String =
+    streamErrorJson(A2AError.fromThrowable(error), isJsonRpc, id)
 
   private def jsonRpcErrorDispatch(id: Option[JsonRpcId], error: A2AError): A2AJsonRpcDispatch =
     A2AJsonRpcDispatch.Single(JsonRpcResponse.fromA2AError(id, error), Nil)

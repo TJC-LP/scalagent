@@ -18,7 +18,7 @@ class A2APathRoutingSpec extends FunSuite:
   test("query parser shares aliases and scalar validation"):
     val query = A2APathRouting.query(
       Map(
-        "page_size"         -> "25",
+        "PAGE_SIZE"         -> "25",
         "include_artifacts" -> "true",
         "status"            -> "TASK_STATE_COMPLETED",
       ).get
@@ -36,6 +36,33 @@ class A2APathRoutingSpec extends FunSuite:
     assertEquals(A2APathRouting.resolveTenant(None, None, Some("tenant-body")), Right(Some("tenant-body")))
     assert(A2APathRouting.resolveTenant(Some("tenant-a"), Some("tenant-b"), None).left.exists(_.message.contains("Conflicting tenant values")))
 
+  test("REST path parameters are percent-decoded in shared builders"):
+    val query = A2APathRouting.query(Map.empty[String, String].get)
+
+    assertEquals(
+      A2APathRouting.resolveTenant(Some("tenant%20a"), None, None),
+      Right(Some("tenant a")),
+    )
+    assertEquals(
+      A2APathRouting.tasksGet("task%201", query, Some("tenant a")).map(_.id),
+      Right(TaskId("task 1")),
+    )
+    assertEquals(
+      A2APathRouting.tasksCancel("task%2Fdeep:cancel", Some(A2ARequest.TasksCancelRestBody(id = Some(TaskId("task/deep")))), None)
+        .map(_.id),
+      Right(TaskId("task/deep")),
+    )
+    assertEquals(
+      A2APathRouting.pushConfigGet("task%201", "push%2Fencoded", None).map(value => value.taskId -> value.id),
+      Right(TaskId("task 1") -> "push/encoded"),
+    )
+    assertEquals(A2APathRouting.taskId("task+plus"), Right(TaskId("task+plus")))
+    assert(A2APathRouting.taskId("bad%2").left.exists(_.message.contains("Invalid percent-encoding")))
+    assert(A2APathRouting.taskId("bad%C3%28").left.exists(_.message.contains("Invalid UTF-8 percent-encoding")))
+    assert(A2APathRouting.taskId("bad%C0%AF").left.exists(_.message.contains("Invalid UTF-8 percent-encoding")))
+    assert(A2APathRouting.taskId("bad%ED%A0%80").left.exists(_.message.contains("Invalid UTF-8 percent-encoding")))
+    assertEquals(A2APathRouting.taskId("emoji%F0%9F%9A%80").map(_.value), Right("emoji\uD83D\uDE80"))
+
   test("REST request builders translate query and path values once for both platforms"):
     val query = A2APathRouting.query(
       Map(
@@ -47,7 +74,7 @@ class A2APathRoutingSpec extends FunSuite:
         "status_timestamp_after" -> "2026-01-01T00:00:00Z",
         "include_artifacts"      -> "false",
         "tenant"                 -> "tenant-a",
-        "a2aVersion"             -> "1.0",
+        "a2a-version"            -> "1.0",
       ).get
     )
 

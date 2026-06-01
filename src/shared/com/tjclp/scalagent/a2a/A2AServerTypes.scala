@@ -80,6 +80,78 @@ trait PushNotificationUrlPolicy:
   def validate(url: String): Task[Unit]
 end PushNotificationUrlPolicy
 
+/** Authorization hook for authenticated extended Agent Card retrieval. */
+trait A2AExtendedAgentCardAuth:
+  def authorize(publicCard: AgentCard, authorization: Option[String]): Task[Unit]
+end A2AExtendedAgentCardAuth
+
+/** Authorization hook for public Agent Card discovery. Defaults to public discovery. */
+trait A2AAgentCardAuth:
+  def authorize(publicCard: AgentCard, authorization: Option[String]): Task[Unit]
+end A2AAgentCardAuth
+
+object A2AAgentCardAuth:
+  val permitAll: A2AAgentCardAuth =
+    (_: AgentCard, _: Option[String]) => ZIO.unit
+
+  val requireAuthorizationHeader: A2AAgentCardAuth =
+    (_: AgentCard, authorization: Option[String]) =>
+      if authorization.exists(_.trim.nonEmpty) then ZIO.unit
+      else
+        ZIO.fail(
+          A2AError.unauthenticated(
+            "Agent Card discovery requires an Authorization header; configure a custom " +
+              "A2AAgentCardAuth to validate deployed credentials"
+          )
+        )
+
+  def fromFunction(f: (AgentCard, Option[String]) => Task[Unit]): A2AAgentCardAuth =
+    (publicCard: AgentCard, authorization: Option[String]) => f(publicCard, authorization)
+end A2AAgentCardAuth
+
+object A2AExtendedAgentCardAuth:
+  val permitAll: A2AExtendedAgentCardAuth =
+    (_: AgentCard, _: Option[String]) => ZIO.unit
+
+  val requireAuthorizationHeader: A2AExtendedAgentCardAuth =
+    (_: AgentCard, authorization: Option[String]) =>
+      if authorization.exists(_.trim.nonEmpty) then ZIO.unit
+      else
+        ZIO.fail(
+          A2AError.unauthenticated(
+            "GetExtendedAgentCard requires an Authorization header; configure a custom " +
+              "A2AExtendedAgentCardAuth to validate deployed credentials"
+          )
+        )
+
+  def fromFunction(f: (AgentCard, Option[String]) => Task[Unit]): A2AExtendedAgentCardAuth =
+    (publicCard: AgentCard, authorization: Option[String]) => f(publicCard, authorization)
+end A2AExtendedAgentCardAuth
+
+/** Authorization hook for A2A protocol operations beyond public Agent Card discovery. */
+trait A2ARequestAuth:
+  def authorize(publicCard: AgentCard, context: ServerCallContext): Task[Unit]
+end A2ARequestAuth
+
+object A2ARequestAuth:
+  val permitAll: A2ARequestAuth =
+    (_: AgentCard, _: ServerCallContext) => ZIO.unit
+
+  val requireAuthorizationWhenAdvertised: A2ARequestAuth =
+    (publicCard: AgentCard, context: ServerCallContext) =>
+      if publicCard.securityRequirements.isEmpty || context.authorization.exists(_.trim.nonEmpty) then ZIO.unit
+      else
+        ZIO.fail(
+          A2AError.unauthenticated(
+            "A2A request requires an Authorization header because the Agent Card declares security requirements; " +
+              "configure a custom A2ARequestAuth to validate deployed credentials"
+          )
+        )
+
+  def fromFunction(f: (AgentCard, ServerCallContext) => Task[Unit]): A2ARequestAuth =
+    (publicCard: AgentCard, context: ServerCallContext) => f(publicCard, context)
+end A2ARequestAuth
+
 object PushNotificationUrlPolicy:
   val allowAll: PushNotificationUrlPolicy =
     (_: String) => ZIO.unit
@@ -244,52 +316,29 @@ trait A2ATaskStore:
 end A2ATaskStore
 
 object A2ATaskStore:
-  /** Default in-process store; non-persistent. */
-  def inMemory: A2ATaskStore = new InMemoryTaskStoreImpl
-
-  /**
-   * Truncate `task.history` to the requested length (matches the A2A
-   * `historyLength` semantic). Public so durable [[A2ATaskStore]] impls
-   * can stay byte-identical with the in-memory default's projection.
-   */
-  def applyHistoryLength(task: A2ATask, historyLength: Option[Int]): A2ATask =
-    historyLength match
-      case Some(length) if length <= 0 => task.copy(history = Nil)
-      case Some(length)                => task.copy(history = task.history.takeRight(length))
-      case None                        => task
-end A2ATaskStore
-
-/** Default in-process task store. Pure Scala, cross-built. */
-private[a2a] final class InMemoryTaskStoreImpl extends A2ATaskStore:
-  private val tasks = mutable.Map.empty[(String, String), A2ATask]
-  private val lock  = new AnyRef
-
   private enum PageToken derives CanEqual:
     case Offset(value: Int)
     case Cursor(timestamp: String, taskId: String)
 
-  private def key(id: TaskId, tenant: Option[String]): (String, String) =
-    (tenant.getOrElse(""), id.value)
+  /** Default in-process store; non-persistent. */
+  def inMemory: A2ATaskStore = new InMemoryTaskStoreImpl
 
-  def save(task: A2ATask, tenant: Option[String]): UIO[Unit] =
-    ZIO.succeed(lock.synchronized { tasks.update(key(task.id, tenant), task); () })
-
-  def load(taskId: TaskId, tenant: Option[String]): UIO[Option[A2ATask]] =
-    ZIO.succeed(lock.synchronized(tasks.get(key(taskId, tenant))))
-
-  def delete(taskId: TaskId, tenant: Option[String]): UIO[Unit] =
-    ZIO.succeed(lock.synchronized { tasks.remove(key(taskId, tenant)); () })
-
-  def list(params: A2ARequest.TasksList, tenant: Option[String]): Task[A2AResponse.ListTasksResult] =
+  /**
+   * Apply the standard A2A `tasks/list` filters, ordering, cursor pagination,
+   * history projection, and artifact inclusion rules to an already-scoped task
+   * collection.
+   *
+   * Store implementations should pre-filter by their storage namespace/tenant,
+   * then delegate here so durable stores don't drift from the in-memory default.
+   */
+  def listTasks(
+    tasks: Iterable[A2ATask],
+    params: A2ARequest.TasksList,
+  ): Task[A2AResponse.ListTasksResult] =
     for statusTimestampAfter <- validateListParams(params)
     yield
       val pageSize = params.pageSize.getOrElse(50)
-      val all      = lock.synchronized {
-        tasks.collect {
-          case ((t, _), task) if t == tenant.getOrElse("") => task
-        }.toList
-      }
-      val filtered = all
+      val filtered = tasks.toList
         .filter(task => params.contextId.forall(_ == task.contextId))
         .filter(task => params.status.forall(_ == task.status.state))
         .filter(task =>
@@ -304,14 +353,15 @@ private[a2a] final class InMemoryTaskStoreImpl extends A2ATaskStore:
           filtered.filter(task =>
             summon[Ordering[(Long, Int, String)]].lt(taskSortKey(task), cursorSortKey(timestamp, taskId))
           )
-      val page = pageSource.take(pageSize)
-      val next = page.lastOption
-        .filter(_ => pageSource.length > pageSize)
+      val pageWithLookahead = pageSource.take(pageSize + 1)
+      val page              = pageWithLookahead.take(pageSize)
+      val next              = page.lastOption
+        .filter(_ => pageWithLookahead.length > pageSize)
         .map(task => encodePageToken(taskCursor(task)))
       val includeArtifacts = params.includeArtifacts.getOrElse(false)
       A2AResponse.ListTasksResult(
         tasks = page.map { task =>
-          val withHistory = A2ATaskStore.applyHistoryLength(task, params.historyLength)
+          val withHistory = applyHistoryLength(task, params.historyLength)
           if includeArtifacts then withHistory else withHistory.copy(artifacts = Nil)
         },
         nextPageToken = next,
@@ -319,6 +369,17 @@ private[a2a] final class InMemoryTaskStoreImpl extends A2ATaskStore:
         totalSize = filtered.length,
         includeArtifacts = includeArtifacts,
       )
+
+  /**
+   * Truncate `task.history` to the requested length (matches the A2A
+   * `historyLength` semantic). Public so durable [[A2ATaskStore]] impls
+   * can stay byte-identical with the in-memory default's projection.
+   */
+  def applyHistoryLength(task: A2ATask, historyLength: Option[Int]): A2ATask =
+    historyLength match
+      case Some(length) if length <= 0 => task.copy(history = Nil)
+      case Some(length)                => task.copy(history = task.history.takeRight(length))
+      case None                        => task
 
   private def validateListParams(params: A2ARequest.TasksList): Task[Option[java.time.Instant]] =
     params.pageSize match
@@ -401,6 +462,32 @@ private[a2a] final class InMemoryTaskStoreImpl extends A2ATaskStore:
   private def hexDecode(value: String): Option[String] =
     if value.length % 4 != 0 then None
     else Try(value.grouped(4).map(Integer.parseInt(_, 16).toChar).mkString).toOption
+end A2ATaskStore
+
+/** Default in-process task store. Pure Scala, cross-built. */
+private[a2a] final class InMemoryTaskStoreImpl extends A2ATaskStore:
+  private val tasks = mutable.Map.empty[(String, String), A2ATask]
+  private val lock  = new AnyRef
+
+  private def key(id: TaskId, tenant: Option[String]): (String, String) =
+    (tenant.getOrElse(""), id.value)
+
+  def save(task: A2ATask, tenant: Option[String]): UIO[Unit] =
+    ZIO.succeed(lock.synchronized { tasks.update(key(task.id, tenant), task); () })
+
+  def load(taskId: TaskId, tenant: Option[String]): UIO[Option[A2ATask]] =
+    ZIO.succeed(lock.synchronized(tasks.get(key(taskId, tenant))))
+
+  def delete(taskId: TaskId, tenant: Option[String]): UIO[Unit] =
+    ZIO.succeed(lock.synchronized { tasks.remove(key(taskId, tenant)); () })
+
+  def list(params: A2ARequest.TasksList, tenant: Option[String]): Task[A2AResponse.ListTasksResult] =
+    val all = lock.synchronized {
+      tasks.collect {
+        case ((t, _), task) if t == tenant.getOrElse("") => task
+      }.toList
+    }
+    A2ATaskStore.listTasks(all, params)
 end InMemoryTaskStoreImpl
 
 /**
@@ -410,7 +497,8 @@ end InMemoryTaskStoreImpl
 private[a2a] final case class ServerCallContext(
   tenant: Option[String] = None,
   requestedVersion: Option[String] = None,
-  requestedExtensions: List[String] = Nil)
+  requestedExtensions: List[String] = Nil,
+  authorization: Option[String] = None)
 
 private[a2a] object A2AServerAgentCard:
   def apply(
@@ -480,7 +568,15 @@ private[a2a] object A2AServiceParameters:
     context.requestedExtensions.filter(supported.contains).distinct
 
   private def requestedVersion(context: ServerCallContext): String =
-    context.requestedVersion.map(_.trim).filter(_.nonEmpty).getOrElse("0.3")
+    // NB: an explicitly-blank version (`A2A-Version:` / `?A2A-Version=`) is
+    // intentionally treated as legacy "0.3" (fail-loud on a malformed version
+    // param), distinct from omitting it entirely (→ current version). This
+    // asymmetry is deliberate and covered by A2AServerLiveSpec ("treats empty
+    // A2A-Version parameter as protocol 0.3").
+    context.requestedVersion match
+      case Some(value) if value.trim.isEmpty => "0.3"
+      case Some(value)                       => value.trim
+      case None                              => A2AProtocol.Version
 
   private def matchingInterfaces(
     agentCard: AgentCard,

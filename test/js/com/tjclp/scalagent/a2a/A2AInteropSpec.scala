@@ -95,7 +95,7 @@ class A2AInteropSpec extends FunSuite:
     assertEquals(config.pushNotificationConfig.toOption.flatMap(_.id.toOption), pushConfig.id)
     assertEquals(config.taskPushNotificationConfig.toOption.flatMap(_.taskId.toOption), Some("task-1"))
 
-  test("message send default normalizer writes legacy and v1 blocking fields"):
+  test("message send default normalizer follows execution mode only when configuration is omitted"):
     val missingConfiguration =
       """{
         |  "jsonrpc": "2.0",
@@ -114,20 +114,27 @@ class A2AInteropSpec extends FunSuite:
         |  "id": 2
         |}""".stripMargin
 
-    val normalizedMissing =
-      js.JSON.parse(A2AJsonRpcRequests.withDefaultMessageSendBlocking(missingConfiguration, blocking = false))
+    val normalizedDefault =
+      js.JSON.parse(A2AJsonRpcRequests.withDefaultMessageSendExecutionMode(missingConfiguration, ExecutionMode.Default))
+        .asInstanceOf[js.Dynamic]
+        .params
+        .configuration
+    val normalizedAsync =
+      js.JSON.parse(A2AJsonRpcRequests.withDefaultMessageSendExecutionMode(missingConfiguration, ExecutionMode.Asynchronous))
         .asInstanceOf[js.Dynamic]
         .params
         .configuration
     val normalizedExplicit =
-      js.JSON.parse(A2AJsonRpcRequests.withDefaultMessageSendBlocking(explicitReturnImmediately, blocking = false))
+      js.JSON.parse(A2AJsonRpcRequests.withDefaultMessageSendExecutionMode(explicitReturnImmediately, ExecutionMode.Asynchronous))
         .asInstanceOf[js.Dynamic]
         .params
         .configuration
 
-    assertEquals(normalizedMissing.blocking.asInstanceOf[Boolean], false)
-    assertEquals(normalizedMissing.returnImmediately.asInstanceOf[Boolean], true)
-    assertEquals(normalizedExplicit.blocking.asInstanceOf[Boolean], false)
+    assertEquals(normalizedDefault.blocking.asInstanceOf[Boolean], true)
+    assertEquals(normalizedDefault.returnImmediately.asInstanceOf[Boolean], false)
+    assertEquals(normalizedAsync.blocking.asInstanceOf[Boolean], false)
+    assertEquals(normalizedAsync.returnImmediately.asInstanceOf[Boolean], true)
+    assertEquals(normalizedExplicit.blocking.asInstanceOf[Boolean], true)
     assertEquals(normalizedExplicit.returnImmediately.asInstanceOf[Boolean], false)
 
   test("delete push notification params use task id under id field"):
@@ -227,6 +234,15 @@ class A2AInteropSpec extends FunSuite:
     )
 
     assertEquals(A2AConverters.toScala(A2AConverters.toJs(message)), message)
+
+  test("JS converters use shared task-state wire aliases"):
+    val status = js.Dynamic
+      .literal(state = "TASK_STATE_AUTH_REQUIRED")
+      .asInstanceOf[JsTaskStatus]
+    val encoded = A2AConverters.toJs(TaskStatus(TaskState.InputRequired)).asInstanceOf[js.Dynamic]
+
+    assertEquals(A2AConverters.toScala(status).state, TaskState.AuthRequired)
+    assertEquals(encoded.state.asInstanceOf[String], "input-required")
 
   test("legacy file parts preserve top-level name and mime type"):
     val json =
@@ -569,7 +585,9 @@ class A2AInteropSpec extends FunSuite:
   test("stream parser rejects unknown event kinds"):
     runTask(A2AStreamEventParser.parse(js.Dynamic.literal(kind = "future-event")).either).map { result =>
       result match
-        case Left(error)  => assert(error.getMessage.contains("Unknown A2A stream event kind: future-event"))
+        case Left(error) =>
+          assert(error.getMessage.contains("A2A stream event"))
+          assert(error.getMessage.contains("future-event"))
         case Right(value) => fail(s"Expected parser failure, got $value")
     }
 
@@ -711,4 +729,20 @@ class A2AInteropSpec extends FunSuite:
     readChunk(response).toFuture.map { chunk =>
       assert(chunk.contains(""""step":"one""""))
       assert(!chunk.contains(""""step":"two""""))
+    }
+
+  test("Bun JSON-RPC responses emit keep-alive comments while async iterable is idle"):
+    val event = js.Dynamic.literal(
+      jsonrpc = "2.0",
+      id = 1,
+      result = js.Dynamic.literal(kind = "status-update", taskId = "task-1", step = "after-idle")
+    )
+    val response = BunJsonRpcResponses.fromResult(
+      delayedAsyncIterableOf(List(event -> 35)),
+      1,
+      keepAliveMillis = 10,
+    )
+
+    readChunk(response).toFuture.map { chunk =>
+      assertEquals(chunk, A2AHttpBinding.sseKeepAliveFrame)
     }
