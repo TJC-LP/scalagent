@@ -183,23 +183,11 @@ object agent extends Module:
       )
     }
 
-    /** The proto VENDORED in-repo, tracked as a Mill source so the build is
-      * hermetic (no dependency on a github.com/a2aproject/A2A checkout on the
-      * build host) and re-runs codegen when it changes. Provenance:
-      * proto/A2A_PROTO_SOURCE.txt. */
-    def a2aProtoVendored: T[PathRef] = Task.Source(moduleDir / "proto" / "a2a.proto")
-
-    def a2aProtoSpec: T[PathRef] = Task {
-      // `A2A_PROTO_SPEC` overrides for local work against an unreleased upstream
-      // proto (a path outside the build root, so read directly); otherwise use
-      // the tracked in-repo vendored copy.
-      Task.env.get("A2A_PROTO_SPEC").map(os.Path(_, os.pwd)) match
-        case Some(spec) =>
-          if !os.exists(spec) then
-            throw new RuntimeException(s"A2A_PROTO_SPEC not found: $spec")
-          PathRef(spec)
-        case None => a2aProtoVendored()
-    }
+    /** The A2A proto VENDORED in-repo (proto/a2a.proto), tracked as a Mill
+      * source so the build is hermetic and codegen re-runs when it changes. This
+      * is the single source of truth — to track a new upstream proto, replace
+      * the file (provenance: proto/A2A_PROTO_SOURCE.txt). No env indirection. */
+    def a2aProtoSpec: T[PathRef] = Task.Source(moduleDir / "proto" / "a2a.proto")
 
     def compileA2AJavaProto: T[PathRef] = Task(persistent = true) {
       val spec         = a2aProtoSpec().path

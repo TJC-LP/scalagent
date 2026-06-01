@@ -1,7 +1,6 @@
 package com.tjclp.scalagent.a2a
 
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path}
 import java.util.Locale
 
 import munit.FunSuite
@@ -22,23 +21,10 @@ class A2AProtoParitySpec extends FunSuite:
   private final case class RpcSignature(request: String, response: String, streaming: Boolean)
   private final case class SpecErrorInfo(typeUrl: String, domain: String)
 
-  private val specPath: Path =
-    sys.env
-      .get("A2A_PROTO_SPEC")
-      .map(Path.of(_))
-      .getOrElse(Path.of(sys.props("user.home"), "git", "a2a", "specification", "a2a.proto"))
-  private val docsPath: Path =
-    sys.env
-      .get("A2A_SPEC_DOC")
-      .map(Path.of(_))
-      .getOrElse(Path.of(sys.props("user.home"), "git", "a2a", "docs", "specification.md"))
-  private val a2aRepoPath: Path =
-    sys.env
-      .get("A2A_REPO")
-      .map(Path.of(_))
-      .getOrElse(Path.of(sys.props("user.home"), "git", "a2a"))
-  private val actsBranch: String =
-    sys.env.getOrElse("A2A_ACTS_BRANCH", "origin/conformance-spec")
+  // Conformance inputs (proto, spec doc, ACTS fixtures) are vendored in-repo and
+  // read from the test classpath — the single source of truth, identical locally
+  // and in CI. To track a fresh upstream A2A revision, re-vendor the files under
+  // proto/ and test/resources/ (provenance: test/resources/acts/SOURCE.txt).
 
   test("JSON-RPC method constants match A2AService RPC names from local a2a proto"):
     withProtoSpec { proto =>
@@ -409,28 +395,21 @@ class A2AProtoParitySpec extends FunSuite:
       assertEquals(specWellKnownPath(doc), A2APaths.AgentCard)
     }
 
-  // Resolution order for parity inputs: env override → vendored classpath
-  // resource (the hermetic default) → ~/git/a2a checkout. Keeps CI/publish
-  // hermetic while local dev can point at a fresh upstream proto/spec.
-  private def classpathResource(name: String): Option[String] =
-    Option(getClass.getResourceAsStream(name)).map { stream =>
-      try new String(stream.readAllBytes(), StandardCharsets.UTF_8)
-      finally stream.close()
-    }
+  // All conformance inputs are read from vendored classpath resources — the
+  // single source of truth, identical locally and in CI (no env, no ~/git/a2a).
+  private def classpathResource(name: String): String =
+    Option(getClass.getResourceAsStream(name))
+      .map { stream =>
+        try new String(stream.readAllBytes(), StandardCharsets.UTF_8)
+        finally stream.close()
+      }
+      .getOrElse(fail(s"vendored A2A resource $name missing from the test classpath"))
 
   private def withProtoSpec(assertions: String => Unit): Unit =
-    if Files.exists(specPath) then assertions(Files.readString(specPath, StandardCharsets.UTF_8))
-    else
-      classpathResource("/a2a.proto") match
-        case Some(proto) => assertions(proto)
-        case None        => fail(s"A2A proto spec not found: $specPath (no /a2a.proto resource); set A2A_PROTO_SPEC")
+    assertions(classpathResource("/a2a.proto"))
 
   private def withSpecDoc(assertions: String => Unit): Unit =
-    if Files.exists(docsPath) then assertions(Files.readString(docsPath, StandardCharsets.UTF_8))
-    else
-      classpathResource("/specification.md") match
-        case Some(doc) => assertions(doc)
-        case None      => fail(s"A2A spec doc not found: $docsPath (no /specification.md resource); set A2A_SPEC_DOC")
+    assertions(classpathResource("/specification.md"))
 
   private def withProtoAndDoc(assertions: (String, String) => Unit): Unit =
     withProtoSpec(proto => withSpecDoc(doc => assertions(proto, doc)))
@@ -442,36 +421,7 @@ class A2AProtoParitySpec extends FunSuite:
     assertions(includes.map(name => ActsFile(name, readActsFile(name))))
 
   private def readActsFile(name: String): String =
-    // Resolution order: A2A_ACTS_ROOT override → vendored classpath resource
-    // (test/resources/acts/<name>, the hermetic default) → git checkout of the
-    // upstream conformance branch (local dev against fresh fixtures).
-    sys.env.get("A2A_ACTS_ROOT").map(Path.of(_)) match
-      case Some(root) =>
-        val path = root.resolve(name)
-        if Files.exists(path) then Files.readString(path, StandardCharsets.UTF_8)
-        else fail(s"A2A ACTS file not found: $path")
-      case None =>
-        Option(getClass.getResourceAsStream(s"/acts/$name")) match
-          case Some(stream) =>
-            try new String(stream.readAllBytes(), StandardCharsets.UTF_8)
-            finally stream.close()
-          case None => readActsFileFromGit(s"tests/acts/$name")
-
-  private def readActsFileFromGit(path: String): String =
-    if !Files.isDirectory(a2aRepoPath) then
-      fail(s"A2A git checkout not found: $a2aRepoPath; set A2A_REPO or A2A_ACTS_ROOT to run this parity test")
-
-    val process = ProcessBuilder("git", "-C", a2aRepoPath.toString, "show", s"$actsBranch:$path")
-      .redirectErrorStream(true)
-      .start()
-    val output = new String(process.getInputStream.readAllBytes(), StandardCharsets.UTF_8)
-    val code   = process.waitFor()
-    if code == 0 then output
-    else
-      fail(
-        s"A2A ACTS file $path not found in $actsBranch under $a2aRepoPath; " +
-          s"set A2A_ACTS_ROOT or A2A_ACTS_BRANCH. git output:\n$output"
-      )
+    classpathResource(s"/acts/$name")
 
   private def actsSuiteIncludes(suite: String): List[String] =
     val Include = """^\s*-\s+([A-Za-z0-9_-]+\.acts\.yaml)\s*(?:#.*)?$""".r

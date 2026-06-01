@@ -1,7 +1,6 @@
 package com.tjclp.scalagent.a2a
 
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path}
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters.*
 import scala.util.matching.Regex
@@ -178,26 +177,22 @@ class A2AActsStreamingSpec extends FunSuite:
       "DM-FMT-003",
     )
 
-  private val a2aRepoPath: Path =
-    sys.env.get("A2A_REPO").map(Path.of(_)).getOrElse(Path.of(sys.props("user.home"), "git", "a2a"))
-  private val actsBranch: String =
-    sys.env.getOrElse("A2A_ACTS_BRANCH", "origin/conformance-spec")
+  // Deterministic coordination for the concurrent-stream scenarios
+  // (STREAM-MULTI-00x). The tck-stream-basic agent emits its first `working`
+  // status (so the runner learns the task id and the secondary can resubscribe
+  // to a STILL-ACTIVE task) and then blocks on this gate until the runner
+  // releases it after the secondary has subscribed — otherwise the task races
+  // to terminal and resubscribe is (correctly) rejected. `None` when no
+  // concurrent step is in flight; ACTS scenarios run sequentially.
+  private val concurrentStreamGate =
+    new java.util.concurrent.atomic.AtomicReference[Option[Promise[Nothing, Unit]]](None)
 
-  // The ACTS conformance fixtures live in the upstream a2aproject/A2A repo
-  // (origin/conformance-spec) and are pulled via A2A_REPO / A2A_ACTS_ROOT. When
-  // they are unavailable (a hermetic CI/publish host with no checkout), SKIP the
-  // conformance suite rather than failing the build — the fixtures are an
-  // external, moving dependency, not part of this repo. Conformance still runs
-  // in full wherever the repo/env is present (local dev + conformance CI).
-  private val actsFixturesAvailable: Boolean =
-    scala.util.Try(readActsFile("core-operations.acts.yaml")).isSuccess
-
+  // ACTS conformance fixtures are vendored in-repo (test/resources/acts/) and
+  // read from the test classpath — identical locally and in CI.
   private lazy val actsTests: List[ActsTest] =
-    if !actsFixturesAvailable then Nil
-    else loadActsTests.filter(test => executableActsIds.contains(test.id))
+    loadActsTests.filter(test => executableActsIds.contains(test.id))
 
   test("ACTS executable subset stays explicit"):
-    assume(actsFixturesAvailable, "A2A ACTS fixtures unavailable (set A2A_REPO or A2A_ACTS_ROOT) — skipping conformance")
     assertEquals(actsTests.map(_.id).toSet, executableActsIds)
 
   actsTests.foreach { acts =>
@@ -448,30 +443,40 @@ class A2AActsStreamingSpec extends FunSuite:
     request: A2ARequest.MessageSend,
     closePrimary: Boolean,
   ): Task[StepResult] =
-    for
-      primary       <- core.requestHandler.sendMessageStream(request, ServerCallContext())
-      taskIdReady   <- Promise.make[Nothing, TaskId]
-      secondarySeen <- Promise.make[Nothing, Unit]
-      primaryFiber <- primary
-        .tap(event => taskIdReady.succeed(event.taskId).ignore)
-        .runCollect
-        .fork
-      taskId <- taskIdReady.await.timeoutFail(new RuntimeException(s"$stepId primary stream emitted no task id"))(500.millis)
-      secondary <- core.requestHandler.resubscribe(A2ARequest.TasksResubscribe(taskId), ServerCallContext())
-      secondaryFiber <- secondary
-        .tap(_ => secondarySeen.succeed(()).ignore)
-        .runCollect
-        .fork
-      _ <- secondarySeen.await.timeoutFail(new RuntimeException(s"$stepId secondary stream did not subscribe"))(500.millis)
-      _ <- if closePrimary then ZIO.sleep(10.millis) *> primaryFiber.interrupt.unit else ZIO.unit
-      secondaryEvents <- secondaryFiber.join.timeoutFail(new RuntimeException(s"$stepId secondary stream did not close"))(3.seconds)
-      primaryEvents <-
-        if closePrimary then ZIO.succeed(Chunk.empty[A2AResponse.StreamEvent])
-        else primaryFiber.join.timeoutFail(new RuntimeException(s"$stepId primary stream did not close"))(3.seconds)
-      _ <-
-        if closePrimary then ZIO.unit
-        else verifyConcurrentStreamEvents(stepId, primaryEvents.toList, secondaryEvents.toList)
-    yield StepResult(streamJson(secondaryEvents.toList))
+    val program =
+      for
+        releaseGate   <- Promise.make[Nothing, Unit]
+        _             <- ZIO.succeed(concurrentStreamGate.set(Some(releaseGate)))
+        primary       <- core.requestHandler.sendMessageStream(request, ServerCallContext())
+        taskIdReady   <- Promise.make[Nothing, TaskId]
+        secondarySeen <- Promise.make[Nothing, Unit]
+        primaryFiber <- primary
+          .tap(event => taskIdReady.succeed(event.taskId).ignore)
+          .runCollect
+          .fork
+        taskId <- taskIdReady.await.timeoutFail(new RuntimeException(s"$stepId primary stream emitted no task id"))(500.millis)
+        // Task is still `working` here (the agent is blocked on releaseGate), so
+        // the secondary resubscribes to an active task rather than racing it to
+        // terminal. After it subscribes we release the agent, so both streams
+        // receive the artifact + completion events.
+        secondary <- core.requestHandler.resubscribe(A2ARequest.TasksResubscribe(taskId), ServerCallContext())
+        secondaryFiber <- secondary
+          .tap(_ => secondarySeen.succeed(()).ignore)
+          .runCollect
+          .fork
+        _ <- secondarySeen.await.timeoutFail(new RuntimeException(s"$stepId secondary stream did not subscribe"))(500.millis)
+        _ <- releaseGate.succeed(())
+        _ <- if closePrimary then ZIO.sleep(10.millis) *> primaryFiber.interrupt.unit else ZIO.unit
+        secondaryEvents <- secondaryFiber.join.timeoutFail(new RuntimeException(s"$stepId secondary stream did not close"))(3.seconds)
+        primaryEvents <-
+          if closePrimary then ZIO.succeed(Chunk.empty[A2AResponse.StreamEvent])
+          else primaryFiber.join.timeoutFail(new RuntimeException(s"$stepId primary stream did not close"))(3.seconds)
+        _ <-
+          if closePrimary then ZIO.unit
+          else verifyConcurrentStreamEvents(stepId, primaryEvents.toList, secondaryEvents.toList)
+      yield StepResult(streamJson(secondaryEvents.toList))
+
+    program.ensuring(ZIO.succeed(concurrentStreamGate.set(None)))
 
   private def verifyConcurrentStreamEvents(
     stepId: String,
@@ -480,7 +485,10 @@ class A2AActsStreamingSpec extends FunSuite:
   ): Task[Unit] =
     val primaryComparable   = comparableConcurrentEvents(primaryEvents)
     val secondaryComparable = comparableConcurrentEvents(secondaryEvents)
-    if primaryComparable == secondaryComparable then ZIO.unit
+    // The secondary subscribes after the primary (once it has the task id), so
+    // it sees a SUFFIX of the primary's events — it must receive every event
+    // published from its subscription onward, identically.
+    if secondaryComparable.nonEmpty && primaryComparable.endsWith(secondaryComparable) then ZIO.unit
     else
       ZIO.fail(
         new RuntimeException(
@@ -811,8 +819,12 @@ class A2AActsStreamingSpec extends FunSuite:
         artifact("chunk-2", "two") *>
         complete
     else if text.contains("tck-stream-basic") then
-      ZIO.sleep(25.millis) *>
-        status(TaskStatus.working(Some(agent("working")))) *>
+      // Emit `working` first (lets the runner read the task id), then — for the
+      // concurrent scenarios — block until the secondary has resubscribed, so
+      // the shared artifact/complete events reach BOTH streams and resubscribe
+      // never races the task to terminal. No-op when no gate is set.
+      status(TaskStatus.working(Some(agent("working")))) *>
+        ZIO.suspendSucceed(concurrentStreamGate.get.fold(ZIO.unit)(_.await)) *>
         artifact("stream-artifact", "artifact") *>
         complete
     else if text.contains("tck-task-failure") then
@@ -1215,28 +1227,11 @@ class A2AActsStreamingSpec extends FunSuite:
       .getOrElse(Map.empty)
 
   private def readActsFile(name: String): String =
-    // Resolution order: A2A_ACTS_ROOT override → vendored classpath resource
-    // (test/resources/acts/<name>, the hermetic default) → git checkout of the
-    // upstream conformance branch (local dev against fresh fixtures).
-    sys.env.get("A2A_ACTS_ROOT").map(Path.of(_)) match
-      case Some(root) =>
-        val path = root.resolve(name)
-        if Files.exists(path) then Files.readString(path, StandardCharsets.UTF_8)
-        else throw new RuntimeException(s"A2A ACTS file not found: $path")
-      case None =>
-        Option(getClass.getResourceAsStream(s"/acts/$name")) match
-          case Some(stream) =>
-            try new String(stream.readAllBytes(), StandardCharsets.UTF_8)
-            finally stream.close()
-          case None =>
-            val process = ProcessBuilder("git", "-C", a2aRepoPath.toString, "show", s"$actsBranch:tests/acts/$name")
-              .redirectErrorStream(true)
-              .start()
-            val output = new String(process.getInputStream.readAllBytes(), StandardCharsets.UTF_8)
-            val code   = process.waitFor()
-            if code == 0 then output
-            else
-              throw new RuntimeException(
-                s"A2A ACTS file tests/acts/$name not found (no classpath resource, no $actsBranch). git output:\n$output",
-              )
+    // Vendored in-repo (test/resources/acts/<name>) on the test classpath.
+    Option(getClass.getResourceAsStream(s"/acts/$name"))
+      .map { stream =>
+        try new String(stream.readAllBytes(), StandardCharsets.UTF_8)
+        finally stream.close()
+      }
+      .getOrElse(throw new RuntimeException(s"vendored ACTS fixture /acts/$name missing from the test classpath"))
 end A2AActsStreamingSpec
