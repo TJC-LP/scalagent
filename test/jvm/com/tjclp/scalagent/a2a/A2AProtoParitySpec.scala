@@ -427,13 +427,20 @@ class A2AProtoParitySpec extends FunSuite:
     assertions(includes.map(name => ActsFile(name, readActsFile(name))))
 
   private def readActsFile(name: String): String =
+    // Resolution order: A2A_ACTS_ROOT override → vendored classpath resource
+    // (test/resources/acts/<name>, the hermetic default) → git checkout of the
+    // upstream conformance branch (local dev against fresh fixtures).
     sys.env.get("A2A_ACTS_ROOT").map(Path.of(_)) match
       case Some(root) =>
         val path = root.resolve(name)
         if Files.exists(path) then Files.readString(path, StandardCharsets.UTF_8)
         else fail(s"A2A ACTS file not found: $path")
       case None =>
-        readActsFileFromGit(s"tests/acts/$name")
+        Option(getClass.getResourceAsStream(s"/acts/$name")) match
+          case Some(stream) =>
+            try new String(stream.readAllBytes(), StandardCharsets.UTF_8)
+            finally stream.close()
+          case None => readActsFileFromGit(s"tests/acts/$name")
 
   private def readActsFileFromGit(path: String): String =
     if !Files.isDirectory(a2aRepoPath) then

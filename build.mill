@@ -256,6 +256,10 @@ object agent extends Module:
         build.moduleDir / "test" / "shared",
         build.moduleDir / "test" / "jvm",
       )
+      // Vendored A2A ACTS conformance fixtures (test/resources/acts/*.yaml) on
+      // the test classpath so conformance runs hermetically — no ~/git/a2a
+      // checkout required. See A2AActsStreamingSpec.readActsFile.
+      override def resources = Task.Sources(build.moduleDir / "test" / "resources")
   end jvm
 end agent
 

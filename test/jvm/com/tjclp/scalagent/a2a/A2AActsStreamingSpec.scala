@@ -1215,17 +1215,28 @@ class A2AActsStreamingSpec extends FunSuite:
       .getOrElse(Map.empty)
 
   private def readActsFile(name: String): String =
+    // Resolution order: A2A_ACTS_ROOT override → vendored classpath resource
+    // (test/resources/acts/<name>, the hermetic default) → git checkout of the
+    // upstream conformance branch (local dev against fresh fixtures).
     sys.env.get("A2A_ACTS_ROOT").map(Path.of(_)) match
       case Some(root) =>
         val path = root.resolve(name)
         if Files.exists(path) then Files.readString(path, StandardCharsets.UTF_8)
         else throw new RuntimeException(s"A2A ACTS file not found: $path")
       case None =>
-        val process = ProcessBuilder("git", "-C", a2aRepoPath.toString, "show", s"$actsBranch:tests/acts/$name")
-          .redirectErrorStream(true)
-          .start()
-        val output = new String(process.getInputStream.readAllBytes(), StandardCharsets.UTF_8)
-        val code   = process.waitFor()
-        if code == 0 then output
-        else throw new RuntimeException(s"A2A ACTS file tests/acts/$name not found in $actsBranch. git output:\n$output")
+        Option(getClass.getResourceAsStream(s"/acts/$name")) match
+          case Some(stream) =>
+            try new String(stream.readAllBytes(), StandardCharsets.UTF_8)
+            finally stream.close()
+          case None =>
+            val process = ProcessBuilder("git", "-C", a2aRepoPath.toString, "show", s"$actsBranch:tests/acts/$name")
+              .redirectErrorStream(true)
+              .start()
+            val output = new String(process.getInputStream.readAllBytes(), StandardCharsets.UTF_8)
+            val code   = process.waitFor()
+            if code == 0 then output
+            else
+              throw new RuntimeException(
+                s"A2A ACTS file tests/acts/$name not found (no classpath resource, no $actsBranch). git output:\n$output",
+              )
 end A2AActsStreamingSpec
