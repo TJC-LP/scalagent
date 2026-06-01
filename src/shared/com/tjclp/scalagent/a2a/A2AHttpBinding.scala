@@ -38,8 +38,9 @@ private[a2a] enum A2AHttpResponsePlan:
     errorId: Option[JsonRpcId] = None)
 
 private[a2a] object A2AHttpBinding:
-  private val AgentCardCacheControl     = "public, max-age=60"
-  private[a2a] val SseKeepAliveInterval = 5.seconds
+  private val AgentCardCacheControl        = "public, max-age=60"
+  private val AgentCardPrivateCacheControl = "private, max-age=60"
+  private[a2a] val SseKeepAliveInterval    = 5.seconds
 
   private val SseHeaders = List(
     "Cache-Control"     -> "no-cache",
@@ -48,7 +49,7 @@ private[a2a] object A2AHttpBinding:
   )
 
   def mediaType(contentType: String): String =
-    contentType.takeWhile(_ != ';').trim.toLowerCase
+    contentType.takeWhile(_ != ';').trim.toLowerCase(java.util.Locale.ROOT)
 
   private def headerValue(
     request: A2AHttpRequestView,
@@ -161,9 +162,10 @@ private[a2a] object A2AHttpBinding:
   def agentCardPlan(
     request: A2AHttpRequestView,
     agentCard: AgentCard,
+    publiclyCacheable: Boolean = true,
   ): A2AHttpResponsePlan =
     val etag    = agentCardEtag(agentCard)
-    val headers = agentCardHeaders(etag)
+    val headers = agentCardHeaders(etag, publiclyCacheable)
     if ifNoneMatch(request).exists(matchesEtag(_, etag)) then A2AHttpResponsePlan.Empty(304, headers)
     else A2AHttpResponsePlan.Text(agentCard.toJson, 200, responseHeaders(Some(A2AContentType.Json), Nil, headers*))
 
@@ -171,9 +173,11 @@ private[a2a] object A2AHttpBinding:
     val hash = MurmurHash3.stringHash(agentCard.toJson).toHexString
     s""""a2a-card-$hash""""
 
-  private def agentCardHeaders(etag: String): List[(String, String)] =
+  private def agentCardHeaders(etag: String, publiclyCacheable: Boolean): List[(String, String)] =
     List(
-      "Cache-Control" -> AgentCardCacheControl,
+      // Auth-gated/tenant-scoped cards are per-caller — never let a shared cache
+      // serve them to someone else within the TTL.
+      "Cache-Control" -> (if publiclyCacheable then AgentCardCacheControl else AgentCardPrivateCacheControl),
       "ETag"          -> etag,
     )
 
@@ -247,7 +251,7 @@ private[a2a] object A2AHttpBinding:
     if request.path == A2APaths.AgentCard && request.methodName == "GET" then
       requestHandler
         .getAgentCard(contextFrom(request, None))
-        .map(card => agentCardPlan(request, card))
+        .map(card => agentCardPlan(request, card, requestHandler.agentCardPubliclyCacheable))
         .catchAll(error => ZIO.succeed(restErrorPlan(A2AError.fromThrowable(error))))
     else if request.path == "/" && request.methodName == "POST" then
       jsonRpcDispatch(request, agentCard, capabilities, requestHandler, executionMode).map(jsonRpcResponse)

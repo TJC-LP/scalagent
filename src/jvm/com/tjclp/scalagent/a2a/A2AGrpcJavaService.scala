@@ -274,8 +274,8 @@ private[a2a] object A2AGrpcJavaService:
                   .flatMap(bytes =>
                     ZIO.attempt(parseResponse(bytes)).mapError(protoEncodeError(operation.grpcMethodName, _))
                   )
-            case A2AGrpcDispatch.Error(error, _) =>
-              ZIO.fail(error)
+            case A2AGrpcDispatch.Error(error, extensions) =>
+              ZIO.succeed(responseMetadata.setActivatedExtensions(extensions)) *> ZIO.fail(error)
             case A2AGrpcDispatch.Stream(_, _) =>
               ZIO.fail(A2AError.internalError(s"${operation.grpcMethodName} returned a stream for unary gRPC dispatch"))
           // `onCompleted` is owned by runObserverEffect (exactly-once + cancel-safe).
@@ -312,8 +312,8 @@ private[a2a] object A2AGrpcJavaService:
                       .flatMap(response => ZIO.attempt(observer.onNext(response)))
                   )
                   .runDrain // `onCompleted` is owned by runObserverEffect (exactly-once + cancel-safe)
-            case A2AGrpcDispatch.Error(error, _) =>
-              ZIO.fail(error)
+            case A2AGrpcDispatch.Error(error, extensions) =>
+              ZIO.succeed(responseMetadata.setActivatedExtensions(extensions)) *> ZIO.fail(error)
             case A2AGrpcDispatch.Unary(_, _) =>
               ZIO.fail(
                 A2AError.internalError(s"${operation.grpcMethodName} returned unary data for streaming gRPC dispatch")
@@ -347,34 +347,49 @@ private[a2a] object A2AGrpcJavaService:
       def errorOnce(status: Throwable): Unit =
         if terminated.compareAndSet(false, true) then observer.onError(status)
 
-      val running = runtime.unsafe.runToFuture(effect.either)
-
+      // Register the cancel handler BEFORE launching the fiber (grpc-java
+      // requires it before any message is sent); it reads the fiber via the ref.
+      val futureRef = new java.util.concurrent.atomic.AtomicReference[CancelableFuture[Exit[Throwable, Unit]]](null)
       observer match
         case cancelable: ServerCallStreamObserver[?] =>
           cancelable.setOnCancelHandler { () =>
-            // Client gone: interrupt the run and suppress any *future* terminal
-            // callback. This claims the terminal slot via the same CAS as
-            // complete/errorOnce, so a terminal that hasn't fired yet is
-            // skipped. (If the effect's terminal already won the CAS at the
-            // instant of cancel, that onComplete/onError lands on a cancelled
-            // observer — grpc-java treats it as a no-op, which is fine.)
             terminated.set(true)
-            running.cancel()
+            Option(futureRef.get).foreach(_.cancel())
           }
         case _ => ()
 
-      running.foreach {
-        case Right(_)              => completeOnce()
-        case Left(error: A2AError) => errorOnce(statusRuntimeException(error))
-        case Left(error)           =>
-          errorOnce(
-            Status.INTERNAL
-              .withDescription(Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getName))
-              .withCause(error)
-              .asRuntimeException()
-          )
-      }(using ExecutionContext.global)
+      // `effect.exit` never fails the fiber — it captures success, typed errors,
+      // AND defects/interrupts as an `Exit`. So `onComplete` always fires with a
+      // terminal signal (a plain `runToFuture(effect.either).foreach` would NOT
+      // fire on a defect-failed Future, leaking the gRPC call — the leak this
+      // mechanism exists to prevent).
+      val running = runtime.unsafe.runToFuture(effect.exit)
+      futureRef.set(running)
+      if terminated.get then running.cancel() // cancel raced ahead of the ref set
+
+      running.onComplete {
+        case scala.util.Success(Exit.Success(_))     => completeOnce()
+        case scala.util.Success(Exit.Failure(cause)) =>
+          cause.failureOption match
+            case Some(error: A2AError) => errorOnce(statusRuntimeException(error))
+            case _                     => errorOnce(internalStatus(cause.squashTrace))
+        case scala.util.Failure(throwable) => errorOnce(internalStatus(throwable))
+      }(using DirectExecutionContext)
     }
+
+  /**
+   * Runs continuations inline (the terminal observer callback is cheap) instead
+   * of hopping through Scala's global ForkJoinPool.
+   */
+  private object DirectExecutionContext extends ExecutionContext:
+    def execute(runnable: Runnable): Unit     = runnable.run()
+    def reportFailure(cause: Throwable): Unit = ()
+
+  private def internalStatus(throwable: Throwable): io.grpc.StatusRuntimeException =
+    Status.INTERNAL
+      .withDescription(Option(throwable.getMessage).filter(_.nonEmpty).getOrElse(throwable.getClass.getName))
+      .withCause(throwable)
+      .asRuntimeException()
 
   private def protoEncodeError(methodName: String, error: Throwable): A2AError =
     A2AError.internalError(s"Failed to encode $methodName gRPC response: ${error.getMessage}")

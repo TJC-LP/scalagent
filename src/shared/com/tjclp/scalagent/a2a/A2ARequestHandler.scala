@@ -51,6 +51,13 @@ private[a2a] final class A2ARequestHandler(
 
   def agentCard: AgentCard = agentCardProvider()
 
+  /**
+   * The public Agent Card may be cached by shared/proxy caches only when its
+   * discovery is unauthenticated. With any non-`permitAll` card auth (or a
+   * tenant-scoped provider) the response is per-caller and must not be shared.
+   */
+  def agentCardPubliclyCacheable: Boolean = config.agentCardAuth eq A2AAgentCardAuth.permitAll
+
   def getAgentCard(context: ServerCallContext): Task[AgentCard] =
     val card = agentCard
     config.agentCardAuth.authorize(card, context.authorization).as(card)
@@ -148,19 +155,30 @@ private[a2a] final class A2ARequestHandler(
           // source of truth — and only fail if it is STILL non-terminal.
           // Without this we would clobber a real completed/canceled outcome.
           taskStore.load(task.id, context.tenant).flatMap {
+            case None =>
+              // Deleted between our first load and the re-read — don't resurrect
+              // it with a phantom `failed` row; report it gone.
+              ZIO.fail(A2AError.taskNotFound(task.id))
             case Some(fresh) if fresh.isStreamEnding => ZIO.succeed(fresh)
-            case freshOpt                            =>
-              val current = freshOpt.getOrElse(task)
+            case Some(fresh)                         =>
               val message = A2AMessage
                 .agentText(
                   "Task interrupted: no active run (the server restarted or the run ended without " +
                     "completing). Resend the message to retry.",
-                  Some(current.contextId),
+                  Some(fresh.contextId),
                 )
-                .copy(taskId = Some(current.id))
-              val failed = current.copy(status = TaskStatus.failed(message))
-              ZIO.logWarning(s"Reconciling orphaned non-terminal task ${current.id.value} -> failed") *>
-                taskStore.save(failed, context.tenant).as(failed)
+                .copy(taskId = Some(fresh.id))
+              val failed = fresh.copy(status = TaskStatus.failed(message))
+              // Re-check the bus immediately before writing: if a retry run
+              // registered one between the re-read and now, it owns the task —
+              // don't clobber it (narrows the residual non-CAS window; durable
+              // stores should still provide compare-and-set — see A2ATaskStore).
+              runtimeRegistry.bus(taskRuntimeKey(task.id, context)).flatMap {
+                case Some(_) => ZIO.succeed(fresh)
+                case None    =>
+                  ZIO.logWarning(s"Reconciling orphaned non-terminal task ${fresh.id.value} -> failed") *>
+                    taskStore.save(failed, context.tenant).as(failed)
+              }
           }
       }
 

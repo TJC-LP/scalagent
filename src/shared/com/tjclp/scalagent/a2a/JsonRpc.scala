@@ -203,12 +203,12 @@ enum JsonRpcId:
     case Null      => Json.Null
 
 object JsonRpcId:
-  private var counter            = 0L
+  // Atomic so concurrent fibers (JVM) can't produce duplicate/skipped ids.
+  private val counter            = new java.util.concurrent.atomic.AtomicLong(0L)
   val Unknown: Option[JsonRpcId] = Some(Null)
 
   def generate: JsonRpcId =
-    counter += 1
-    Num(counter)
+    Num(counter.incrementAndGet())
 
   def apply(s: String): JsonRpcId               = Str(s)
   def apply(n: Long): JsonRpcId                 = Num(n)

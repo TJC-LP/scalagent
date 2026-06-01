@@ -137,7 +137,10 @@ private[a2a] object A2AClientPayloadNormalizer:
     fields.get(name).flatMap(_.asString)
 
   private def normalizedMessageId(path: String, fields: Map[String, Json]): String =
-    val seed = s"$path:${Json.Obj(fields.toSeq*).toJson}"
+    // Sort fields by key — `Map` iteration order is unspecified (and differs
+    // across JVM/Scala.js), so without this the "deterministic dedupe" property
+    // below would not actually hold.
+    val seed = s"$path:${Json.Obj(fields.toSeq.sortBy(_._1)*).toJson}"
     // 64-bit (two independently-seeded MurmurHash3 words) instead of a single
     // 32-bit hashCode — collisions in client-side dedup on synthesized ids were
     // otherwise likely across a few billion messages. Cross-platform (JVM +

@@ -283,6 +283,9 @@ object AgentCapabilities:
           case Some(value)     => value.as[List[AgentExtension]]
           case None            => Right(Nil)
       for
+        // Omitted optional `streaming` decodes as `false` per ProtoJSON
+        // default-field-presence (asserted by A2ACodecSpec) — NOT the Scala
+        // case-class default of `true`, which is only a constructor convenience.
         streaming         <- bool(false, "streaming")
         pushNotifications <- bool(default.pushNotifications, "pushNotifications", "push_notifications")
         decodedExtensions <- extensions

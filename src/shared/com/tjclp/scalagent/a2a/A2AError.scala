@@ -205,7 +205,14 @@ object A2AError:
     A2AError(A2AErrorCode.UnsupportedOperation, s"Unsupported operation: $operation")
 
   def contentTypeNotSupported(contentType: String): A2AError =
-    A2AError(A2AErrorCode.ContentTypeNotSupported, s"Content type not supported: $contentType")
+    A2AError(A2AErrorCode.ContentTypeNotSupported, s"Content type not supported: ${sanitizeForMessage(contentType)}")
+
+  /**
+   * Strip control chars and bound length before echoing attacker-supplied
+   * values into an error message that may be logged (log-injection defense).
+   */
+  private def sanitizeForMessage(value: String): String =
+    value.filterNot(_.isControl).take(100)
 
   def invalidAgentResponse(detail: String): A2AError =
     A2AError(A2AErrorCode.InvalidAgentResponse, s"Invalid agent response: $detail")

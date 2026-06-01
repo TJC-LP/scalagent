@@ -11,6 +11,7 @@ private[a2a] object A2AClientPolling:
   // 429/503 + Retry-After awareness lives in the transport and is not honored
   // here yet (tracked follow-up).
   private val BackoffFactor    = 1.5
+  private val MinPoll          = zio.Duration.fromMillis(250)
   private val MaxBackoffFactor = 8L
   private val JitterLow        = 0.8
   private val JitterHigh       = 1.2
@@ -22,7 +23,10 @@ private[a2a] object A2AClientPolling:
     historyLength: Option[Int],
   )(getTask: (TaskId, Option[Int]) => Task[A2ATask]
   ): Task[A2ATask] =
-    val cap = pollEvery * MaxBackoffFactor.toDouble
+    // Floor the interval so a zero/negative pollEvery can't spin the loop with
+    // no sleep (cap would also collapse to zero and hammer the server).
+    val effectivePoll = if pollEvery > MinPoll then pollEvery else MinPoll
+    val cap           = effectivePoll * MaxBackoffFactor.toDouble
 
     def nextDelay(delay: Duration): Duration =
       val grown = delay * BackoffFactor
@@ -41,11 +45,11 @@ private[a2a] object A2AClientPolling:
 
     timeout match
       case Some(duration) =>
-        loop(pollEvery).timeoutFail(
+        loop(effectivePoll).timeoutFail(
           TimeoutException(s"A2A task ${taskId.value} did not reach a stream-ending state within $duration")
         )(duration)
       case None =>
-        loop(pollEvery)
+        loop(effectivePoll)
   end awaitTask
 
   def sendAndPoll(

@@ -139,7 +139,11 @@ object A2ARequestAuth:
 
   val requireAuthorizationWhenAdvertised: A2ARequestAuth =
     (publicCard: AgentCard, context: ServerCallContext) =>
-      if publicCard.securityRequirements.isEmpty || context.authorization.exists(_.trim.nonEmpty) then ZIO.unit
+      // Require auth only when a requirement actually names a scheme. An
+      // empty-object requirement (`[{}]`, OpenAPI "auth optional") and an absent
+      // securityRequirements list both mean "no auth gate".
+      if !publicCard.securityRequirements.exists(_.schemes.nonEmpty) || context.authorization.exists(_.trim.nonEmpty)
+      then ZIO.unit
       else
         ZIO.fail(
           A2AError.unauthenticated(
@@ -161,7 +165,9 @@ object A2ARequestAuth:
     (_: AgentCard, context: ServerCallContext) =>
       val token = context.authorization
         .map(_.trim)
-        .collect { case header if header.toLowerCase.startsWith("bearer ") => header.drop(7).trim }
+        // Locale-independent scheme match (`toLowerCase` mangles 'I' under a
+        // Turkish default locale).
+        .collect { case header if header.regionMatches(true, 0, "Bearer ", 0, 7) => header.drop(7).trim }
         .filter(_.nonEmpty)
       token match
         case None        => ZIO.fail(A2AError.unauthenticated("A2A request requires a non-empty Bearer token"))

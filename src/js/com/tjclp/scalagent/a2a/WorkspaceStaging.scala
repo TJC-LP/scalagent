@@ -175,15 +175,13 @@ object WorkspaceStaging:
       if userText.nonEmpty then sb.append(userText)
       sb.toString
 
-  /** Reject path-traversal-shaped names; otherwise pass through. */
+  /**
+   * Defer to the shared safe-filename policy: rejects path traversal, slashes,
+   * null bytes, leading dots, Windows reserved names, unicode separators, and
+   * over-length names (96-char cap), disambiguating with a sha256 suffix.
+   */
   private def sanitizeName(name: String, idx: Int): String =
-    val trimmed    = name.trim
-    val isPathLike =
-      trimmed.isEmpty ||
-        trimmed == "." ||
-        trimmed == ".." ||
-        trimmed.exists(ch => ch == '/' || ch == '\\' || ch == 0)
-    if isPathLike then s"upload-$idx" else trimmed
+    A2AFileNames.safeStem(name, fallback = s"upload-$idx")
 
   private def uniqueName(
     name: String,
