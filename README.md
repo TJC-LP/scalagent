@@ -3,7 +3,7 @@
 Type-safe agent execution for mission-critical environments.
 Scala 3 + ZIO on the battle-tested TypeScript agent ecosystem.
 
-> SDK baseline `@anthropic-ai/claude-agent-sdk@^0.3.156` + `@openai/codex-sdk@^0.134.0` | Scalagent `0.9.3-SNAPSHOT` | Scala `3.8.3` | Bun or Node.js 18+
+> SDK baseline `@anthropic-ai/claude-agent-sdk@^0.3.156` + `@openai/codex-sdk@^0.134.0` | Scalagent `0.10.0` | Scala `3.8.3` | Bun or Node.js 18+
 
 ```scala
 import com.tjclp.scalagent.*
@@ -188,13 +188,13 @@ val agent = ClaudeInterpreter.builder(claudeAgent)
 ### Mill
 
 ```scala
-ivy"com.tjclp::scalagent::0.9.3-SNAPSHOT"
+ivy"com.tjclp::scalagent::0.10.0"
 ```
 
 ### SBT
 
 ```scala
-libraryDependencies += "com.tjclp" %%% "scalagent" % "0.9.3-SNAPSHOT"
+libraryDependencies += "com.tjclp" %%% "scalagent" % "0.10.0"
 ```
 
 ### Maven
@@ -203,7 +203,7 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.9.3-SNAPSHOT"
 <dependency>
   <groupId>com.tjclp</groupId>
   <artifactId>scalagent_sjs1_3</artifactId>
-  <version>0.9.3-SNAPSHOT</version>
+  <version>0.10.0</version>
 </dependency>
 ```
 
@@ -212,6 +212,31 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.9.3-SNAPSHOT"
 - Scala 3.8.3+ with Scala.js
 - Bun (preferred) or Node.js 18+
 - `bun install` to fetch the TypeScript SDK and ZIO dependencies
+
+### 0.10.0 Notes
+
+First release on the 0.10.x line; `0.9.3` was folded in rather than released separately.
+
+**A2A durable completion & task lifecycle**
+
+- Self-healing reconcile: a `tasks/get` on a task left `working` with no active run (server restart / dead run) transitions it to terminal `failed` instead of reporting `working` forever.
+- `A2ATaskStore` gains a `transformIfNotTerminal` compare-and-set primitive that closes the reconcile/cancel read-modify-write race. The in-memory store implements it under its lock; **durable backends MUST override it** (the default is best-effort load-then-save).
+- Shutdown interrupts in-flight run fibers before clearing the runtime registry (no reconcile clobber during `interruptAll`).
+- `sendMessage` now awaits run-fiber completion before returning, so an immediate follow-up to a non-terminal (`input-required` / `auth-required`) task no longer races runtime cleanup.
+
+**Transports**
+
+- New **JVM gRPC** server transport (server-streaming). The request auth gate is enforced at the dispatch layer for both HTTP and gRPC.
+
+**Client resilience**
+
+- Structured JSON-RPC / REST errors are surfaced to clients instead of being collapsed into a generic invalid-response error.
+- The client payload normalizer's heuristics are scoped to known structural positions and never mutate free-form user data under `metadata` / `data`.
+- `JsonRpcId` numeric equality is now scale-insensitive.
+
+**Build & conformance**
+
+- Fully hermetic build: the A2A proto, ACTS conformance fixtures, and the spec document are vendored in-repo and read from the classpath — identical locally and in CI (no env vars, no external checkout).
 
 ### 0.9.2 Notes
 
