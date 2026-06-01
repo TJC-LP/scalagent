@@ -315,7 +315,12 @@ private[a2a] final class A2ARequestHandler(
           .flatMap(card => config.extendedAgentCardAuth.authorize(agentCard, context.authorization).as(card))
     }
 
-  private def authorizeRequest(context: ServerCallContext): Task[Unit] =
+  /**
+   * Protocol-operation auth gate. Each handler calls it, AND transports may
+   * call it up front in their dispatch layer as a single first line of defense
+   * (so a handler that ever forgets is still covered). Idempotent.
+   */
+  def authorizeRequest(context: ServerCallContext): Task[Unit] =
     config.requestAuth.authorize(agentCard, context)
 
   private def messageResponse(
