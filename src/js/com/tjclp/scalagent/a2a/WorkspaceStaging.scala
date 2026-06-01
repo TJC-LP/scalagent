@@ -99,7 +99,7 @@ object WorkspaceStaging:
    * usual and result in a `failed` task status.
    */
   def stageFromMessage(message: A2AMessage, taskId: TaskId): StagedWorkspace =
-    val taskRoot  = Fs.mkdtempSync(s"${Os.tmpdir()}/tjc-a2a-${taskId.value}-")
+    val taskRoot  = Fs.mkdtempSync(s"${Os.tmpdir()}/tjc-a2a-${A2AFileNames.safeStem(taskId.value)}-")
     val outputDir = Path.join(taskRoot, "output")
     Fs.mkdirSync(outputDir, js.Dynamic.literal(recursive = true))
     val (staged, uriRefs) = decodeFiles(message, taskRoot)
@@ -175,15 +175,13 @@ object WorkspaceStaging:
       if userText.nonEmpty then sb.append(userText)
       sb.toString
 
-  /** Reject path-traversal-shaped names; otherwise pass through. */
+  /**
+   * Defer to the shared safe-filename policy: rejects path traversal, slashes,
+   * null bytes, leading dots, Windows reserved names, unicode separators, and
+   * over-length names (96-char cap), disambiguating with a sha256 suffix.
+   */
   private def sanitizeName(name: String, idx: Int): String =
-    val trimmed    = name.trim
-    val isPathLike =
-      trimmed.isEmpty ||
-        trimmed == "." ||
-        trimmed == ".." ||
-        trimmed.exists(ch => ch == '/' || ch == '\\' || ch == 0)
-    if isPathLike then s"upload-$idx" else trimmed
+    A2AFileNames.safeStem(name, fallback = s"upload-$idx")
 
   private def uniqueName(
     name: String,
@@ -234,8 +232,8 @@ object WorkspaceStaging:
   private def collectArtifacts(outputDir: String): List[Artifact] =
     listAllFiles(outputDir).sortBy(path => relativePath(outputDir, path)).map { path =>
       val relative = relativePath(outputDir, path)
-      val name     = basename(path)
-      val mime     = guessMimeType(name)
+      val name     = Path.basename(path)
+      val mime     = A2AArtifactMimes.guess(name)
       val bytes    = readFileBase64(path)
       Artifact(
         artifactId = relative,
@@ -269,22 +267,8 @@ object WorkspaceStaging:
     else
       val _ = acc.append(path)
 
-  private def basename(path: String): String =
-    val sep = path.lastIndexOf('/')
-    if sep < 0 then path else path.substring(sep + 1)
-
   private def relativePath(from: String, to: String): String =
     Path.relative(from, to).replace('\\', '/')
-
-  private def guessMimeType(name: String): Option[String] =
-    val lower = name.toLowerCase
-    if lower.endsWith(".docx") then Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-    else if lower.endsWith(".doc") then Some("application/msword")
-    else if lower.endsWith(".pdf") then Some("application/pdf")
-    else if lower.endsWith(".txt") then Some("text/plain")
-    else if lower.endsWith(".json") then Some("application/json")
-    else if lower.endsWith(".md") then Some("text/markdown")
-    else None
 
   // ------------------------------------------------------------------
   // node:fs / node:os / node:path facade — local to this module so
@@ -312,4 +296,5 @@ object WorkspaceStaging:
   private object Path extends js.Object:
     def join(a: String, b: String): String         = js.native
     def relative(from: String, to: String): String = js.native
+    def basename(path: String): String             = js.native
 end WorkspaceStaging

@@ -6,7 +6,6 @@ import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import scala.scalajs.js.JSON as JsJSON
 import scala.scalajs.js.annotation.*
-import java.util.concurrent.TimeoutException
 import zio.*
 import zio.stream.*
 import com.tjclp.scalagent.{ClaudeAgent, CollectionPolicy, QueryCollector}
@@ -31,17 +30,7 @@ trait A2AClientV03:
     timeout: Option[Duration] = None,
     historyLength: Option[Int] = None,
   ): Task[A2ATask] =
-    def loop: Task[A2ATask] =
-      getTask(taskId, historyLength).flatMap { task =>
-        if task.isTerminal then ZIO.succeed(task)
-        else ZIO.sleep(pollEvery) *> loop
-      }
-
-    timeout match
-      case Some(duration) =>
-        loop.timeoutFail(new TimeoutException(s"A2A task ${taskId.value} did not finish within $duration"))(duration)
-      case None =>
-        loop
+    A2AClientPolling.awaitTask(taskId, pollEvery, timeout, historyLength)(getTask)
 
   def sendAndPoll(
     message: A2AMessage,
@@ -50,10 +39,7 @@ trait A2AClientV03:
     timeout: Option[Duration] = None,
     historyLength: Option[Int] = None,
   ): Task[A2ATask] =
-    submit(message, config).flatMap { task =>
-      if task.isTerminal then ZIO.succeed(task)
-      else awaitTask(task.id, pollEvery, timeout, historyLength)
-    }
+    A2AClientPolling.sendAndPoll(message, config, pollEvery, timeout, historyLength)(submit, getTask)
 
   def stream(message: A2AMessage, config: Option[MessageSendConfiguration] = None)
     : ZStream[Any, Throwable, A2AResponse.StreamEvent]
@@ -105,11 +91,14 @@ end A2AClientV03
 
 private final class A2AClientV03Live(jsClient: JsA2AClient) extends A2AClientV03:
   private def toJsConfig(config: MessageSendConfiguration): JsMessageSendConfiguration =
+    val pushConfig = config.taskPushNotificationConfig.map(A2AConverters.toJs)
     JsBuilders.messageSendConfiguration(
-      acceptedOutputModes = Some(config.acceptedOutputModes),
+      acceptedOutputModes = Option(config.acceptedOutputModes).filter(_.nonEmpty),
       blocking = config.blocking,
+      returnImmediately = Some(config.returnImmediately),
       historyLength = config.historyLength,
-      pushNotificationConfig = config.pushNotificationConfig.map(A2AConverters.toJs),
+      pushNotificationConfig = pushConfig,
+      taskPushNotificationConfig = pushConfig,
     )
 
   override def agentCard: Task[AgentCard] =
@@ -213,8 +202,8 @@ object A2AServerV03:
   final case class Config(
     name: String,
     description: String,
-    host: String = "localhost",
-    port: Int = 3000,
+    host: String = A2AServerDefaults.JsHost,
+    port: Int = A2AServerDefaults.Port,
     agentOptions: AgentOptions = AgentOptions.default,
     executionMode: ExecutionMode = ExecutionMode.Default,
     taskTimeout: Option[Duration] = None,
@@ -231,7 +220,7 @@ object A2AServerV03:
         description = description,
         supportedInterfaces = List(AgentInterface(url = url, protocolVersion = "0.3.0")),
         capabilities = capabilities,
-        skills = skills,
+        skills = AgentCard.requiredSkills(name, description, skills),
       )
   end Config
 
@@ -337,7 +326,7 @@ private final class A2AServerV03Live(config: A2AServerV03.Config, runtime: Runti
           .ensuring(invocation.cleanup.ignore)
       }
 
-    withTaskTimeout(taskId, effect).flatMap {
+    A2ATaskTimeout(taskId, config.taskTimeout, effect).flatMap {
       case (result, artifacts) =>
         val responseText =
           result.outcome.resultText
@@ -368,13 +357,6 @@ private final class A2AServerV03Live(config: A2AServerV03.Config, runtime: Runti
           publishStatusUpdate(taskId, contextId, bus, TaskStatus.working(Some(statusMessage)))
         )
       }
-
-  private def withTaskTimeout[A](taskId: TaskId, effect: Task[A]): Task[A] =
-    config.taskTimeout match
-      case Some(timeout) =>
-        effect.timeoutFail(new TimeoutException(s"A2A task ${taskId.value} timed out after $timeout"))(timeout)
-      case None =>
-        effect
 
   private def publishFailure(
     taskId: TaskId,
@@ -467,11 +449,8 @@ private final class A2AServerV03Live(config: A2AServerV03.Config, runtime: Runti
         )
 
   private def handleJsonRpc(body: String, transportHandler: JsJsonRpcTransportHandler): js.Promise[js.Dynamic] =
-    val normalizedBody =
-      if config.executionMode == ExecutionMode.Asynchronous then
-        A2AJsonRpcRequests.withDefaultMessageSendBlocking(body, blocking = false)
-      else body
-    val requestId = BunJsonRpcResponses.requestIdOf(normalizedBody)
+    val normalizedBody = A2AJsonRpcRequests.withDefaultMessageSendExecutionMode(body, config.executionMode)
+    val requestId      = BunJsonRpcResponses.requestIdOf(normalizedBody)
     transportHandler
       .handle(normalizedBody)
       .`then`[js.Dynamic](result => BunJsonRpcResponses.fromResult(result, requestId))
@@ -495,9 +474,12 @@ trait A2AServerAppV03[Self <: Singleton] extends ZIOAppDefault:
   def name: String = getClass.getSimpleName.stripSuffix("$")
   def description: String
   def host: String =
-    sys.env.get("A2A_HOST").orElse(sys.env.get("SERVICE_HOST")).getOrElse("localhost")
+    A2AProcessEnv.first("A2A_HOST", "SERVICE_HOST").getOrElse(A2AServerDefaults.JsHost)
   def port: Int =
-    sys.env.get("A2A_PORT").orElse(sys.env.get("SERVICE_PORT")).flatMap(_.toIntOption).getOrElse(3000)
+    A2AProcessEnv
+      .first("A2A_PORT", "SERVICE_PORT")
+      .flatMap(_.toIntOption)
+      .getOrElse(A2AServerDefaults.Port)
   def agentOptions: AgentOptions                                                  = AgentOptions.default
   def agentOptionsZIO: Task[AgentOptions]                                         = ZIO.succeed(agentOptions)
   def skills: List[AgentSkill]                                                    = Nil

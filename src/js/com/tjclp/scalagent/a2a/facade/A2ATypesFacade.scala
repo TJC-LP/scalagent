@@ -16,7 +16,7 @@ import com.tjclp.scalagent.a2a.MessageId
 trait JsAgentCard extends js.Object:
   val name: String                                                 = js.native
   val description: String                                          = js.native
-  val url: String                                                  = js.native
+  val url: js.UndefOr[String]                                      = js.native
   val version: js.UndefOr[String]                                  = js.native
   val protocolVersion: js.UndefOr[String]                          = js.native
   val provider: js.UndefOr[JsAgentProvider]                        = js.native
@@ -24,6 +24,7 @@ trait JsAgentCard extends js.Object:
   val iconUrl: js.UndefOr[String]                                  = js.native
   val capabilities: js.UndefOr[JsAgentCapabilities]                = js.native
   val preferredTransport: js.UndefOr[String]                       = js.native
+  val supportedInterfaces: js.UndefOr[js.Array[JsAgentInterface]]  = js.native
   val additionalInterfaces: js.UndefOr[js.Array[JsAgentInterface]] = js.native
   val defaultInputModes: js.UndefOr[js.Array[String]]              = js.native
   val defaultOutputModes: js.UndefOr[js.Array[String]]             = js.native
@@ -45,6 +46,7 @@ trait JsAgentCapabilities extends js.Object:
   val pushNotifications: js.UndefOr[Boolean]             = js.native
   val stateTransitionHistory: js.UndefOr[Boolean]        = js.native
   val extensions: js.UndefOr[js.Array[JsAgentExtension]] = js.native
+  val extendedAgentCard: js.UndefOr[Boolean]             = js.native
 
 @js.native
 trait JsAgentExtension extends js.Object:
@@ -66,8 +68,11 @@ trait JsAgentSkill extends js.Object:
 
 @js.native
 trait JsAgentInterface extends js.Object:
-  val transport: String = js.native
-  val url: String       = js.native
+  val transport: js.UndefOr[String]       = js.native
+  val protocolBinding: js.UndefOr[String] = js.native
+  val protocolVersion: js.UndefOr[String] = js.native
+  val tenant: js.UndefOr[String]          = js.native
+  val url: String                         = js.native
 
 @js.native
 trait JsAgentCardSignature extends js.Object:
@@ -80,7 +85,7 @@ trait JsAgentCardSignature extends js.Object:
 trait JsMessage extends js.Object:
   val kind: String                                   = js.native // "message"
   val messageId: String                              = js.native
-  val role: String                                   = js.native // "user" | "agent"
+  val role: String                                   = js.native // "user" | "agent" | "unspecified"
   val parts: js.Array[JsPart]                        = js.native
   val contextId: js.UndefOr[String]                  = js.native
   val taskId: js.UndefOr[String]                     = js.native
@@ -163,7 +168,9 @@ trait JsTaskArtifactUpdateEvent extends js.Object:
 @js.native
 trait JsPushNotificationConfig extends js.Object:
   val url: String                                        = js.native
+  val tenant: js.UndefOr[String]                         = js.native
   val id: js.UndefOr[String]                             = js.native
+  val taskId: js.UndefOr[String]                         = js.native
   val token: js.UndefOr[String]                          = js.native
   val authentication: js.UndefOr[JsPushNotificationAuth] = js.native
 
@@ -185,10 +192,12 @@ trait JsSendMessageParams extends js.Object:
 
 @js.native
 trait JsMessageSendConfiguration extends js.Object:
-  val acceptedOutputModes: js.UndefOr[js.Array[String]]            = js.native
-  val blocking: js.UndefOr[Boolean]                                = js.native
-  val historyLength: js.UndefOr[Int]                               = js.native
-  val pushNotificationConfig: js.UndefOr[JsPushNotificationConfig] = js.native
+  val acceptedOutputModes: js.UndefOr[js.Array[String]]                = js.native
+  val blocking: js.UndefOr[Boolean]                                    = js.native
+  val returnImmediately: js.UndefOr[Boolean]                           = js.native
+  val historyLength: js.UndefOr[Int]                                   = js.native
+  val pushNotificationConfig: js.UndefOr[JsPushNotificationConfig]     = js.native
+  val taskPushNotificationConfig: js.UndefOr[JsPushNotificationConfig] = js.native
 
 /** Builders for creating JS objects */
 object JsBuilders:
@@ -238,14 +247,18 @@ object JsBuilders:
   def messageSendConfiguration(
     acceptedOutputModes: Option[List[String]] = None,
     blocking: Option[Boolean] = None,
+    returnImmediately: Option[Boolean] = None,
     historyLength: Option[Int] = None,
     pushNotificationConfig: Option[JsPushNotificationConfig] = None,
+    taskPushNotificationConfig: Option[JsPushNotificationConfig] = None,
   ): JsMessageSendConfiguration =
     val obj = js.Dynamic.literal()
     acceptedOutputModes.foreach(m => obj.acceptedOutputModes = js.Array(m*))
     blocking.foreach(b => obj.blocking = b)
+    returnImmediately.foreach(value => obj.returnImmediately = value)
     historyLength.foreach(h => obj.historyLength = h)
     pushNotificationConfig.foreach(c => obj.pushNotificationConfig = c)
+    taskPushNotificationConfig.foreach(c => obj.taskPushNotificationConfig = c)
     obj.asInstanceOf[JsMessageSendConfiguration]
 
   def taskPushNotificationConfigParams(taskId: String, pushNotificationConfig: JsPushNotificationConfig): js.Dynamic =

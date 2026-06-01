@@ -36,12 +36,27 @@ final case class A2AMessage(
   metadata: Option[Json] = None,
   extensions: List[String] = Nil):
   /** Extract all text content from this message */
-  def text: String = parts.collect { case Part.Text(t, _) => t }.mkString("\n")
+  def text: String = parts.collect { case Part.Text(t, _, _, _) => t }.mkString("\n")
 
   /** Check if message has any text content */
   def hasText: Boolean = parts.exists(_.isInstanceOf[Part.Text])
 
 object A2AMessage:
+  private def decodeNonEmptyParts(value: Json): Either[String, List[Part]] =
+    value.asArray
+      .toRight("parts must be an array")
+      .flatMap(values =>
+        values.toList.map(_.as[Part]).foldRight[Either[String, List[Part]]](Right(Nil)) {
+          case (Right(part), Right(parts)) => Right(part :: parts)
+          case (Left(error), _)            => Left(error)
+          case (_, Left(error))            => Left(error)
+        }
+      )
+      .flatMap {
+        case Nil   => Left("parts must contain at least one part")
+        case parts => Right(parts)
+      }
+
   given JsonEncoder[A2AMessage] = JsonEncoder[Json].contramap { message =>
     var obj = Json.Obj(
       "messageId" -> Json.Str(message.messageId.value),
@@ -61,44 +76,28 @@ object A2AMessage:
     json.asObject.toRight("Message must be an object").flatMap { obj =>
       val fields = obj.toMap
       for
-        role  <- fields.get("role").toRight("Missing role").flatMap(_.as[A2ARole])
-        parts <- fields
-          .get("parts")
-          .flatMap(_.asArray)
-          .toRight("Missing parts")
-          .flatMap(values =>
-            values.toList.map(_.as[Part]).foldRight[Either[String, List[Part]]](Right(Nil)) {
-              case (Right(part), Right(parts)) => Right(part :: parts)
-              case (Left(error), _)            => Left(error)
-              case (_, Left(error))            => Left(error)
-            }
-          )
-        messageId = fields
+        role <- fields
+          .get("role")
+          .toRight("Missing role")
+          .flatMap(_.as[A2ARole])
+          .flatMap(A2ARole.requireSpecified(_, "role"))
+        parts     <- fields.get("parts").toRight("Missing parts").flatMap(decodeNonEmptyParts)
+        messageId <- fields
           .get("messageId")
           .orElse(fields.get("message_id"))
           .flatMap(_.asString)
+          .filter(_.nonEmpty)
           .map(MessageId(_))
-          .getOrElse(MessageId.generate)
-        contextId = fields
-          .get("contextId")
-          .orElse(fields.get("context_id"))
-          .flatMap(_.asString)
-          .filter(_.nonEmpty)
-          .map(ContextId(_))
-        taskId = fields
-          .get("taskId")
-          .orElse(fields.get("task_id"))
-          .flatMap(_.asString)
-          .filter(_.nonEmpty)
-          .map(TaskId(_))
-        referenceTaskIds = fields
-          .get("referenceTaskIds")
-          .orElse(fields.get("reference_task_ids"))
-          .flatMap(_.asArray)
-          .map(_.toList.flatMap(_.asString).map(TaskId(_)))
-          .getOrElse(Nil)
-        metadata   = fields.get("metadata")
-        extensions = fields.get("extensions").flatMap(_.asArray).map(_.toList.flatMap(_.asString)).getOrElse(Nil)
+          .toRight("Missing messageId")
+        contextIdValue   <- A2AJson.optionalString(fields, "contextId", "context_id")
+        taskIdValue      <- A2AJson.optionalString(fields, "taskId", "task_id")
+        referenceTaskIds <- A2AJson
+          .optionalStringList(fields, "referenceTaskIds", "reference_task_ids")
+          .map(_.filter(_.nonEmpty).map(TaskId(_)))
+        metadata   <- A2AJson.optionalStruct(fields, "metadata")
+        extensions <- A2AJson.optionalStringList(fields, "extensions")
+        contextId = contextIdValue.filter(_.nonEmpty).map(ContextId(_))
+        taskId    = taskIdValue.filter(_.nonEmpty).map(TaskId(_))
       yield A2AMessage(role, parts, messageId, contextId, taskId, referenceTaskIds, metadata, extensions)
       end for
     }
@@ -130,31 +129,57 @@ end A2AMessage
 
 /** Message sender role */
 enum A2ARole:
+  case Unspecified
   case User
   case Agent
 
+  /** Lowercase value used by the JS SDK facade and accepted as a legacy JSON alias. */
+  def lowerValue: String = this match
+    case Unspecified => "unspecified"
+    case User        => "user"
+    case Agent       => "agent"
+
 object A2ARole:
+  private val specifiedJsonValues = List("ROLE_USER", "ROLE_AGENT")
+
+  private[a2a] def specifiedValuesMessage: String =
+    specifiedJsonValues.mkString(", ")
+
+  private[a2a] def requireSpecified(role: A2ARole, field: String): Either[String, A2ARole] =
+    role match
+      case A2ARole.Unspecified => Left(s"$field must be one of: $specifiedValuesMessage")
+      case other               => Right(other)
+
   given JsonEncoder[A2ARole] = StringEnumJsonCodec.encoder {
-    case A2ARole.User  => "ROLE_USER"
-    case A2ARole.Agent => "ROLE_AGENT"
+    case A2ARole.Unspecified => "ROLE_UNSPECIFIED"
+    case A2ARole.User        => "ROLE_USER"
+    case A2ARole.Agent       => "ROLE_AGENT"
   }
 
-  given JsonDecoder[A2ARole] = StringEnumJsonCodec.decoderOrFail {
-    case "ROLE_USER" | "user"   => Right(A2ARole.User)
-    case "ROLE_AGENT" | "agent" => Right(A2ARole.Agent)
-    case other                  => Left(s"Unknown role: $other")
-  }
+  def fromWireValue(value: String): Either[String, A2ARole] = value match
+    case "ROLE_UNSPECIFIED" | "unspecified" | "unknown" => Right(A2ARole.Unspecified)
+    case "ROLE_USER" | "user"                           => Right(A2ARole.User)
+    case "ROLE_AGENT" | "agent"                         => Right(A2ARole.Agent)
+    case other                                          => Left(s"Unknown role: $other")
+
+  given JsonDecoder[A2ARole] = StringEnumJsonCodec.decoderOrFail(fromWireValue)
+end A2ARole
 
 /** Message part - discriminated union of content types */
 enum Part:
-  case Text(text: String, metadata: Option[Json] = None)
+  case Text(
+    text: String,
+    metadata: Option[Json] = None,
+    filename: Option[String] = None,
+    mediaType: Option[String] = None)
   case File(file: FileContent, metadata: Option[Json] = None)
-  case Data(data: Json, metadata: Option[Json] = None)
+  case Data(
+    data: Json,
+    metadata: Option[Json] = None,
+    filename: Option[String] = None,
+    mediaType: Option[String] = None)
 
 object Part:
-  private def optionalString(fields: Map[String, Json], names: String*): Option[String] =
-    names.iterator.flatMap(name => fields.get(name).flatMap(_.asString)).nextOption()
-
   private def mergeLegacyFileFields(partFields: Map[String, Json], fileJson: Json): Json =
     fileJson.asObject match
       case Some(fileObj) =>
@@ -169,8 +194,10 @@ object Part:
   // Manual codec for discriminated union with "kind" field
   given JsonEncoder[Part] = JsonEncoder[Json].contramap { part =>
     part match
-      case Text(text, metadata) =>
-        var obj = Json.Obj("text" -> Json.Str(text), "mediaType" -> Json.Str("text/plain"))
+      case Text(text, metadata, filename, mediaType) =>
+        var obj = Json.Obj("text" -> Json.Str(text))
+        filename.foreach(value => obj = obj.add("filename", Json.Str(value)))
+        mediaType.foreach(value => obj = obj.add("mediaType", Json.Str(value)))
         metadata.foreach(m => obj = obj.add("metadata", m))
         obj
       case File(file, metadata) =>
@@ -187,70 +214,89 @@ object Part:
             fileObj
         metadata.foreach(m => obj = obj.add("metadata", m))
         obj
-      case Data(data, metadata) =>
-        var obj = Json.Obj("data" -> data, "mediaType" -> Json.Str("application/json"))
+      case Data(data, metadata, filename, mediaType) =>
+        var obj = Json.Obj("data" -> data)
+        filename.foreach(value => obj = obj.add("filename", Json.Str(value)))
+        mediaType.foreach(value => obj = obj.add("mediaType", Json.Str(value)))
         metadata.foreach(m => obj = obj.add("metadata", m))
         obj
   }
 
   given JsonDecoder[Part] = JsonDecoder[Json].mapOrFail { json =>
     json.asObject.toRight("Part must be an object").flatMap { jsonObj =>
-      val fields   = jsonObj.toMap
-      val metadata = fields.get("metadata")
-      fields.get("kind").flatMap(_.asString) match
-        case Some("text") =>
-          fields.get("text").flatMap(_.asString).toRight("Missing 'text' field").map(Text(_, metadata))
-        case Some("file") =>
-          for
-            fileJson <- fields.get("file").toRight("Missing 'file' field")
-            file     <- mergeLegacyFileFields(fields, fileJson).as[FileContent]
-          yield File(file, metadata)
-        case Some("data") =>
-          for dataJson <- fields.get("data").toRight("Missing 'data' field")
-          yield Data(dataJson, metadata)
-        case Some(other) =>
-          Left(s"Unknown part kind: $other")
-        case None =>
-          fields.get("text").flatMap(_.asString) match
-            case Some(text) => Right(Text(text, metadata))
-            case None       =>
-              fields.get("raw").flatMap(_.asString) match
-                case Some(raw) =>
-                  Right(
+      val fields = jsonObj.toMap
+      for
+        filename  <- A2AJson.optionalString(fields, "filename", "name")
+        mediaType <- A2AJson.optionalString(fields, "mediaType", "media_type", "mimeType")
+        metadata  <- A2AJson.optionalStruct(fields, "metadata")
+        part      <-
+          fields.get("kind").flatMap(_.asString) match
+            case Some("text") =>
+              fields
+                .get("text")
+                .flatMap(_.asString)
+                .toRight("Missing 'text' field")
+                .map(Text(_, metadata, filename, mediaType))
+            case Some("file") =>
+              for
+                fileJson <- fields.get("file").toRight("Missing 'file' field")
+                file     <- mergeLegacyFileFields(fields, fileJson).as[FileContent]
+              yield File(file, metadata)
+            case Some("data") =>
+              for dataJson <- fields.get("data").toRight("Missing 'data' field")
+              yield Data(dataJson, metadata, filename, mediaType)
+            case Some(other) =>
+              Left(s"Unknown part kind: $other")
+            case None =>
+              val contentFields = List(
+                A2AJson.nonNullNamedField(fields, "text"),
+                A2AJson.nonNullNamedField(fields, "raw"),
+                A2AJson.nonNullNamedField(fields, "url"),
+                fields.get("data").map("data" -> _),
+              ).flatten
+              contentFields match
+                case ("text", textJson) :: Nil =>
+                  textJson.asString.toRight("text must be a string").map(Text(_, metadata, filename, mediaType))
+                case ("raw", rawJson) :: Nil =>
+                  FileContent.decodeBase64BytesField(rawJson, "raw").map { raw =>
                     File(
                       FileContent.Bytes(
                         bytes = raw,
-                        name = optionalString(fields, "filename", "name"),
-                        mimeType = optionalString(fields, "mediaType", "media_type", "mimeType"),
+                        name = filename,
+                        mimeType = mediaType,
                       ),
                       metadata,
                     )
-                  )
-                case None =>
-                  fields.get("url").flatMap(_.asString) match
-                    case Some(url) =>
-                      Right(
-                        File(
-                          FileContent.Uri(
-                            uri = url,
-                            name = optionalString(fields, "filename", "name"),
-                            mimeType = optionalString(fields, "mediaType", "media_type", "mimeType"),
-                          ),
-                          metadata,
-                        )
-                      )
-                    case None =>
-                      fields.get("data") match
-                        case Some(dataJson) => Right(Data(dataJson, metadata))
-                        case None           => Left("Part must contain one of text, raw, url, or data")
-      end match
+                  }
+                case ("url", urlJson) :: Nil =>
+                  urlJson.asString.toRight("url must be a string").map { url =>
+                    File(
+                      FileContent.Uri(
+                        uri = url,
+                        name = filename,
+                        mimeType = mediaType,
+                      ),
+                      metadata,
+                    )
+                  }
+                case ("data", dataJson) :: Nil =>
+                  Right(Data(dataJson, metadata, filename, mediaType))
+                case Nil =>
+                  Left("Part must contain exactly one of text, raw, url, or data")
+                case _ =>
+                  Left("Part must contain exactly one of text, raw, url, or data")
+              end match
+          end match
+      yield part
+      end for
     }
   }
 end Part
 
 /**
  * File content - either bytes (base64) or URI reference.
- * Name and mimeType live on the file object per A2A spec.
+ * This keeps legacy file name/media-type metadata with the file content while the Part codec
+ * emits those values as top-level A2A v1 `filename` / `mediaType` fields.
  */
 enum FileContent:
   case Bytes(
@@ -263,6 +309,18 @@ enum FileContent:
     mimeType: Option[String] = None)
 
 object FileContent:
+  private val Base64BytesPattern =
+    """^(?:[A-Za-z0-9+/\-_]{4})*(?:[A-Za-z0-9+/\-_]{2}(?:==)?|[A-Za-z0-9+/\-_]{3}=?)?$""".r
+
+  private[a2a] def decodeBase64BytesField(json: Json, field: String): Either[String, String] =
+    json.asString.toRight(s"$field must be a string").flatMap { value =>
+      if isBase64Bytes(value) then Right(value)
+      else Left(s"$field must be base64-encoded bytes")
+    }
+
+  private def isBase64Bytes(value: String): Boolean =
+    value == value.trim && Base64BytesPattern.pattern.matcher(value).matches()
+
   given JsonEncoder[FileContent] = JsonEncoder[Json].contramap {
     case Bytes(bytes, name, mimeType) =>
       var obj = Json.Obj("bytes" -> Json.Str(bytes))
@@ -278,15 +336,20 @@ object FileContent:
 
   given JsonDecoder[FileContent] = JsonDecoder[Json].mapOrFail { json =>
     json.asObject.toRight("FileContent must be an object").flatMap { jsonObj =>
-      val fields   = jsonObj.toMap
-      val name     = fields.get("name").flatMap(_.asString)
-      val mimeType = fields.get("mimeType").flatMap(_.asString)
-      fields.get("bytes").flatMap(_.asString) match
-        case Some(bytesVal) => Right(Bytes(bytesVal, name, mimeType))
-        case None           =>
-          fields.get("uri").flatMap(_.asString) match
-            case Some(uriVal) => Right(Uri(uriVal, name, mimeType))
-            case None         => Left("FileContent must have either 'bytes' or 'uri'")
+      val fields = jsonObj.toMap
+      for
+        name     <- A2AJson.optionalString(fields, "name", "filename")
+        mimeType <- A2AJson.optionalString(fields, "mimeType", "mediaType", "media_type")
+        content  <- (A2AJson.nonNullField(fields, "bytes"), A2AJson.nonNullField(fields, "uri")) match
+          case (Some(bytesJson), None) =>
+            decodeBase64BytesField(bytesJson, "bytes").map(Bytes(_, name, mimeType))
+          case (None, Some(uriJson)) =>
+            uriJson.asString.map(Uri(_, name, mimeType)).toRight("uri must be a string")
+          case (None, None) =>
+            Left("FileContent must have either 'bytes' or 'uri'")
+          case (Some(_), Some(_)) =>
+            Left("FileContent must contain exactly one of 'bytes' or 'uri'")
+      yield content
     }
   }
 end FileContent
@@ -300,8 +363,62 @@ final case class Artifact(
   extensions: List[String] = Nil,
   metadata: Option[Json] = None)
 object Artifact:
-  given JsonEncoder[Artifact] = DeriveJsonEncoder.gen[Artifact]
-  given JsonDecoder[Artifact] = DeriveJsonDecoder.gen[Artifact]
+  private def decodeNonEmptyParts(value: Json): Either[String, List[Part]] =
+    value.asArray
+      .toRight("parts must be an array")
+      .flatMap(values =>
+        values.toList.map(_.as[Part]).foldRight[Either[String, List[Part]]](Right(Nil)) {
+          case (Right(part), Right(parts)) => Right(part :: parts)
+          case (Left(error), _)            => Left(error)
+          case (_, Left(error))            => Left(error)
+        }
+      )
+      .flatMap {
+        case Nil   => Left("parts must contain at least one part")
+        case parts => Right(parts)
+      }
+
+  given JsonEncoder[Artifact] = JsonEncoder[Json].contramap { artifact =>
+    var obj = Json.Obj(
+      "artifactId" -> Json.Str(artifact.artifactId),
+      "parts"      -> Json.Arr(artifact.parts.map(_.toJsonAST.toOption.get)*),
+    )
+    artifact.name.filter(_.nonEmpty).foreach(value => obj = obj.add("name", Json.Str(value)))
+    artifact.description.filter(_.nonEmpty).foreach(value => obj = obj.add("description", Json.Str(value)))
+    if artifact.extensions.nonEmpty then obj = obj.add("extensions", Json.Arr(artifact.extensions.map(Json.Str(_))*))
+    artifact.metadata.foreach(value => obj = obj.add("metadata", value))
+    obj
+  }
+  given JsonDecoder[Artifact] = JsonDecoder[Json].mapOrFail { json =>
+    json.asObject.toRight("Artifact must be an object").flatMap { obj =>
+      val fields = obj.toMap
+      fields
+        .get("parts")
+        .map(decodeNonEmptyParts)
+        .getOrElse(Left("Missing parts"))
+        .flatMap { parts =>
+          for
+            artifactId <- fields
+              .get("artifactId")
+              .orElse(fields.get("artifact_id"))
+              .flatMap(_.asString)
+              .filter(_.nonEmpty)
+              .toRight("Missing artifactId")
+            name        <- A2AJson.optionalString(fields, "name")
+            description <- A2AJson.optionalString(fields, "description")
+            extensions  <- A2AJson.optionalStringList(fields, "extensions")
+            metadata    <- A2AJson.optionalStruct(fields, "metadata")
+          yield Artifact(
+            artifactId = artifactId,
+            parts = parts,
+            name = name,
+            description = description,
+            extensions = extensions,
+            metadata = metadata,
+          )
+        }
+    }
+  }
 
   /** Create a simple text artifact */
   def text(name: String, content: String): Artifact =
@@ -318,3 +435,4 @@ object Artifact:
       parts = List(Part.File(FileContent.Uri(uri, name = Some(name), mimeType = mimeType))),
       name = Some(name),
     )
+end Artifact

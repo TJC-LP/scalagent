@@ -1,5 +1,7 @@
 package com.tjclp.scalagent.a2a
 
+import java.util.concurrent.TimeoutException
+
 import scala.collection.mutable
 
 import zio.*
@@ -103,8 +105,121 @@ private[a2a] object A2ARuntimeRegistry:
   def make: UIO[A2ARuntimeRegistry] =
     Ref.Synchronized.make(Map.empty[TaskRuntimeKey, A2ARuntimeEntry]).map(A2ARuntimeRegistry(_))
 
+private[a2a] object A2AServerLifecycle:
+  def create(startWithRuntime: Runtime[Any] => Task[A2AServer]): ZIO[Scope, Throwable, A2AServer] =
+    for
+      runtime <- ZIO.runtime[Any]
+      server  <- ZIO.acquireRelease(startWithRuntime(runtime))(_.stop.ignore)
+    yield server
+
+  def start(makeServer: A2ARuntimeRegistry => Task[A2AServer]): Task[A2AServer] =
+    for
+      registry <- A2ARuntimeRegistry.make
+      server   <- makeServer(registry)
+      _        <- server.start
+    yield server
+
+  def live(createServer: ZIO[Scope, Throwable, A2AServer]): ZLayer[Scope, Throwable, A2AServer] =
+    ZLayer.fromZIO(createServer)
+
+  def startOnce[A](resourceRef: Ref.Synchronized[Option[A]])(acquire: Task[A]): Task[Unit] =
+    resourceRef.modifyZIO {
+      case Some(resource) => ZIO.succeed(((), Some(resource)))
+      case None           => acquire.map(resource => ((), Some(resource)))
+    }
+
+  def stopOnce[A](resourceRef: Ref.Synchronized[Option[A]])(release: A => Task[Unit]): Task[Unit] =
+    resourceRef.modifyZIO {
+      case Some(resource) => release(resource).as(((), None))
+      case None           => ZIO.succeed(((), None))
+    }
+end A2AServerLifecycle
+
 private[a2a] trait A2APushNotificationSender:
   def send(event: A2AResponse.StreamEvent, context: ServerCallContext): UIO[Unit]
+
+private[a2a] trait A2APushNotificationPoster:
+  def post(
+    event: A2AResponse.StreamEvent,
+    config: TaskPushNotificationConfig,
+    headers: List[(String, String)],
+  ): Task[Unit]
+
+private[a2a] object A2APushNotificationSender:
+  private val ContentTypeHeader  = "Content-Type"
+  private val Authorization      = "Authorization"
+  private val NotificationToken  = "X-A2A-Notification-Token"
+  private val DeliveryLogMessage = "Failed to send A2A push notification"
+
+  def live(
+    store: A2APushNotificationStore,
+    urlPolicy: PushNotificationUrlPolicy,
+    poster: A2APushNotificationPoster,
+    postTimeout: Duration = A2AServerDefaults.PushNotificationPostTimeout,
+    retrySchedule: Schedule[Any, Throwable, Any] = defaultRetrySchedule,
+  ): A2APushNotificationSender =
+    OrderedA2APushNotificationSender(store, urlPolicy, poster, postTimeout, retrySchedule)
+
+  private def defaultRetrySchedule: Schedule[Any, Throwable, Any] =
+    Schedule.recurs(A2AServerDefaults.PushNotificationMaxRetries) &&
+      Schedule.exponential(A2AServerDefaults.PushNotificationRetryBaseDelay)
+
+  def callbackHeaders(config: TaskPushNotificationConfig): List[(String, String)] =
+    val authHeader =
+      config.authentication match
+        case Some(auth) if auth.scheme.nonEmpty && auth.credentials.nonEmpty =>
+          Some(Authorization -> s"${auth.scheme} ${auth.credentials}")
+        case _ =>
+          config.token.map(NotificationToken -> _)
+    (ContentTypeHeader -> A2AContentType.A2AJson) :: authHeader.toList
+
+  private final class OrderedA2APushNotificationSender(
+    store: A2APushNotificationStore,
+    urlPolicy: PushNotificationUrlPolicy,
+    poster: A2APushNotificationPoster,
+    postTimeout: Duration,
+    retrySchedule: Schedule[Any, Throwable, Any])
+      extends A2APushNotificationSender:
+    private val chains = mutable.Map.empty[(String, String), Promise[Nothing, Unit]]
+    private val lock   = new AnyRef
+
+    def send(event: A2AResponse.StreamEvent, context: ServerCallContext): UIO[Unit] =
+      val key = (context.tenant.getOrElse(""), event.taskId.value)
+      (for
+        previous <- ZIO.succeed(lock.synchronized(chains.get(key)))
+        current  <- Promise.make[Nothing, Unit]
+        _        <- ZIO.succeed(lock.synchronized(chains.update(key, current)))
+        _        <-
+          (previous.fold(ZIO.unit)(_.await) *> sendNow(event, context))
+            .catchAll(error => ZIO.logWarning(s"$DeliveryLogMessage: ${error.getMessage}"))
+            .ensuring(
+              current.succeed(()).unit *>
+                ZIO.succeed {
+                  lock.synchronized {
+                    if chains.get(key).contains(current) then chains.remove(key)
+                  }
+                }.unit
+            )
+            .forkDaemon
+      yield ()).unit
+
+    private def sendNow(event: A2AResponse.StreamEvent, context: ServerCallContext): Task[Unit] =
+      store
+        .load(event.taskId, context.tenant)
+        .flatMap(configs => ZIO.foreachDiscard(configs)(deliver(event, _)))
+
+    private def deliver(event: A2AResponse.StreamEvent, config: TaskPushNotificationConfig): Task[Unit] =
+      urlPolicy.validate(config.url) *>
+        poster
+          .post(event, config, callbackHeaders(config))
+          .timeoutFail(
+            TimeoutException(
+              s"A2A push notification callback ${config.url} timed out after $postTimeout"
+            )
+          )(postTimeout)
+          .retry(retrySchedule)
+  end OrderedA2APushNotificationSender
+end A2APushNotificationSender
 
 private[a2a] final class EventStorePersister(
   store: A2AEventStore,
@@ -166,6 +281,7 @@ private[a2a] final class ResultManager(
           _            <- ZIO.when(event.isFinal)(awaitPersist)
           _            <- bus.publish(event)
           _            <- pushSender.send(event, context)
+          _            <- ZIO.when(event.closesStream)(bus.finish)
         yield ()
     }
 
@@ -184,19 +300,16 @@ private[a2a] final class ResultManager(
         }
       case A2AResponse.StreamEvent.TaskStatusUpdate(taskId, _, status, _, _) =>
         taskStore.load(taskId, context.tenant).flatMap {
-          case Some(task) if task.status.state == TaskState.Canceled && status.state != TaskState.Canceled =>
+          case Some(task) if task.status.state.isTerminal =>
             ZIO.unit
           case Some(task) =>
-            val history = status.message match
-              case Some(message) if !task.history.exists(_.messageId == message.messageId) => task.history :+ message
-              case _                                                                       => task.history
-            taskStore.save(task.copy(status = status, history = history), context.tenant)
+            taskStore.save(task.copy(status = status), context.tenant)
           case None =>
             ZIO.unit
         }
       case A2AResponse.StreamEvent.TaskArtifactUpdate(taskId, _, artifact, append, _, _) =>
         taskStore.load(taskId, context.tenant).flatMap {
-          case Some(task) if task.status.state == TaskState.Canceled =>
+          case Some(task) if task.status.state.isTerminal =>
             ZIO.unit
           case Some(task) =>
             val existingIndex = task.artifacts.indexWhere(_.artifactId == artifact.artifactId)
@@ -212,9 +325,11 @@ private[a2a] final class ResultManager(
           case None =>
             ZIO.unit
         }
+      case A2AResponse.StreamEvent.Message(_) =>
+        ZIO.unit
       case A2AResponse.StreamEvent.TaskMessage(taskId, _, message) =>
         taskStore.load(taskId, context.tenant).flatMap {
-          case Some(task) if task.status.state == TaskState.Canceled =>
+          case Some(task) if task.status.state.isTerminal =>
             ZIO.unit
           case Some(task) if !task.history.exists(_.messageId == message.messageId) =>
             taskStore.save(task.copy(history = task.history :+ message), context.tenant)

@@ -314,6 +314,9 @@ task reaches a terminal or interrupted state. Use `client.submit(...)` or set
 `MessageSendConfiguration(returnImmediately = true)` to get the initial
 `working` task immediately, then continue with `getTask`, `listTasks`,
 `cancelTask`, or `resubscribe`.
+Servers that intentionally want omitted configuration to return immediately can
+set `executionMode = ExecutionMode.Asynchronous`; protocol clients should prefer
+an explicit `returnImmediately = true`.
 
 Streaming uses `SendStreamingMessage` or `POST /message:stream` and yields
 `A2AResponse.StreamResponse` events: task snapshots, status updates, artifact

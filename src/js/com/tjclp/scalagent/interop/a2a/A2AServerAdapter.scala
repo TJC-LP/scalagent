@@ -6,7 +6,6 @@ import scala.scalajs.js.JSConverters.*
 import scala.scalajs.js.JSON as JsJSON
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext.Implicits.global
-import java.util.concurrent.TimeoutException
 import zio.*
 import zio.stream.*
 import com.tjclp.scalagent.core.*
@@ -33,15 +32,18 @@ object A2AServerAdapter:
     executionMode: ExecutionMode = ExecutionMode.Default,
     taskTimeout: Option[Duration] = None,
     capabilities: AgentCapabilities = AgentCapabilities.default,
-    skills: List[AgentSkill] = Nil):
+    skills: List[AgentSkill] = Nil,
+    advertisedUrl: Option[String] = None):
     def toAgentCard: AgentCard =
-      val url = s"http://$host:$port"
+      toAgentCardAt(A2AServerDefaults.publicUrl(host, port, advertisedUrl))
+
+    def toAgentCardAt(baseUrl: String): AgentCard =
       AgentCard(
         name = name,
         description = description,
         supportedInterfaces = List(
-          AgentInterface.jsonRpc(url),
-          AgentInterface.rest(url),
+          AgentInterface.jsonRpc(baseUrl),
+          AgentInterface.rest(baseUrl),
         ),
         capabilities = capabilities,
         skills = skills,
@@ -105,23 +107,30 @@ private final class DslA2AEndpointLive[O](
   private var bunServer: js.Dynamic = null
   private val activeRuns            = mutable.Map.empty[String, Fiber[Nothing, Unit]]
 
-  override def url: String = config.toAgentCard.url
+  override def url: String =
+    A2AServerDefaults.publicUrl(config.host, config.port, config.advertisedUrl, bunBoundPort)
 
-  override def card: AgentCard = config.toAgentCard
+  override def card: AgentCard = config.toAgentCardAt(url)
+
+  private def bunBoundPort: Option[Int] =
+    if bunServer == null then None
+    else
+      val actualPort = bunServer.selectDynamic("port")
+      if js.isUndefined(actualPort) || actualPort == null then None
+      else Some(actualPort.asInstanceOf[Int])
 
   override def start: Task[Unit] =
     ZIO.attempt {
-      val jsCard           = A2AConverters.toJs(config.toAgentCard)
       val taskStore        = new JsInMemoryTaskStore()
       val executor         = createExecutor(taskStore)
-      val requestHandler   = new JsDefaultRequestHandler(jsCard, taskStore, executor)
+      val requestHandler   = new JsDefaultRequestHandler(A2AConverters.toJs(config.toAgentCard), taskStore, executor)
       val transportHandler = new JsJsonRpcTransportHandler(requestHandler.asInstanceOf[js.Dynamic])
 
       bunServer = BunServer.serve(
         js.Dynamic.literal(
           hostname = config.host,
           port = config.port,
-          fetch = createFetchHandler(transportHandler, jsCard),
+          fetch = createFetchHandler(transportHandler),
         )
       )
       ()
@@ -176,13 +185,6 @@ private final class DslA2AEndpointLive[O](
       )
     )
 
-  private def withTaskTimeout[A](taskId: TaskId, effect: Task[A]): Task[A] =
-    config.taskTimeout match
-      case Some(timeout) =>
-        effect.timeoutFail(new TimeoutException(s"A2A task ${taskId.value} timed out after $timeout"))(timeout)
-      case None =>
-        effect
-
   private def loadTask(taskStore: JsTaskStore, taskId: String): Task[Option[A2ATask]] =
     ZIO
       .fromPromiseJS(taskStore.load(taskId))
@@ -214,8 +216,9 @@ private final class DslA2AEndpointLive[O](
 
         Unsafe.unsafe { implicit unsafe =>
           val runEffect =
-            withTaskTimeout(
+            A2ATaskTimeout(
               taskId,
+              config.taskTimeout,
               ZIO.scoped {
                 val run = agent.run((), prompt, policy)
 
@@ -291,8 +294,7 @@ private final class DslA2AEndpointLive[O](
     )
 
   private def createFetchHandler(
-    transportHandler: JsJsonRpcTransportHandler,
-    card: JsAgentCard,
+    transportHandler: JsJsonRpcTransportHandler
   ): js.Function1[js.Dynamic, js.Promise[js.Dynamic]] =
     (req: js.Dynamic) =>
       val url      = req.url.asInstanceOf[String]
@@ -300,11 +302,11 @@ private final class DslA2AEndpointLive[O](
       val pathname = js.Dynamic.newInstance(js.Dynamic.global.URL)(url).pathname.asInstanceOf[String]
       val Response = js.Dynamic.global.Response
 
-      if pathname == "/.well-known/agent-card.json" && method == "GET" then
+      if pathname == A2APaths.AgentCard && method == "GET" then
         val headers = js.Dynamic.literal(`Content-Type` = "application/json")
         js.Promise.resolve(
           js.Dynamic.newInstance(Response)(
-            JsJSON.stringify(card),
+            JsJSON.stringify(A2AConverters.toJs(card)),
             js.Dynamic.literal(status = 200, headers = headers),
           )
         )
@@ -326,11 +328,8 @@ private final class DslA2AEndpointLive[O](
     body: String,
     transportHandler: JsJsonRpcTransportHandler,
   ): js.Promise[js.Dynamic] =
-    val normalizedBody =
-      if config.executionMode == ExecutionMode.Asynchronous then
-        A2AJsonRpcRequests.withDefaultMessageSendBlocking(body, blocking = false)
-      else body
-    val requestId = BunJsonRpcResponses.requestIdOf(normalizedBody)
+    val normalizedBody = A2AJsonRpcRequests.withDefaultMessageSendExecutionMode(body, config.executionMode)
+    val requestId      = BunJsonRpcResponses.requestIdOf(normalizedBody)
 
     transportHandler
       .handle(normalizedBody)

@@ -23,6 +23,26 @@ private val sharedZioVersion: String   = "2.1.24"
 private val sharedZioJsonVersion       = "0.9.0"
 private val sharedZioSchemaVersion     = "1.8.3"
 private val sharedZioBlocksVersion     = "0.0.33"
+private val sharedScalaPBVersion       = "1.0.0-alpha.3"
+private val sharedProtobufJavaVersion  = "4.34.1"
+private val sharedGoogleProtosVersion  = "2.64.1"
+private val sharedGrpcJavaVersion      = "1.76.0"
+
+private val sharedWellKnownProtoFiles = Seq(
+  "google/protobuf/descriptor.proto",
+  "google/protobuf/duration.proto",
+  "google/protobuf/empty.proto",
+  "google/protobuf/struct.proto",
+  "google/protobuf/timestamp.proto",
+)
+
+private val sharedGoogleApiProtoFiles = Seq(
+  "google/api/annotations.proto",
+  "google/api/client.proto",
+  "google/api/field_behavior.proto",
+  "google/api/http.proto",
+  "google/api/launch_stage.proto",
+)
 
 private val sharedZioDeps = Seq(
   mvn"dev.zio::zio::$sharedZioVersion",
@@ -129,6 +149,14 @@ object agent extends Module:
     def mvnDeps = sharedZioDeps ++ Seq(
       // JVM-only deps for the A2A server runtime + JSON / HTTP.
       mvn"dev.zio::zio-http::3.0.1",
+      // JVM-only generated protobuf bindings for the A2A gRPC wire contract.
+      mvn"com.google.protobuf:protobuf-java:$sharedProtobufJavaVersion",
+      mvn"com.google.protobuf:protobuf-java-util:$sharedProtobufJavaVersion",
+      mvn"com.google.api.grpc:proto-google-common-protos:$sharedGoogleProtosVersion",
+      mvn"io.grpc:grpc-api:$sharedGrpcJavaVersion",
+      mvn"io.grpc:grpc-netty-shaded:$sharedGrpcJavaVersion",
+      mvn"io.grpc:grpc-protobuf:$sharedGrpcJavaVersion",
+      mvn"io.grpc:grpc-stub:$sharedGrpcJavaVersion",
     )
 
     override def moduleDir = build.moduleDir
@@ -137,16 +165,93 @@ object agent extends Module:
       moduleDir / "src" / "jvm",
     )
 
+    def scalaPBCompilerClasspath: T[Seq[PathRef]] = Task {
+      defaultResolver().classpath(
+        Seq(mvn"com.thesamet.scalapb:scalapbc_2.13:$sharedScalaPBVersion"),
+      )
+    }
+
+    def protobufJavaClasspath: T[Seq[PathRef]] = Task {
+      defaultResolver().classpath(
+        Seq(mvn"com.google.protobuf:protobuf-java:$sharedProtobufJavaVersion"),
+      )
+    }
+
+    def googleProtoClasspath: T[Seq[PathRef]] = Task {
+      defaultResolver().classpath(
+        Seq(mvn"com.google.api.grpc:proto-google-common-protos:$sharedGoogleProtosVersion"),
+      )
+    }
+
+    /** The A2A proto VENDORED in-repo (proto/a2a.proto), tracked as a Mill
+      * source so the build is hermetic and codegen re-runs when it changes. This
+      * is the single source of truth — to track a new upstream proto, replace
+      * the file (provenance: proto/A2A_PROTO_SOURCE.txt). No env indirection. */
+    def a2aProtoSpec: T[PathRef] = Task.Source(moduleDir / "proto" / "a2a.proto")
+
+    def compileA2AJavaProto: T[PathRef] = Task(persistent = true) {
+      val spec         = a2aProtoSpec().path
+      val protoInclude = Task.dest / "_protobuf_include"
+      os.remove.all(Task.dest)
+      os.makeDir.all(Task.dest)
+      os.makeDir.all(protoInclude)
+
+      val protobufJar = protobufJavaClasspath()
+        .map(_.path)
+        .find(path => path.last.startsWith("protobuf-java-"))
+        .getOrElse(throw new RuntimeException("protobuf-java jar not found on classpath"))
+      os.proc("jar", Seq("xf", protobufJar.toString) ++ sharedWellKnownProtoFiles)
+        .call(cwd = protoInclude, stdout = os.Inherit, stderr = os.Inherit)
+
+      val googleProtosJar = googleProtoClasspath()
+        .map(_.path)
+        .find(path => path.last.startsWith("proto-google-common-protos-"))
+        .getOrElse(throw new RuntimeException("proto-google-common-protos jar not found on classpath"))
+      os.proc("jar", Seq("xf", googleProtosJar.toString) ++ sharedGoogleApiProtoFiles)
+        .call(cwd = protoInclude, stdout = os.Inherit, stderr = os.Inherit)
+
+      val classpath = scalaPBCompilerClasspath().map(_.path.toString).mkString(java.io.File.pathSeparator)
+      os.proc(
+        "java",
+        "-cp",
+        classpath,
+        "scalapb.scripts.scalapbc",
+        s"--proto_path=${spec / os.up}",
+        s"--proto_path=$protoInclude",
+        s"--java_out=${Task.dest}",
+        spec.toString,
+      ).call(cwd = moduleDir, stdout = os.Inherit, stderr = os.Inherit)
+
+      PathRef(Task.dest)
+    }
+
+    override def generatedSources: T[Seq[PathRef]] = Task {
+      super.generatedSources() :+ compileA2AJavaProto()
+    }
+
     override def publishVersion = sharedPublishVersion
     override def docJar: T[PathRef] = Task { PathRef(emptyDocJar(Task.dest)) }
     def pomSettings = sharedPomSettings
     def artifactName = "scalagent"
 
     object test extends ScalaTests, TestModule.Munit:
-      def mvnDeps = Seq(mvn"org.scalameta::munit::1.2.4")
+      def mvnDeps = Seq(
+        mvn"org.scalameta::munit::1.2.4",
+        mvn"org.yaml:snakeyaml:2.3",
+        mvn"io.grpc:grpc-inprocess:$sharedGrpcJavaVersion",
+      )
       override def sources = Task.Sources(
         build.moduleDir / "test" / "shared",
         build.moduleDir / "test" / "jvm",
+      )
+      // Vendored A2A conformance inputs on the test classpath so the proto/ACTS
+      // parity tests run hermetically — no ~/git/a2a checkout required:
+      //   test/resources/acts/*.yaml + specification.md  → /acts/*, /specification.md
+      //   proto/a2a.proto (single source, shared with codegen) → /a2a.proto
+      // See A2AProtoParitySpec / A2AActsStreamingSpec.
+      override def resources = Task.Sources(
+        build.moduleDir / "test" / "resources",
+        build.moduleDir / "proto",
       )
   end jvm
 end agent

@@ -18,6 +18,10 @@ private[a2a] object A2AEventMapper:
     case A2AResponse.StreamEvent.TaskStatusUpdate(_, _, status, isFinal, _) =>
       mapTaskStatus(status, isFinal)
 
+    case A2AResponse.StreamEvent.Message(message) =>
+      if message.hasText then List(AgentEvent.TextDelta(message.text))
+      else List(nativeEvent("a2a.message", event))
+
     case A2AResponse.StreamEvent.TaskMessage(_, _, message) =>
       if message.hasText then List(AgentEvent.TextDelta(message.text))
       else List(nativeEvent("a2a.message", event))

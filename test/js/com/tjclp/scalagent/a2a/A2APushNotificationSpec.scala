@@ -73,6 +73,13 @@ class A2APushNotificationSpec extends FunSuite:
       .flatMap(response => ZIO.fromPromiseJS(response.text().asInstanceOf[js.Promise[String]]))
       .flatMap(body => ZIO.fromEither(body.fromJson[JsonRpcResponse].left.map(new RuntimeException(_))))
 
+  private def resultAs[A: JsonDecoder](response: JsonRpcResponse): Task[A] =
+    ZIO.fromEither(
+      response.getResult
+        .left.map(error => new RuntimeException(error.message))
+        .flatMap(_.as[A].left.map(new RuntimeException(_)))
+    )
+
   private def completeImmediately(
     message: A2AMessage,
     taskId: TaskId,
@@ -137,6 +144,7 @@ class A2APushNotificationSpec extends FunSuite:
 
       val events = delivered.map(record => record.body.fromJson[A2AResponse.StreamEvent])
       assert(events.forall(_.isRight))
+      assert(delivered.forall(record => !record.body.contains(""""final"""")))
       assert(events.head.exists(_.isInstanceOf[A2AResponse.StreamEvent.TaskSnapshot]))
       assert(events.last.exists {
         case A2AResponse.StreamEvent.TaskStatusUpdate(_, _, status, _, _) => status.state == TaskState.Completed
@@ -183,6 +191,52 @@ class A2APushNotificationSpec extends FunSuite:
       assertEquals(listed.tasks, Nil)
     }
 
+  test("inline push notifications reject task ids in SendMessage configuration"):
+    val config = A2AServer.Config(
+      name = "PushInlineTaskIdTest",
+      description = "Push inline task id test server",
+      host = "127.0.0.1",
+      port = 0,
+      capabilities = AgentCapabilities.default.copy(pushNotifications = true),
+      executionOverride = Some(completeImmediately),
+      pushNotificationUrlPolicy = PushNotificationUrlPolicy.allowAll,
+    )
+
+    val program =
+      ZIO.scoped {
+        for
+          server <- A2AServer.create(config)
+          client <- A2AClient.discover(server.url)
+          result <- client
+            .send(
+              A2AMessage.userText("do not bind this config"),
+              Some(
+                MessageSendConfiguration(
+                  taskPushNotificationConfig = Some(
+                    TaskPushNotificationConfig(
+                      url = "http://callback.test/inline",
+                      taskId = Some(TaskId("foreign-task")),
+                    )
+                  )
+                )
+              ),
+            )
+            .either
+          listed <- client.listTasks()
+        yield (result, listed)
+      }
+
+    runTask(program).map { case (result, listed) =>
+      assert(result.left.exists {
+        case error: A2AError =>
+          error.code == A2AErrorCode.InvalidParams &&
+            error.message.contains("taskPushNotificationConfig.taskId must be empty")
+        case _ =>
+          false
+      })
+      assertEquals(listed.tasks, Nil)
+    }
+
   test("out-of-band push config create/get/list/delete uses v1 client names"):
     val config = A2AServer.Config(
       name = "PushCrudTest",
@@ -199,9 +253,58 @@ class A2APushNotificationSpec extends FunSuite:
           server  <- A2AServer.create(config)
           client  <- A2AClient.discover(server.url)
           task    <- client.send(A2AMessage.userText("create push config"))
-          created <- client.createTaskPushNotificationConfig(task.id, TaskPushNotificationConfig(url = "http://callback.test", id = Some("cfg-1")))
+          created <- client.createTaskPushNotificationConfig(
+            task.id,
+            TaskPushNotificationConfig(url = "http://callback.test/1", id = Some("cfg-1")),
+          )
+          created2 <- client.createTaskPushNotificationConfig(
+            task.id,
+            TaskPushNotificationConfig(url = "http://callback.test/2", id = Some("cfg-2")),
+          )
+          created3 <- client.createTaskPushNotificationConfig(
+            task.id,
+            TaskPushNotificationConfig(url = "http://callback.test/3", id = Some("cfg-3")),
+          )
           fetched <- client.getTaskPushNotificationConfig(task.id, "cfg-1")
           listed  <- client.listTaskPushNotificationConfigs(task.id)
+          page1Rpc <- postJsonRpc(
+            server.url,
+            JsonRpcRequest(
+              method = A2AMethod.PushNotificationConfigList,
+              params = A2ARequest.PushNotificationConfigList(task.id, pageSize = Some(2)).toJsonAST.toOption,
+              id = Some(JsonRpcId.Num(98)),
+            ),
+          )
+          page1 <- resultAs[A2AResponse.PushNotificationConfigListResult](page1Rpc)
+          page2Rpc <- postJsonRpc(
+            server.url,
+            JsonRpcRequest(
+              method = A2AMethod.PushNotificationConfigList,
+              params = A2ARequest
+                .PushNotificationConfigList(task.id, pageSize = Some(2), pageToken = page1.nextPageToken)
+                .toJsonAST
+                .toOption,
+              id = Some(JsonRpcId.Num(97)),
+            ),
+          )
+          page2 <- resultAs[A2AResponse.PushNotificationConfigListResult](page2Rpc)
+          legacyRpc <- postJsonRpc(
+            server.url,
+            JsonRpcRequest(
+              method = A2AMethod.PushNotificationConfigList,
+              params = A2ARequest.PushNotificationConfigList(task.id, pageSize = Some(1), pageToken = Some("1")).toJsonAST.toOption,
+              id = Some(JsonRpcId.Num(96)),
+            ),
+          )
+          legacy <- resultAs[A2AResponse.PushNotificationConfigListResult](legacyRpc)
+          invalid <- postJsonRpc(
+            server.url,
+            JsonRpcRequest(
+              method = A2AMethod.PushNotificationConfigList,
+              params = A2ARequest.PushNotificationConfigList(task.id, pageToken = Some("-1")).toJsonAST.toOption,
+              id = Some(JsonRpcId.Num(95)),
+            ),
+          )
           deleted <- postJsonRpc(
             server.url,
             JsonRpcRequest(
@@ -210,16 +313,42 @@ class A2APushNotificationSpec extends FunSuite:
               id = Some(JsonRpcId.Num(99)),
             ),
           )
+          deleteAgain <- postJsonRpc(
+            server.url,
+            JsonRpcRequest(
+              method = A2AMethod.PushNotificationConfigDelete,
+              params = A2ARequest.PushNotificationConfigDelete(task.id, "cfg-1").toJsonAST.toOption,
+              id = Some(JsonRpcId.Num(100)),
+            ),
+          )
+          missingGet <- postJsonRpc(
+            server.url,
+            JsonRpcRequest(
+              method = A2AMethod.PushNotificationConfigGet,
+              params = A2ARequest.PushNotificationConfigGet(task.id, "cfg-missing").toJsonAST.toOption,
+              id = Some(JsonRpcId.Num(101)),
+            ),
+          )
           after <- client.listTaskPushNotificationConfigs(task.id)
-        yield (created, fetched, listed, deleted, after)
+        yield (created, created2, created3, fetched, listed, page1, page2, legacy, invalid, deleted, deleteAgain, missingGet, after)
       }
 
-    runTask(program).map { case (created, fetched, listed, deleted, after) =>
+    runTask(program).map {
+      case (created, created2, created3, fetched, listed, page1, page2, legacy, invalid, deleted, deleteAgain, missingGet, after) =>
       assertEquals(created.id, Some("cfg-1"))
       assertEquals(fetched, created)
-      assertEquals(listed, List(created))
+      assertEquals(listed, List(created, created2, created3))
+      assertEquals(page1.configs, List(created, created2))
+      assert(page1.nextPageToken.exists(token => token.startsWith("v1:") && token.toIntOption.isEmpty))
+      assertEquals(page2.configs, List(created3))
+      assertEquals(page2.nextPageToken, None)
+      assertEquals(legacy.configs, List(created2))
+      assertEquals(invalid.error.map(_.code), Some(A2AErrorCode.InvalidParams))
       assertEquals(deleted.result, Some(Json.Obj()))
-      assertEquals(after, Nil)
+      assertEquals(deleteAgain.result, Some(Json.Obj()))
+      assertEquals(missingGet.error.map(_.code), Some(A2AErrorCode.TaskNotFound))
+      assert(missingGet.error.exists(_.message.contains("Push notification config not found: cfg-missing")))
+      assertEquals(after, List(created2, created3))
     }
 
   test("push operations fail when capability is disabled"):

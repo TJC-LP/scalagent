@@ -2,8 +2,9 @@ package com.tjclp.scalagent.a2a
 
 import scala.scalajs.js
 import scala.scalajs.js.JSON as JsJSON
-import com.tjclp.scalagent.a2a.facade.*
+import scala.scalajs.js.timers.{SetIntervalHandle, clearInterval, setInterval}
 import zio.*
+import zio.json.*
 
 // `A2AEventIds` was extracted to `src/shared/a2a/A2AEventIds.scala` (cross-built;
 // pure Scala). The remaining objects in this file are JS-only.
@@ -18,68 +19,14 @@ private[a2a] object A2AStreamEventParser:
     )
 
   def parse(jsEvent: js.Any): Task[A2AResponse.StreamEvent] =
-    ZIO.attempt {
-      val dyn = jsEvent.asInstanceOf[js.Dynamic]
-      requiredString(dyn, "kind", jsEvent) match
-        case "task" =>
-          A2AResponse.StreamEvent.TaskSnapshot(A2AConverters.toScala(jsEvent.asInstanceOf[JsTask]))
-        case "message" =>
-          val message = A2AConverters.toScala(jsEvent.asInstanceOf[JsMessage])
-          A2AResponse.StreamEvent.TaskMessage(
-            A2AEventIds.taskIdFor(message),
-            A2AEventIds.contextIdFor(message),
-            message,
-          )
-        case "status-update" =>
-          val taskId    = TaskId(requiredString(dyn, "taskId", jsEvent))
-          val contextId = A2AEventIds.contextIdFor(
-            taskId,
-            optionalString(dyn, "contextId"),
-          )
-          val status  = A2AConverters.toScala(dyn.status.asInstanceOf[JsTaskStatus])
-          val isFinal = dyn.selectDynamic("final").asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
-          A2AResponse.StreamEvent.TaskStatusUpdate(taskId, contextId, status, isFinal)
-        case "artifact-update" | "artifact" =>
-          val taskId    = TaskId(requiredString(dyn, "taskId", jsEvent))
-          val contextId = A2AEventIds.contextIdFor(
-            taskId,
-            optionalString(dyn, "contextId"),
-          )
-          val artifactDyn = dyn.artifact.asInstanceOf[js.Dynamic]
-          val artifactId  = optionalString(artifactDyn, "artifactId")
-            .orElse(optionalString(dyn, "artifactId"))
-          if artifactId.isEmpty then
-            artifactDyn.updateDynamic("artifactId")(A2AEventIds.artifactIdFor(taskId, artifactId))
-          val artifact = A2AConverters.toScala(artifactDyn.asInstanceOf[JsArtifact])
-          val append   = dyn.append
-            .asInstanceOf[js.UndefOr[Boolean]]
-            .toOption
-            .orElse(artifactDyn.append.asInstanceOf[js.UndefOr[Boolean]].toOption)
-            .getOrElse(false)
-          val lastChunk = dyn.lastChunk
-            .asInstanceOf[js.UndefOr[Boolean]]
-            .toOption
-            .orElse(artifactDyn.lastChunk.asInstanceOf[js.UndefOr[Boolean]].toOption)
-            .getOrElse(true)
-          A2AResponse.StreamEvent.TaskArtifactUpdate(taskId, contextId, artifact, append, lastChunk)
-        case other =>
-          throw new IllegalArgumentException(
-            s"Unknown A2A stream event kind: $other (${safeStringify(jsEvent)})"
-          )
-      end match
-    }
+    val raw = safeStringify(jsEvent)
+    ZIO.fromEither(raw.fromJson[A2AResponse.StreamEvent].left.map(parseError(_, raw)))
 
-  private def optionalString(dyn: js.Dynamic, field: String): Option[String] =
-    dyn.selectDynamic(field).asInstanceOf[js.UndefOr[String]].toOption
-
-  private def requiredString(
-    dyn: js.Dynamic,
-    field: String,
-    raw: js.Any,
-  ): String =
-    optionalString(dyn, field).getOrElse {
-      throw new IllegalArgumentException(s"Missing '$field' in A2A stream event: ${safeStringify(raw)}")
-    }
+  private def parseError(error: String, raw: String): IllegalArgumentException =
+    val unknownPrefix = "Unknown stream event kind: "
+    if error.startsWith(unknownPrefix) then
+      IllegalArgumentException(s"Unknown A2A stream event kind: ${error.stripPrefix(unknownPrefix)} ($raw)")
+    else IllegalArgumentException(s"Invalid A2A stream event: $error ($raw)")
 
   private def safeStringify(value: js.Any): String =
     try
@@ -92,52 +39,25 @@ private[a2a] object A2AStreamEventParser:
 end A2AStreamEventParser
 
 private[scalagent] object A2AJsonRpcRequests:
+  def withDefaultMessageSendExecutionMode(body: String, executionMode: ExecutionMode): String =
+    A2AMessageSendDefaults.normalizeJsonRpcBodyForMode(body, executionMode)
+
   def withDefaultMessageSendBlocking(body: String, blocking: Boolean): String =
-    try
-      val request = JsJSON.parse(body)
-      if normalizeValue(request, blocking) then JsJSON.stringify(request)
-      else body
-    catch case _: Throwable => body
-
-  private def normalizeValue(value: js.Any, blocking: Boolean): Boolean =
-    if value == null || js.isUndefined(value) then false
-    else if js.Array.isArray(value) then
-      value
-        .asInstanceOf[js.Array[js.Any]]
-        .foldLeft(false)((changed, item) => normalizeRequest(item, blocking) || changed)
-    else normalizeRequest(value, blocking)
-
-  private def normalizeRequest(value: js.Any, blocking: Boolean): Boolean =
-    if value == null || js.isUndefined(value) then false
-    else
-      val request = value.asInstanceOf[js.Dynamic]
-      request.selectDynamic("method").asInstanceOf[js.UndefOr[String]].toOption match
-        case Some(method) if method == A2AMethod.MessageSend || method == "message/send" =>
-          val paramsValue = request.selectDynamic("params").asInstanceOf[js.Any]
-          if paramsValue == null || js.isUndefined(paramsValue) then false
-          else normalizeConfiguration(paramsValue.asInstanceOf[js.Dynamic], blocking)
-        case _ =>
-          false
-
-  private def normalizeConfiguration(params: js.Dynamic, blocking: Boolean): Boolean =
-    val configValue = params.selectDynamic("configuration").asInstanceOf[js.Any]
-    if configValue == null || js.isUndefined(configValue) then
-      params.updateDynamic("configuration")(js.Dynamic.literal(blocking = blocking))
-      true
-    else
-      val config        = configValue.asInstanceOf[js.Dynamic]
-      val blockingValue = config.selectDynamic("blocking").asInstanceOf[js.Any]
-      if blockingValue == null || js.isUndefined(blockingValue) then
-        config.updateDynamic("blocking")(blocking)
-        true
-      else false
+    A2AMessageSendDefaults.normalizeJsonRpcBody(body, returnImmediately = !blocking)
 end A2AJsonRpcRequests
 
 private[scalagent] object BunJsonRpcResponses:
   def fromResult(result: js.Any, requestId: js.Any = null): js.Dynamic =
+    fromResult(result, requestId, A2AHttpBinding.SseKeepAliveInterval.toMillis.toInt)
+
+  def fromResult(
+    result: js.Any,
+    requestId: js.Any,
+    keepAliveMillis: Int,
+  ): js.Dynamic =
     if isAsyncIterable(result) then
       response(
-        body = sseStream(result.asInstanceOf[js.Dynamic], requestId),
+        body = sseStream(result.asInstanceOf[js.Dynamic], requestId, keepAliveMillis),
         status = 200,
         headers = sseHeaders,
       )
@@ -198,7 +118,11 @@ private[scalagent] object BunJsonRpcResponses:
     if value == null || js.isUndefined(value) then false
     else js.typeOf(js.Dynamic.global.Reflect.get(value.asInstanceOf[js.Any], js.Symbol.asyncIterator)) == "function"
 
-  private def sseStream(asyncIterable: js.Dynamic, requestId: js.Any): js.Dynamic =
+  private def sseStream(
+    asyncIterable: js.Dynamic,
+    requestId: js.Any,
+    keepAliveMillis: Int,
+  ): js.Dynamic =
     // The `[Symbol.asyncIterator]` method on an async-iterable expects `this`
     // to be the iterable itself (it accesses the iterable's captured state).
     // `Reflect.get` returns the method detached, so we must rebind `this` via
@@ -207,9 +131,22 @@ private[scalagent] object BunJsonRpcResponses:
     // ends up undefined — causing `iterator.next()` to throw a TypeError.
     val iteratorFactory =
       js.Dynamic.global.Reflect.get(asyncIterable, js.Symbol.asyncIterator).asInstanceOf[js.Dynamic]
-    val iterator = iteratorFactory.call(asyncIterable).asInstanceOf[js.Dynamic]
-    val encoder  = js.Dynamic.newInstance(js.Dynamic.global.TextEncoder)()
-    var canceled = false
+    val iterator                             = iteratorFactory.call(asyncIterable).asInstanceOf[js.Dynamic]
+    val encoder                              = js.Dynamic.newInstance(js.Dynamic.global.TextEncoder)()
+    var canceled                             = false
+    var keepAlive: Option[SetIntervalHandle] = None
+
+    def stopKeepAlive(): Unit =
+      keepAlive.foreach(clearInterval)
+      keepAlive = None
+
+    def startKeepAlive(controller: js.Dynamic): Unit =
+      if keepAliveMillis > 0 then
+        keepAlive = Some(
+          setInterval(keepAliveMillis.toDouble) {
+            if !canceled then controller.enqueue(encoder.encode(A2AHttpBinding.sseKeepAliveFrame))
+          }
+        )
 
     def pump(controller: js.Dynamic): Unit =
       iterator
@@ -218,6 +155,7 @@ private[scalagent] object BunJsonRpcResponses:
         .`then`[Unit] { step =>
           if canceled then ()
           else if step.done.asInstanceOf[Boolean] then
+            stopKeepAlive()
             controller.close()
             ()
           else
@@ -226,6 +164,7 @@ private[scalagent] object BunJsonRpcResponses:
         }
         .`catch`[Unit] { error =>
           if !canceled then
+            stopKeepAlive()
             val jsError = error.asInstanceOf[js.Any]
             controller.enqueue(encoder.encode(formatSseErrorEvent(jsonRpcErrorBody(requestId, jsError))))
             controller.close()
@@ -234,9 +173,13 @@ private[scalagent] object BunJsonRpcResponses:
 
     js.Dynamic.newInstance(js.Dynamic.global.ReadableStream)(
       js.Dynamic.literal(
-        start = (controller: js.Dynamic) => pump(controller),
+        start = (controller: js.Dynamic) =>
+          startKeepAlive(controller)
+          pump(controller)
+        ,
         cancel = (_: js.Any) =>
           canceled = true
+          stopKeepAlive()
           iteratorReturn(iterator),
       )
     )
@@ -251,10 +194,10 @@ private[scalagent] object BunJsonRpcResponses:
     else js.Promise.resolve(())
 
   private def formatSseEvent(event: js.Any): String =
-    s"data: ${JsJSON.stringify(event)}\n\n"
+    A2AHttpBinding.sseDataFrame(JsJSON.stringify(event))
 
   private def formatSseErrorEvent(error: js.Any): String =
-    s"event: error\ndata: ${JsJSON.stringify(error)}\n\n"
+    A2AHttpBinding.sseErrorFrame(JsJSON.stringify(error))
 
   private def jsonRpcErrorBody(requestId: js.Any, error: js.Any): js.Any =
     js.Dynamic.literal(

@@ -1,0 +1,6 @@
+ACTS conformance fixtures vendored from github.com/a2aproject/A2A
+branch: conformance-spec, path tests/acts/
+upstream commit: 3b816b5c6d74a33fdee7ac4460d7aadca09a6486
+
+a2a/docs/specification.md vendored from github.com/a2aproject/A2A
+upstream commit: cd87b9341bc0e4982d46550aaab2319b903271e4

@@ -54,7 +54,7 @@ class A2AProgressSpec extends FunSuite:
 
     assertEquals(msg.parts.length, 1)
     msg.parts.head match
-      case Part.Text(text, _) =>
+      case Part.Text(text, _, _, _) =>
         assertEquals(text.length, A2AProgress.MaxTextLength)
         assert(text.endsWith("..."))
       case other => fail(s"Expected text part, got $other")
@@ -78,7 +78,7 @@ class A2AProgressSpec extends FunSuite:
     )
 
     assertEquals(msg.parts.head, Part.Text("Calling Read"))
-    val dataPart = msg.parts.collectFirst { case Part.Data(data, _) => data }.getOrElse(fail("Missing data part"))
+    val dataPart = msg.parts.collectFirst { case Part.Data(data, _, _, _) => data }.getOrElse(fail("Missing data part"))
     val data     = fields(dataPart)
     assertEquals(data("kind"), Json.Str("tool_use"))
     assertEquals(data("id"), Json.Str(toolUseId.value))
@@ -99,7 +99,7 @@ class A2AProgressSpec extends FunSuite:
     )
 
     assertEquals(msg.parts.head, Part.Text("Read -> Authorization: [redacted]"))
-    val data = fields(msg.parts.collectFirst { case Part.Data(data, _) => data }.getOrElse(fail("Missing data part")))
+    val data = fields(msg.parts.collectFirst { case Part.Data(data, _, _, _) => data }.getOrElse(fail("Missing data part")))
     assertEquals(data("kind"), Json.Str("tool_result"))
     assertEquals(data("name"), Json.Str("Read"))
     assertEquals(data("content"), Json.Str("Authorization: [redacted]\nfile contents"))
