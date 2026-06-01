@@ -95,10 +95,16 @@ private[a2a] final class A2ARuntimeRegistry private (
     ref.update(_ - key).unit
 
   def interruptAll: UIO[Unit] =
-    for
-      entries <- ref.getAndSet(Map.empty)
-      _       <- ZIO.foreachDiscard(entries.values.flatMap(_.fiber).toList)(_.interrupt).ignore
-    yield ()
+    // Interrupt BEFORE clearing: the registry stays populated for the duration
+    // of the interrupts (modifyZIO doesn't commit the new value until its effect
+    // completes), so a concurrent `reconcileOrphaned` still observes a live bus
+    // and leaves the task alone instead of clobbering terminal state mid-shutdown.
+    ref.modifyZIO { entries =>
+      ZIO
+        .foreachDiscard(entries.values.flatMap(_.fiber).toList)(_.interrupt)
+        .ignore
+        .as(((), Map.empty[TaskRuntimeKey, A2ARuntimeEntry]))
+    }
 end A2ARuntimeRegistry
 
 private[a2a] object A2ARuntimeRegistry:

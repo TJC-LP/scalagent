@@ -6,7 +6,7 @@ import zio.json.ast.Json
 /** Client-side tolerance for canonical/golden A2A payloads without relaxing server request codecs. */
 private[a2a] object A2AClientPayloadNormalizer:
   def normalize(json: Json): Json =
-    normalizeAt(json, "$")
+    normalizeAt(json, "$", structural = true)
 
   def decode[A: JsonDecoder](json: Json): Either[String, A] =
     normalize(json).as[A]
@@ -14,15 +14,33 @@ private[a2a] object A2AClientPayloadNormalizer:
   def decodeString[A: JsonDecoder](body: String): Either[String, A] =
     body.fromJson[Json].flatMap(decode[A])
 
-  private def normalizeAt(json: Json, path: String): Json =
+  // `structural` is false inside arbitrary user content (the `metadata`/`data`
+  // free-form fields). There the A2A shape heuristics are NOT applied, so a
+  // user object that happens to look like a message/skill/card isn't silently
+  // mutated (synthetic messageIds, fabricated skill defaults). Part-alias and
+  // card/skill/message normalization run only on real A2A positions.
+  private def isUserDataKey(name: String): Boolean = name == "metadata" || name == "data"
+
+  private def normalizeAt(
+    json: Json,
+    path: String,
+    structural: Boolean,
+  ): Json =
     json.asArray match
       case Some(values) =>
-        Json.Arr(values.toList.zipWithIndex.map { case (value, index) => normalizeAt(value, s"$path[$index]") }*)
+        Json.Arr(values.toList.zipWithIndex.map {
+          case (value, index) =>
+            normalizeAt(value, s"$path[$index]", structural)
+        }*)
       case None =>
         json.asObject match
           case Some(obj) =>
-            val normalizedFields = obj.toMap.map { case (name, value) => name -> normalizeAt(value, s"$path.$name") }
-            normalizeObject(normalizedFields, path)
+            val normalizedFields = obj.toMap.map {
+              case (name, value) =>
+                name -> normalizeAt(value, s"$path.$name", structural && !isUserDataKey(name))
+            }
+            if structural then normalizeObject(normalizedFields, path)
+            else Json.Obj(normalizedFields.toSeq*)
           case None => json
 
   private def normalizeObject(fields: Map[String, Json], path: String): Json =
@@ -42,13 +60,20 @@ private[a2a] object A2AClientPayloadNormalizer:
   private def normalizePartAliases(fields: Map[String, Json]): Map[String, Json] =
     if fields.contains("kind") || hasCanonicalPartContent(fields) then fields
     else
+      // Only drop the original `file`/`fileUrl` key once we've actually produced
+      // canonical part content — otherwise a non-object or content-less wrapper
+      // would leave a part with no content and a misleading downstream error.
       fields.get("file") match
         case Some(fileJson) =>
-          fileFields(fileJson).fold(fields) { nested => fields - "file" ++ filePartFields(nested) }
+          fileFields(fileJson).map(filePartFields).filter(_.nonEmpty) match
+            case Some(partFields) => fields - "file" ++ partFields
+            case None             => fields
         case None =>
           fields.get("fileUrl") match
             case Some(fileUrlJson) =>
-              fileFields(fileUrlJson).fold(fields) { nested => fields - "fileUrl" ++ fileUrlPartFields(nested) }
+              fileFields(fileUrlJson).map(fileUrlPartFields).filter(_.nonEmpty) match
+                case Some(partFields) => fields - "fileUrl" ++ partFields
+                case None             => fields
             case None => fields
 
   private def fileFields(json: Json): Option[Map[String, Json]] =
