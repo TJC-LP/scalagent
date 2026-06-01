@@ -409,13 +409,28 @@ class A2AProtoParitySpec extends FunSuite:
       assertEquals(specWellKnownPath(doc), A2APaths.AgentCard)
     }
 
+  // Resolution order for parity inputs: env override → vendored classpath
+  // resource (the hermetic default) → ~/git/a2a checkout. Keeps CI/publish
+  // hermetic while local dev can point at a fresh upstream proto/spec.
+  private def classpathResource(name: String): Option[String] =
+    Option(getClass.getResourceAsStream(name)).map { stream =>
+      try new String(stream.readAllBytes(), StandardCharsets.UTF_8)
+      finally stream.close()
+    }
+
   private def withProtoSpec(assertions: String => Unit): Unit =
     if Files.exists(specPath) then assertions(Files.readString(specPath, StandardCharsets.UTF_8))
-    else fail(s"A2A proto spec checkout not found: $specPath; set A2A_PROTO_SPEC to run this parity test")
+    else
+      classpathResource("/a2a.proto") match
+        case Some(proto) => assertions(proto)
+        case None        => fail(s"A2A proto spec not found: $specPath (no /a2a.proto resource); set A2A_PROTO_SPEC")
 
   private def withSpecDoc(assertions: String => Unit): Unit =
     if Files.exists(docsPath) then assertions(Files.readString(docsPath, StandardCharsets.UTF_8))
-    else fail(s"A2A specification doc checkout not found: $docsPath; set A2A_SPEC_DOC to run this parity test")
+    else
+      classpathResource("/specification.md") match
+        case Some(doc) => assertions(doc)
+        case None      => fail(s"A2A spec doc not found: $docsPath (no /specification.md resource); set A2A_SPEC_DOC")
 
   private def withProtoAndDoc(assertions: (String, String) => Unit): Unit =
     withProtoSpec(proto => withSpecDoc(doc => assertions(proto, doc)))
