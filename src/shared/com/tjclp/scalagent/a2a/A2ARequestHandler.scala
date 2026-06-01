@@ -80,13 +80,21 @@ private[a2a] final class A2ARequestHandler(
                 for
                   _ <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
                   stream = prepared.bus.stream
-                  _      <- startExecution(prepared, context)
+                  fiber  <- startExecution(prepared, context)
                   result <-
                     if params.configuration.exists(_.returnImmediately) then
                       ZIO.succeed(A2AResponse.SendMessageResult.TaskResult(project(prepared.task)))
                     else
+                      // The stream-ending event reaches `waitForFinal` from inside
+                      // the run (bus.finish on closesStream), but the run's
+                      // `remove(key)` finalizer trails it. Join the fiber so the
+                      // runtime entry is gone before we return — otherwise an
+                      // immediate follow-up to a still-non-terminal task (e.g.
+                      // input-required) races `reserve` against `remove` and is
+                      // spuriously rejected with "already has an active run".
                       waitForFinal(prepared.task.id, stream, context)
                         .map(task => A2AResponse.SendMessageResult.TaskResult(project(task)))
+                        .zipLeft(fiber.await)
                 yield result
               run.onError(_ => cleanupPrepared(prepared, context))
           yield result
@@ -393,7 +401,10 @@ private[a2a] final class A2ARequestHandler(
     end for
   end prepare
 
-  private def startExecution(prepared: PreparedRun, context: ServerCallContext): UIO[Unit] =
+  private def startExecution(
+    prepared: PreparedRun,
+    context: ServerCallContext,
+  ): UIO[Fiber.Runtime[Throwable, Unit]] =
     val manager =
       ResultManager(taskStore, eventPersister, pushSender, prepared.bus, runtimeRegistry, context, prepared.message)
     val key = taskRuntimeKey(prepared.task.id, context)
@@ -423,7 +434,7 @@ private[a2a] final class A2ARequestHandler(
       .succeed {
         Unsafe.unsafe { implicit unsafe => runtime.unsafe.fork(run) }
       }
-      .flatMap(fiber => runtimeRegistry.attachFiber(key, fiber))
+      .tap(fiber => runtimeRegistry.attachFiber(key, fiber))
   end startExecution
 
   private def waitForFinal(
