@@ -69,14 +69,26 @@ private[a2a] object A2AGrpcBinding:
             .foldZIO(
               error => ZIO.succeed(A2AGrpcDispatch.Error(error, Nil)),
               _ =>
-                val routed =
-                  if request.operation.streaming then
-                    streamWithContext(request, effectiveContext, requestHandler)
-                      .map(A2AGrpcDispatch.Stream(_, extensions))
-                  else
-                    unaryWithContext(request, effectiveContext, requestHandler)
-                      .map(A2AGrpcDispatch.Unary(_, extensions))
-                routed.catchAll(error => ZIO.succeed(A2AGrpcDispatch.Error(A2AError.fromThrowable(error), extensions))),
+                // Auth gate at the dispatch layer — the gRPC path otherwise has
+                // none of its own (it relied on each handler calling
+                // authorizeRequest). Runs before routing as the first line of
+                // defense; handlers still call it (idempotent).
+                requestHandler
+                  .authorizeRequest(effectiveContext)
+                  .foldZIO(
+                    error => ZIO.succeed(A2AGrpcDispatch.Error(A2AError.fromThrowable(error), extensions)),
+                    _ =>
+                      val routed =
+                        if request.operation.streaming then
+                          streamWithContext(request, effectiveContext, requestHandler)
+                            .map(A2AGrpcDispatch.Stream(_, extensions))
+                        else
+                          unaryWithContext(request, effectiveContext, requestHandler)
+                            .map(A2AGrpcDispatch.Unary(_, extensions))
+                      routed.catchAll(error =>
+                        ZIO.succeed(A2AGrpcDispatch.Error(A2AError.fromThrowable(error), extensions))
+                      ),
+                  ),
             ),
       )
 

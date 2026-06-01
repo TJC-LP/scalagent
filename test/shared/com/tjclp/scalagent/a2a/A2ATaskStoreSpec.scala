@@ -28,6 +28,33 @@ class A2ATaskStoreSpec extends FunSuite:
     val base = task(TaskId(id), ContextId(s"ctx-$id"), id)
     base.copy(status = base.status.copy(timestamp = Some(timestamp)))
 
+  test("transformIfNotTerminal: transforms non-terminal, preserves terminal, skips absent"):
+    val ctx             = ContextId("cas-ctx")
+    def msg(id: TaskId) = A2AMessage.agentText("m", Some(ctx)).copy(taskId = Some(id))
+    val working         = A2ATask(TaskId("cas-working"), ctx, TaskStatus.working(Some(msg(TaskId("cas-working")))))
+    val completed       = A2ATask(TaskId("cas-done"), ctx, TaskStatus.completed(msg(TaskId("cas-done"))))
+    def toFailed(t: A2ATask): A2ATask = t.copy(status = TaskStatus.failed(msg(t.id)))
+
+    val effect =
+      for
+        store <- ZIO.succeed(A2ATaskStore.inMemory)
+        _     <- store.save(working, None)
+        _     <- store.save(completed, None)
+        r1    <- store.transformIfNotTerminal(working.id, None)(toFailed)
+        s1    <- store.load(working.id, None)
+        r2    <- store.transformIfNotTerminal(completed.id, None)(toFailed)
+        s2    <- store.load(completed.id, None)
+        r3    <- store.transformIfNotTerminal(TaskId("cas-absent"), None)(toFailed)
+      yield (r1, s1, r2, s2, r3)
+
+    runTask(effect).map { case (r1, s1, r2, s2, r3) =>
+      assertEquals(r1.map(_.status.state), Some(TaskState.Failed))    // non-terminal -> transformed
+      assertEquals(s1.map(_.status.state), Some(TaskState.Failed))    // persisted
+      assertEquals(r2.map(_.status.state), Some(TaskState.Completed)) // terminal -> returned unchanged
+      assertEquals(s2.map(_.status.state), Some(TaskState.Completed)) // NOT clobbered
+      assertEquals(r3, None)                                          // absent -> None
+    }
+
   test("in-memory task store isolates tasks by tenant"):
     val sharedId = TaskId("shared")
     val taskA    = task(sharedId, ContextId("ctx-a"), "tenant-a")

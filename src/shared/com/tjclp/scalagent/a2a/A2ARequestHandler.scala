@@ -80,13 +80,21 @@ private[a2a] final class A2ARequestHandler(
                 for
                   _ <- saveInlinePushConfig(params.configuration, prepared.task.id, context)
                   stream = prepared.bus.stream
-                  _      <- startExecution(prepared, context)
+                  fiber  <- startExecution(prepared, context)
                   result <-
                     if params.configuration.exists(_.returnImmediately) then
                       ZIO.succeed(A2AResponse.SendMessageResult.TaskResult(project(prepared.task)))
                     else
+                      // The stream-ending event reaches `waitForFinal` from inside
+                      // the run (bus.finish on closesStream), but the run's
+                      // `remove(key)` finalizer trails it. Join the fiber so the
+                      // runtime entry is gone before we return — otherwise an
+                      // immediate follow-up to a still-non-terminal task (e.g.
+                      // input-required) races `reserve` against `remove` and is
+                      // spuriously rejected with "already has an active run".
                       waitForFinal(prepared.task.id, stream, context)
                         .map(task => A2AResponse.SendMessageResult.TaskResult(project(task)))
+                        .zipLeft(fiber.await)
                 yield result
               run.onError(_ => cleanupPrepared(prepared, context))
           yield result
@@ -147,38 +155,33 @@ private[a2a] final class A2ARequestHandler(
       runtimeRegistry.bus(taskRuntimeKey(task.id, context)).flatMap {
         case Some(_) => ZIO.succeed(task)
         case None    =>
-          // TOCTOU guard: we loaded `task` (non-terminal) BEFORE checking the
-          // bus. A run that finishes in that window persists its terminal status
-          // and THEN removes its bus (terminal-persist happens-before
-          // bus-removal in ResultManager.publish), so "no bus" can mean either
-          // "genuinely orphaned" or "just completed". Re-read the store — the
-          // source of truth — and only fail if it is STILL non-terminal.
-          // Without this we would clobber a real completed/canceled outcome.
-          taskStore.load(task.id, context.tenant).flatMap {
-            case None =>
-              // Deleted between our first load and the re-read — don't resurrect
-              // it with a phantom `failed` row; report it gone.
-              ZIO.fail(A2AError.taskNotFound(task.id))
-            case Some(fresh) if fresh.isStreamEnding => ZIO.succeed(fresh)
-            case Some(fresh)                         =>
-              val message = A2AMessage
-                .agentText(
-                  "Task interrupted: no active run (the server restarted or the run ended without " +
-                    "completing). Resend the message to retry.",
-                  Some(fresh.contextId),
-                )
-                .copy(taskId = Some(fresh.id))
-              val failed = fresh.copy(status = TaskStatus.failed(message))
-              // Re-check the bus immediately before writing: if a retry run
-              // registered one between the re-read and now, it owns the task —
-              // don't clobber it (narrows the residual non-CAS window; durable
-              // stores should still provide compare-and-set — see A2ATaskStore).
-              runtimeRegistry.bus(taskRuntimeKey(task.id, context)).flatMap {
-                case Some(_) => ZIO.succeed(fresh)
-                case None    =>
-                  ZIO.logWarning(s"Reconciling orphaned non-terminal task ${fresh.id.value} -> failed") *>
-                    taskStore.save(failed, context.tenant).as(failed)
-              }
+          // We loaded `task` (non-terminal) BEFORE checking the bus. A run that
+          // finishes in that window persists its terminal status and THEN removes
+          // its bus (terminal-persist happens-before bus-removal in
+          // ResultManager.publish), so "no bus" can mean "orphaned" OR "just
+          // completed". Re-check the bus once more (catches a retry run that
+          // registered a fresh bus), then transition via the store's
+          // compare-and-set so a concurrent terminal write is honored, not
+          // clobbered, and a deleted task isn't resurrected.
+          runtimeRegistry.bus(taskRuntimeKey(task.id, context)).flatMap {
+            case Some(_) => ZIO.succeed(task)
+            case None    =>
+              ZIO.logWarning(s"Reconciling orphaned non-terminal task ${task.id.value} -> failed") *>
+                taskStore
+                  .transformIfNotTerminal(task.id, context.tenant) { fresh =>
+                    val message = A2AMessage
+                      .agentText(
+                        "Task interrupted: no active run (the server restarted or the run ended without " +
+                          "completing). Resend the message to retry.",
+                        Some(fresh.contextId),
+                      )
+                      .copy(taskId = Some(fresh.id))
+                    fresh.copy(status = TaskStatus.failed(message))
+                  }
+                  .flatMap {
+                    case Some(result) => ZIO.succeed(result)
+                    case None         => ZIO.fail(A2AError.taskNotFound(task.id))
+                  }
           }
       }
 
@@ -321,7 +324,12 @@ private[a2a] final class A2ARequestHandler(
           .flatMap(card => config.extendedAgentCardAuth.authorize(agentCard, context.authorization).as(card))
     }
 
-  private def authorizeRequest(context: ServerCallContext): Task[Unit] =
+  /**
+   * Protocol-operation auth gate. Each handler calls it, AND transports may
+   * call it up front in their dispatch layer as a single first line of defense
+   * (so a handler that ever forgets is still covered). Idempotent.
+   */
+  def authorizeRequest(context: ServerCallContext): Task[Unit] =
     config.requestAuth.authorize(agentCard, context)
 
   private def messageResponse(
@@ -393,7 +401,10 @@ private[a2a] final class A2ARequestHandler(
     end for
   end prepare
 
-  private def startExecution(prepared: PreparedRun, context: ServerCallContext): UIO[Unit] =
+  private def startExecution(
+    prepared: PreparedRun,
+    context: ServerCallContext,
+  ): UIO[Fiber.Runtime[Throwable, Unit]] =
     val manager =
       ResultManager(taskStore, eventPersister, pushSender, prepared.bus, runtimeRegistry, context, prepared.message)
     val key = taskRuntimeKey(prepared.task.id, context)
@@ -423,7 +434,7 @@ private[a2a] final class A2ARequestHandler(
       .succeed {
         Unsafe.unsafe { implicit unsafe => runtime.unsafe.fork(run) }
       }
-      .flatMap(fiber => runtimeRegistry.attachFiber(key, fiber))
+      .tap(fiber => runtimeRegistry.attachFiber(key, fiber))
   end startExecution
 
   private def waitForFinal(

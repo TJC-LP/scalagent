@@ -95,9 +95,17 @@ private[a2a] final class A2ARuntimeRegistry private (
     ref.update(_ - key).unit
 
   def interruptAll: UIO[Unit] =
+    // Snapshot → interrupt → clear, WITHOUT holding the Ref.Synchronized permit
+    // across the interrupt. The registry stays populated during the interrupt
+    // (we don't clear until after), so a concurrent `reconcileOrphaned` still
+    // sees a live bus and won't clobber terminal state mid-shutdown. Crucially
+    // we must NOT hold the permit while awaiting fibers: each interrupted fiber
+    // runs its `.ensuring(remove(key))` finalizer, which also takes the permit —
+    // holding it here (e.g. via modifyZIO) would deadlock interrupt-vs-finalizer.
     for
-      entries <- ref.getAndSet(Map.empty)
+      entries <- ref.get
       _       <- ZIO.foreachDiscard(entries.values.flatMap(_.fiber).toList)(_.interrupt).ignore
+      _       <- ref.set(Map.empty)
     yield ()
 end A2ARuntimeRegistry
 

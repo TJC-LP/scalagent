@@ -368,9 +368,12 @@ private final class A2AServerLiveImpl(
         if step.selectDynamic("done").asInstanceOf[Boolean] then ZIO.succeed(totalBytes -> chunks)
         else
           val chunk = step.selectDynamic("value")
-          val next  = totalBytes + chunkByteLength(chunk)
-          if next > maxBytes then cancelReader(reader) *> ZIO.fail(A2AHttpBinding.bodySizeExceeded(maxBytes))
-          else readBodyChunks(reader, maxBytes, next, chunks :+ chunk)
+          // Long arithmetic so a near-Int.MaxValue cap can't wrap negative and
+          // silently defeat the size check. `next.toInt` below is safe — we only
+          // recurse when next <= maxBytes (an Int).
+          val next = totalBytes.toLong + chunkByteLength(chunk).toLong
+          if next > maxBytes.toLong then cancelReader(reader) *> ZIO.fail(A2AHttpBinding.bodySizeExceeded(maxBytes))
+          else readBodyChunks(reader, maxBytes, next.toInt, chunks :+ chunk)
       }
 
     private def cancelReader(reader: js.Dynamic): UIO[Unit] =

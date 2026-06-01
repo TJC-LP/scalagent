@@ -213,7 +213,11 @@ object JsonRpcId:
   def apply(s: String): JsonRpcId               = Str(s)
   def apply(n: Long): JsonRpcId                 = Num(n)
   def apply(n: java.math.BigDecimal): JsonRpcId =
-    Try(n.longValueExact).toOption.fold(RawNum(n))(Num(_))
+    // Whole numbers normalize to Num (so 1 == 1.0); the RawNum fallback strips
+    // trailing zeros so its case-class equality is value-based, not scale-based
+    // (a proxy re-serializing the id with a different scale won't trip the
+    // response-id mismatch check).
+    Try(n.longValueExact).toOption.fold(RawNum(n.stripTrailingZeros))(Num(_))
 
   given JsonEncoder[JsonRpcId] = JsonEncoder[Json].contramap(_.toJson)
 

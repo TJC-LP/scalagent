@@ -356,7 +356,11 @@ private object Http:
           if contentType.startsWith(A2AContentType.Sse) then
             val reader  = response.body.getReader().asInstanceOf[js.Dynamic]
             val decoder = js.Dynamic.newInstance(js.Dynamic.global.TextDecoder)()
-            pumpSse(reader, decoder, "", queue).forkScoped.as(ZStream.fromQueue(queue).flattenTake)
+            // Cancel the JS reader when the scope closes (stream interrupt /
+            // completion) so the underlying connection is released promptly
+            // instead of lingering until GC.
+            ZIO.addFinalizer(ZIO.attempt(reader.cancel()).ignore) *>
+              pumpSse(reader, decoder, "", queue).forkScoped.as(ZStream.fromQueue(queue).flattenTake)
           else
             ZIO
               .fromPromiseJS(response.text().asInstanceOf[js.Promise[String]])
@@ -377,7 +381,29 @@ private object Http:
     else
       ZIO
         .fromPromiseJS(response.text().asInstanceOf[js.Promise[String]])
-        .flatMap(body => ZIO.fail(A2AError.invalidAgentResponse(s"HTTP ${response.status}: $body")))
+        .flatMap(body => ZIO.fail(structuredHttpError(response.status.toString, body)))
+
+  /**
+   * Many A2A servers return a structured JSON-RPC or REST error document on a
+   * 4xx/5xx. Surface that inner `A2AError` (real code/message) instead of
+   * opaquing it into a generic `invalidAgentResponse`; fall back to the opaque
+   * HTTP wrapper only when the body isn't a recognizable error document.
+   */
+  private def structuredHttpError(status: String, body: String): A2AError =
+    body
+      .fromJson[JsonRpcResponse]
+      .toOption
+      .flatMap(_.error)
+      .map(_.toA2AError)
+      .orElse(
+        body
+          .fromJson[Json]
+          .toOption
+          .flatMap(_.asObject)
+          .flatMap(_.get("error"))
+          .flatMap(_.as[A2AError].toOption)
+      )
+      .getOrElse(A2AError.invalidAgentResponse(s"HTTP $status: $body"))
 
   private def pumpSse(
     reader: js.Dynamic,
