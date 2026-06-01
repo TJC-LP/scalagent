@@ -125,7 +125,11 @@ private[a2a] object A2APathRouting:
     requestTenant: Option[String] = None,
   ): Either[A2AError, Option[String]] =
     decodeOptionalPathParameter(pathTenant, "tenant").flatMap { decodedPathTenant =>
-      val sources = List(decodedPathTenant, queryTenant, requestTenant.filter(_.nonEmpty)).flatten.distinct
+      // Explicit type annotation works around a Scala 3.8.3 Scala.js pickler
+      // crash ("error when pickling type List[String]^{}") triggered by the
+      // inferred type of this fluent chain when compiled fresh.
+      val sources: List[String] =
+        List(decodedPathTenant, queryTenant, requestTenant.filter(_.nonEmpty)).flatten.distinct
       sources match
         case Nil          => Right(None)
         case value :: Nil => Right(Some(value))
