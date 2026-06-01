@@ -366,6 +366,72 @@ class A2AServerCoreSpec extends FunSuite:
       assertEquals(events, List(A2AResponse.StreamEvent.TaskSnapshot(loaded)))
     }
 
+  test("A2AAuth.constantTimeEquals matches equal strings and rejects any difference"):
+    assert(A2AAuth.constantTimeEquals("secret-token", "secret-token"))
+    assert(A2AAuth.constantTimeEquals("", ""))
+    assert(!A2AAuth.constantTimeEquals("secret-token", "secret-toker"))
+    assert(!A2AAuth.constantTimeEquals("short", "short-but-longer"))
+
+  test("A2ARequestAuth.requireBearer accepts a valid bearer token and rejects otherwise"):
+    val auth       = A2ARequestAuth.requireBearer(token => ZIO.succeed(A2AAuth.constantTimeEquals(token, "good")))
+    val publicCard = card("Bearer")
+    def attempt(authz: Option[String]) =
+      auth.authorize(publicCard, ServerCallContext(authorization = authz)).either
+    val effect =
+      for
+        good    <- attempt(Some("Bearer good"))
+        bad     <- attempt(Some("Bearer bad"))
+        basic   <- attempt(Some("Basic good"))
+        missing <- attempt(None)
+      yield (good.isRight, bad.isLeft, basic.isLeft, missing.isLeft)
+
+    runTask(effect).map { case (good, bad, basic, missing) =>
+      assert(good, "valid bearer token should be accepted")
+      assert(bad, "rejected token should fail")
+      assert(basic, "non-bearer scheme should fail")
+      assert(missing, "absent header should fail")
+    }
+
+  test("file part with no media type is validated via filename inference (H1)"):
+    // Default card accepts only text/plain; a file with no declared mediaType
+    // but a .pdf name infers application/pdf and is rejected. A file whose
+    // extension is unguessable carries no constraint and is allowed.
+    val pdfPart     = Part.File(FileContent.Bytes(bytes = "QUJD", name = Some("report.pdf")))
+    val unknownPart = Part.File(FileContent.Bytes(bytes = "QUJD", name = Some("mystery.zzz")))
+    def sendWith(part: Part) =
+      for
+        taskStore <- ZIO.succeed(A2ATaskStore.inMemory)
+        registry  <- A2ARuntimeRegistry.make
+        core = A2AServerCore.make(
+          TestConfig(taskStore = Some(taskStore)),
+          runtime,
+          registry,
+          NoopPushPoster,
+          () => card("MimeInfer"),
+          (_, _) => ZIO.unit,
+        )
+        result <- core.requestHandler
+          .sendMessage(A2ARequest.MessageSend(A2AMessage.userText("doc").copy(parts = List(part))), ServerCallContext())
+          .either
+      yield result
+
+    runTask(sendWith(pdfPart).zip(sendWith(unknownPart))).map { case (pdf, unknown) =>
+      assert(
+        pdf.left.exists {
+          case e: A2AError => e.code == A2AErrorCode.ContentTypeNotSupported
+          case _           => false
+        },
+        "inferred application/pdf should be rejected against text/plain-only input modes",
+      )
+      assert(
+        unknown.isRight || !unknown.left.exists {
+          case e: A2AError => e.code == A2AErrorCode.ContentTypeNotSupported
+          case _           => false
+        },
+        "an unguessable extension should not be rejected on content-type",
+      )
+    }
+
   test("sendMessage rejects an unknown client-supplied contextId"):
     val request = A2ARequest.MessageSend(
       A2AMessage.userText("hi").copy(contextId = Some(ContextId("unknown-context"))),

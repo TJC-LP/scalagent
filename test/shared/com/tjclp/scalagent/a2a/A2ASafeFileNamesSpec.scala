@@ -12,6 +12,16 @@ class A2ASafeFileNamesSpec extends FunSuite:
     assertEquals(safe("task-1"), "task-1")
     assertEquals(safe("tenant.v1_2-3"), "tenant.v1_2-3")
 
+  test("windows reserved device names are routed through the hash-suffix path"):
+    // All-"safe" characters, but unusable as files on Windows — must not pass
+    // through verbatim (case-insensitive, with or without an extension).
+    for name <- List("CON", "nul", "Aux", "COM1", "lpt9", "CON.txt") do
+      assert(safe(name).endsWith(s"-$hash64"), s"$name should be hashed")
+      assertNotEquals(safe(name), name)
+    // A non-reserved lookalike is still preserved.
+    assertEquals(safe("CONSOLE"), "CONSOLE")
+    assertEquals(safe("COM10"), "COM10")
+
   test("unsafe segments sanitize stems and append hash suffixes"):
     val unsafe = safe("../task/with spaces")
     val spaced = safe(" ../task/with spaces ")

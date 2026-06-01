@@ -24,12 +24,23 @@ private[a2a] object A2ASafeFileNames:
       .replace("..", "__")
       .dropWhile(_ == '.')
 
+  // Windows reserved device names — unusable as files on Windows even with an
+  // extension (e.g. `CON.txt`). The runtime is Linux/Bun, but cross-platform
+  // consumers may materialize these names, so route them through the safe
+  // hash-suffix path instead of passing them through verbatim.
+  private val WindowsReservedNames: Set[String] =
+    Set("CON", "PRN", "AUX", "NUL") ++ (1 to 9).map("COM" + _) ++ (1 to 9).map("LPT" + _)
+
+  private def isWindowsReserved(value: String): Boolean =
+    WindowsReservedNames.contains(value.takeWhile(_ != '.').toUpperCase)
+
   private def isSafeRaw(value: String, maxLength: Int): Boolean =
     value.nonEmpty &&
       value.length <= maxLength &&
       value != "." &&
       value != ".." &&
       !value.startsWith(".") &&
+      !isWindowsReserved(value) &&
       value.forall(isSafeChar)
 
   private def isUsefulStem(value: String): Boolean =

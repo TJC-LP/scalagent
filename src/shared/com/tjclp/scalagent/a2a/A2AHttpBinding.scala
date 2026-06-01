@@ -287,7 +287,16 @@ private[a2a] object A2AHttpBinding:
     )
 
   def parseExtensionsHeader(value: String): List[String] =
-    value.split(",").iterator.map(_.trim).filter(_.nonEmpty).toList
+    // Strip CR/LF and other control chars defensively: these values are echoed
+    // back in the `Standard-Extensions` response header, so unsanitized CR/LF
+    // would be a response-splitting vector (belt-and-suspenders alongside the
+    // HTTP adapter's own header validation).
+    value
+      .split(",")
+      .iterator
+      .map(_.filterNot(ch => ch.isControl).trim)
+      .filter(_.nonEmpty)
+      .toList
 
   def restDispatch(
     request: A2AHttpRequestView,

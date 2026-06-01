@@ -138,5 +138,11 @@ private[a2a] object A2AClientPayloadNormalizer:
 
   private def normalizedMessageId(path: String, fields: Map[String, Json]): String =
     val seed = s"$path:${Json.Obj(fields.toSeq*).toJson}"
-    s"client-normalized-${java.lang.Integer.toHexString(seed.hashCode)}"
+    // 64-bit (two independently-seeded MurmurHash3 words) instead of a single
+    // 32-bit hashCode — collisions in client-side dedup on synthesized ids were
+    // otherwise likely across a few billion messages. Cross-platform (JVM +
+    // Scala.js); deterministic so re-polls of identical content dedupe.
+    val h1 = scala.util.hashing.MurmurHash3.stringHash(seed)
+    val h2 = scala.util.hashing.MurmurHash3.stringHash(seed, 0x9e3779b9)
+    f"client-normalized-$h1%08x$h2%08x"
 end A2AClientPayloadNormalizer

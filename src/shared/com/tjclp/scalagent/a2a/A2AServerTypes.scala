@@ -150,7 +150,47 @@ object A2ARequestAuth:
 
   def fromFunction(f: (AgentCard, ServerCallContext) => Task[Unit]): A2ARequestAuth =
     (publicCard: AgentCard, context: ServerCallContext) => f(publicCard, context)
+
+  /**
+   * Validate a `Bearer <token>` Authorization header. `validateToken` returns
+   * `true` for an accepted token. Use [[A2AAuth.constantTimeEquals]] inside the
+   * validator when comparing against a known secret to avoid leaking token
+   * length/prefix via timing. A missing/non-Bearer/empty header is rejected.
+   */
+  def requireBearer(validateToken: String => Task[Boolean]): A2ARequestAuth =
+    (_: AgentCard, context: ServerCallContext) =>
+      val token = context.authorization
+        .map(_.trim)
+        .collect { case header if header.toLowerCase.startsWith("bearer ") => header.drop(7).trim }
+        .filter(_.nonEmpty)
+      token match
+        case None        => ZIO.fail(A2AError.unauthenticated("A2A request requires a non-empty Bearer token"))
+        case Some(value) =>
+          validateToken(value).flatMap {
+            case true  => ZIO.unit
+            case false => ZIO.fail(A2AError.unauthenticated("A2A request Bearer token was rejected"))
+          }
 end A2ARequestAuth
+
+/** Small auth helpers shared by custom [[A2ARequestAuth]]/[[A2AExtendedAgentCardAuth]] hooks. */
+object A2AAuth:
+  /**
+   * Length-tolerant constant-time string comparison for secret/token checks —
+   * avoids the timing leak of `==` (which short-circuits on the first differing
+   * char). Compares all positions regardless of where they diverge. Char-based
+   * so it cross-builds (JVM + Scala.js) without a charset dependency.
+   */
+  def constantTimeEquals(a: String, b: String): Boolean =
+    var result = a.length ^ b.length
+    val n      = math.max(a.length, b.length)
+    var i      = 0
+    while i < n do
+      val ca = if i < a.length then a.charAt(i).toInt else 0
+      val cb = if i < b.length then b.charAt(i).toInt else 0
+      result |= (ca ^ cb)
+      i += 1
+    result == 0
+end A2AAuth
 
 object PushNotificationUrlPolicy:
   val allowAll: PushNotificationUrlPolicy =

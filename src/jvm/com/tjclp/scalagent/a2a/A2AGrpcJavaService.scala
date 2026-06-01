@@ -352,7 +352,12 @@ private[a2a] object A2AGrpcJavaService:
       observer match
         case cancelable: ServerCallStreamObserver[?] =>
           cancelable.setOnCancelHandler { () =>
-            // Client gone: stop emitting and never touch the cancelled observer.
+            // Client gone: interrupt the run and suppress any *future* terminal
+            // callback. This claims the terminal slot via the same CAS as
+            // complete/errorOnce, so a terminal that hasn't fired yet is
+            // skipped. (If the effect's terminal already won the CAS at the
+            // instant of cancel, that onComplete/onError lands on a cancelled
+            // observer — grpc-java treats it as a no-op, which is fine.)
             terminated.set(true)
             running.cancel()
           }

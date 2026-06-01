@@ -465,10 +465,22 @@ private[a2a] final class A2ARequestHandler(
       case Part.Text(_, metadata, _, mediaType) =>
         mediaType.toList ++ metadataContentTypes(metadata)
       case Part.File(file, metadata) =>
-        fileMediaType(file).toList ++ metadataContentTypes(metadata)
+        val declared = fileMediaType(file).toList ++ metadataContentTypes(metadata)
+        // A file with no declared media type is still validated by inferring the
+        // type from its filename extension (so e.g. `report.exe` is checked
+        // against the agent's input modes). A truly-unguessable extension yields
+        // no constraint — allow it rather than fail closed, which would reject
+        // spec-legitimate clients that omit `mediaType` (it is optional).
+        if declared.nonEmpty then declared
+        else fileContentName(file).flatMap(A2AArtifactMimes.guess).toList
       case Part.Data(_, metadata, _, mediaType) =>
         mediaType.toList ++ metadataContentTypes(metadata)
     values.map(_.trim).filter(_.nonEmpty).distinct
+
+  private def fileContentName(file: FileContent): Option[String] =
+    file match
+      case FileContent.Bytes(_, name, _) => name
+      case FileContent.Uri(_, name, _)   => name
 
   private def metadataContentTypes(metadata: Option[Json]): List[String] =
     metadata.toList.flatMap(_.asObject.toList).flatMap { fields =>
@@ -486,6 +498,10 @@ private[a2a] final class A2ARequestHandler(
     val requested = normalizeMediaType(mediaType)
     supportedInputMediaTypes.exists(supported => mediaTypeMatches(requested, supported))
 
+  // Skill input modes are UNIONED with (not intersected against) the card-level
+  // defaultInputModes: a skill can only WIDEN the accepted surface, never narrow
+  // it below the card default. An inbound part is accepted if its media type
+  // matches any default OR any skill's declared input mode.
   private def supportedInputMediaTypes: List[String] =
     (agentCard.defaultInputModes ++ agentCard.skills.flatMap(_.inputModes))
       .map(normalizeMediaType)
