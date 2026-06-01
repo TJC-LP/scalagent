@@ -595,15 +595,18 @@ class A2AHttpBindingSpec extends FunSuite:
   test("SSE wire stream emits keep-alive comments while source is idle and then terminates"):
     val first  = """{"one":true}"""
     val second = """{"two":true}"""
+    // The idle gap is 20x the keep-alive interval so at least one keep-alive
+    // comment reliably fires even when a loaded CI runner starves the ticker
+    // fiber (a tighter ratio occasionally emitted zero keep-alives and flaked).
     val stream =
       ZStream.succeed(first) ++
-        ZStream.fromZIO(ZIO.sleep(35.millis).as(second))
+        ZStream.fromZIO(ZIO.sleep(200.millis).as(second))
 
     runTask(
       A2AHttpBinding
         .sseWireStream(stream, isJsonRpc = false, keepAliveInterval = 10.millis)
         .runCollect
-        .timeoutFail(new RuntimeException("SSE keep-alive stream did not terminate"))(500.millis)
+        .timeoutFail(new RuntimeException("SSE keep-alive stream did not terminate"))(2.seconds)
         .map(_.toList)
     ).map { frames =>
       val dataFrames = frames.filter(_.startsWith("data:"))
