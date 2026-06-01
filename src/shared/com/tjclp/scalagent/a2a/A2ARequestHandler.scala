@@ -158,21 +158,22 @@ private[a2a] final class A2ARequestHandler(
           runtimeRegistry.bus(taskRuntimeKey(task.id, context)).flatMap {
             case Some(_) => ZIO.succeed(task)
             case None    =>
-              taskStore
-                .transformIfNotTerminal(task.id, context.tenant) { fresh =>
-                  val message = A2AMessage
-                    .agentText(
-                      "Task interrupted: no active run (the server restarted or the run ended without " +
-                        "completing). Resend the message to retry.",
-                      Some(fresh.contextId),
-                    )
-                    .copy(taskId = Some(fresh.id))
-                  fresh.copy(status = TaskStatus.failed(message))
-                }
-                .flatMap {
-                  case Some(result) => ZIO.succeed(result)
-                  case None         => ZIO.fail(A2AError.taskNotFound(task.id))
-                }
+              ZIO.logWarning(s"Reconciling orphaned non-terminal task ${task.id.value} -> failed") *>
+                taskStore
+                  .transformIfNotTerminal(task.id, context.tenant) { fresh =>
+                    val message = A2AMessage
+                      .agentText(
+                        "Task interrupted: no active run (the server restarted or the run ended without " +
+                          "completing). Resend the message to retry.",
+                        Some(fresh.contextId),
+                      )
+                      .copy(taskId = Some(fresh.id))
+                    fresh.copy(status = TaskStatus.failed(message))
+                  }
+                  .flatMap {
+                    case Some(result) => ZIO.succeed(result)
+                    case None         => ZIO.fail(A2AError.taskNotFound(task.id))
+                  }
           }
       }
 

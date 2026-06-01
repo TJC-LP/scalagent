@@ -432,6 +432,47 @@ class A2AServerCoreSpec extends FunSuite:
       )
     }
 
+  test("getTask returns taskNotFound when the task is deleted during reconcile"):
+    // load #1 (getTask) sees `working`; by the time reconcile re-reads via the
+    // store CAS the task is gone → must surface taskNotFound, not resurrect a
+    // phantom `failed` row.
+    val taskId  = TaskId("deleted-during-reconcile")
+    val ctx     = ContextId("deleted-ctx")
+    val working = A2ATask(taskId, ctx, TaskStatus.working(Some(A2AMessage.agentText("w", Some(ctx)).copy(taskId = Some(taskId)))))
+
+    val effect =
+      for
+        backing  <- ZIO.succeed(A2ATaskStore.inMemory)
+        registry <- A2ARuntimeRegistry.make
+        raced = new A2ATaskStore:
+          def save(task: A2ATask, tenant: Option[String]): UIO[Unit] = backing.save(task, tenant)
+          def list(params: A2ARequest.TasksList, tenant: Option[String]): Task[A2AResponse.ListTasksResult] =
+            backing.list(params, tenant)
+          def delete(id: TaskId, tenant: Option[String]): UIO[Unit] = backing.delete(id, tenant)
+          // getTask always observes `working` (so it proceeds to reconcile)…
+          def load(id: TaskId, tenant: Option[String]): UIO[Option[A2ATask]] = ZIO.some(working)
+          // …but by the time the reconcile CAS runs, the task is gone.
+          override def transformIfNotTerminal(id: TaskId, tenant: Option[String])(
+            f: A2ATask => A2ATask
+          ): UIO[Option[A2ATask]] = ZIO.none
+        core = A2AServerCore.make(
+          TestConfig(taskStore = Some(raced)),
+          runtime,
+          registry,
+          NoopPushPoster,
+          () => card("Deleted"),
+          (_, _) => ZIO.unit,
+        )
+        result <- core.requestHandler.getTask(A2ARequest.TasksGet(taskId), ServerCallContext()).either
+      yield result
+
+    runTask(effect).map { result =>
+      assert(result.left.exists {
+        case error: A2AError => error.code == A2AErrorCode.TaskNotFound
+        case _               => false
+      })
+    }
+
   test("sendMessage rejects an unknown client-supplied contextId"):
     val request = A2ARequest.MessageSend(
       A2AMessage.userText("hi").copy(contextId = Some(ContextId("unknown-context"))),

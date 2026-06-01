@@ -33,6 +33,39 @@ class A2AClientPayloadNormalizerSpec extends FunSuite:
     assertEquals(task.history.size, 2)
     assert(task.history.forall(_.messageId.value.startsWith("client-normalized-")))
 
+  test("client normalizer does not synthesize ids inside free-form metadata"):
+    // A user object nested under `metadata` that happens to look like a message
+    // must NOT receive a synthesized messageId — the heuristics are scoped to
+    // known structural positions, never arbitrary user data.
+    val wire =
+      """{
+        |  "id": "task-meta-001",
+        |  "contextId": "ctx-meta-001",
+        |  "status": {
+        |    "state": "TASK_STATE_COMPLETED",
+        |    "timestamp": "2025-05-25T20:05:00Z"
+        |  },
+        |  "history": [
+        |    {
+        |      "role": "ROLE_USER",
+        |      "parts": [{"text": "hi"}],
+        |      "metadata": { "echo": { "role": "user", "parts": [{"text": "nested"}] } }
+        |    }
+        |  ]
+        |}""".stripMargin
+
+    val decoded = A2AClientPayloadNormalizer.decodeString[A2ATask](wire)
+    assert(decoded.isRight)
+    val msg = decoded.toOption.get.history.head
+    // The message itself sits at a structural position → gets a synthesized id…
+    assert(msg.messageId.value.startsWith("client-normalized-"))
+    // …but the look-alike object under `metadata` is left untouched.
+    val metadataJson = msg.metadata.map(_.toJson).getOrElse("")
+    assert(
+      !metadataJson.contains("client-normalized-"),
+      s"normalizer leaked a synthesized id into user metadata: $metadataJson",
+    )
+
   test("client normalizer parses canonical file and fileUrl artifact wrappers"):
     val wire =
       """{

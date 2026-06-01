@@ -353,6 +353,11 @@ end PushNotificationUrlPolicy
  * Durable implementations that map task/config IDs into external storage
  * keys must validate or escape those IDs before using them in
  * backend-specific paths, SQL, keys, or document identifiers.
+ *
+ * Durable backends MUST implement `save`/`load`/`list`/`delete` AND should
+ * OVERRIDE [[transformIfNotTerminal]] with a real compare-and-set — the default
+ * is a non-atomic load-then-save and will inherit the reconcile/cancel
+ * read-modify-write race otherwise.
  */
 trait A2ATaskStore:
   def save(task: A2ATask, tenant: Option[String]): UIO[Unit]
