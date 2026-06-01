@@ -359,6 +359,31 @@ trait A2ATaskStore:
   def load(taskId: TaskId, tenant: Option[String]): UIO[Option[A2ATask]]
   def list(params: A2ARequest.TasksList, tenant: Option[String]): Task[A2AResponse.ListTasksResult]
   def delete(taskId: TaskId, tenant: Option[String]): UIO[Unit]
+
+  /**
+   * Compare-and-set: if the stored task exists and is NOT stream-ending, apply
+   * `f` and persist; return the task as it stands afterward — the transformed
+   * one, the unchanged terminal one (a concurrent terminal write is honored,
+   * not clobbered), or `None` if the task is absent.
+   *
+   * The default here is a best-effort load-then-save and is **NOT atomic**
+   * against concurrent writers. Durable backends (DB / Modal Dict / volume)
+   * should OVERRIDE this with a real compare-and-set to fully close the
+   * reconcile/cancel read-modify-write race; the in-memory store overrides it
+   * under its lock.
+   */
+  def transformIfNotTerminal(
+    taskId: TaskId,
+    tenant: Option[String],
+  )(f: A2ATask => A2ATask
+  ): UIO[Option[A2ATask]] =
+    load(taskId, tenant).flatMap {
+      case Some(task) if task.isStreamEnding => ZIO.some(task)
+      case Some(task)                        =>
+        val updated = f(task)
+        save(updated, tenant).as(Some(updated))
+      case None => ZIO.none
+    }
 end A2ATaskStore
 
 object A2ATaskStore:
@@ -526,6 +551,21 @@ private[a2a] final class InMemoryTaskStoreImpl extends A2ATaskStore:
 
   def delete(taskId: TaskId, tenant: Option[String]): UIO[Unit] =
     ZIO.succeed(lock.synchronized { tasks.remove(key(taskId, tenant)); () })
+
+  override def transformIfNotTerminal(
+    taskId: TaskId,
+    tenant: Option[String],
+  )(f: A2ATask => A2ATask
+  ): UIO[Option[A2ATask]] =
+    ZIO.succeed(lock.synchronized {
+      tasks.get(key(taskId, tenant)) match
+        case Some(task) if task.isStreamEnding => Some(task)
+        case Some(task)                        =>
+          val updated = f(task)
+          tasks.update(key(taskId, tenant), updated)
+          Some(updated)
+        case None => None
+    })
 
   def list(params: A2ARequest.TasksList, tenant: Option[String]): Task[A2AResponse.ListTasksResult] =
     val all = lock.synchronized {

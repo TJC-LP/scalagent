@@ -147,38 +147,32 @@ private[a2a] final class A2ARequestHandler(
       runtimeRegistry.bus(taskRuntimeKey(task.id, context)).flatMap {
         case Some(_) => ZIO.succeed(task)
         case None    =>
-          // TOCTOU guard: we loaded `task` (non-terminal) BEFORE checking the
-          // bus. A run that finishes in that window persists its terminal status
-          // and THEN removes its bus (terminal-persist happens-before
-          // bus-removal in ResultManager.publish), so "no bus" can mean either
-          // "genuinely orphaned" or "just completed". Re-read the store — the
-          // source of truth — and only fail if it is STILL non-terminal.
-          // Without this we would clobber a real completed/canceled outcome.
-          taskStore.load(task.id, context.tenant).flatMap {
-            case None =>
-              // Deleted between our first load and the re-read — don't resurrect
-              // it with a phantom `failed` row; report it gone.
-              ZIO.fail(A2AError.taskNotFound(task.id))
-            case Some(fresh) if fresh.isStreamEnding => ZIO.succeed(fresh)
-            case Some(fresh)                         =>
-              val message = A2AMessage
-                .agentText(
-                  "Task interrupted: no active run (the server restarted or the run ended without " +
-                    "completing). Resend the message to retry.",
-                  Some(fresh.contextId),
-                )
-                .copy(taskId = Some(fresh.id))
-              val failed = fresh.copy(status = TaskStatus.failed(message))
-              // Re-check the bus immediately before writing: if a retry run
-              // registered one between the re-read and now, it owns the task —
-              // don't clobber it (narrows the residual non-CAS window; durable
-              // stores should still provide compare-and-set — see A2ATaskStore).
-              runtimeRegistry.bus(taskRuntimeKey(task.id, context)).flatMap {
-                case Some(_) => ZIO.succeed(fresh)
-                case None    =>
-                  ZIO.logWarning(s"Reconciling orphaned non-terminal task ${fresh.id.value} -> failed") *>
-                    taskStore.save(failed, context.tenant).as(failed)
-              }
+          // We loaded `task` (non-terminal) BEFORE checking the bus. A run that
+          // finishes in that window persists its terminal status and THEN removes
+          // its bus (terminal-persist happens-before bus-removal in
+          // ResultManager.publish), so "no bus" can mean "orphaned" OR "just
+          // completed". Re-check the bus once more (catches a retry run that
+          // registered a fresh bus), then transition via the store's
+          // compare-and-set so a concurrent terminal write is honored, not
+          // clobbered, and a deleted task isn't resurrected.
+          runtimeRegistry.bus(taskRuntimeKey(task.id, context)).flatMap {
+            case Some(_) => ZIO.succeed(task)
+            case None    =>
+              taskStore
+                .transformIfNotTerminal(task.id, context.tenant) { fresh =>
+                  val message = A2AMessage
+                    .agentText(
+                      "Task interrupted: no active run (the server restarted or the run ended without " +
+                        "completing). Resend the message to retry.",
+                      Some(fresh.contextId),
+                    )
+                    .copy(taskId = Some(fresh.id))
+                  fresh.copy(status = TaskStatus.failed(message))
+                }
+                .flatMap {
+                  case Some(result) => ZIO.succeed(result)
+                  case None         => ZIO.fail(A2AError.taskNotFound(task.id))
+                }
           }
       }
 
