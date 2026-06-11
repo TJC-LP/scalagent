@@ -136,7 +136,16 @@ private[a2a] final class A2AServerLiveImpl(
       scope <- Scope.make
       _     <-
         (for
-          serverEnv <- (ZLayer.succeed(Server.Config.default.binding(config.host, config.port)) >>> Server.live)
+          // zio-http's Server.Config.default caps request bodies at 100 KiB
+          // (RequestStreaming.Disabled(1024*100)); A2A messages carry base64
+          // file uploads that exceed that, so apply the configured limit or
+          // they'd 413. disableRequestStreaming keeps full-body aggregation
+          // (the routes parse the whole JSON-RPC body) with the larger cap.
+          serverEnv <- (ZLayer.succeed(
+                         Server.Config.default
+                           .binding(config.host, config.port)
+                           .disableRequestStreaming(config.maxRequestBodyBytes)
+                       ) >>> Server.live)
             .build(scope)
           _ <- Server.install(a2aRoutes).provideEnvironment(serverEnv)
           _ <- startGrpcServer

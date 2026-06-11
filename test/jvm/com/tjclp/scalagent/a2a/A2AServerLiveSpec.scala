@@ -59,6 +59,17 @@ class A2AServerLiveSpec extends FunSuite:
       response.statusCode() -> response.body()
     }
 
+  private def post(url: String, body: String, requestHeaders: Map[String, String]): Task[(Int, String)] =
+    ZIO.attemptBlocking {
+      val builder = HttpRequest
+        .newBuilder(URI.create(url))
+        .timeout(JavaDuration.ofSeconds(10))
+        .POST(HttpRequest.BodyPublishers.ofString(body))
+      requestHeaders.foreach { case (name, value) => builder.header(name, value) }
+      val response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString())
+      response.statusCode() -> response.body()
+    }
+
   private def grpcStreamingResponse(
     port: Int,
     message: A2AMessage,
@@ -686,6 +697,49 @@ class A2AServerLiveSpec extends FunSuite:
     runTask(program).map { response =>
       assertEquals(response.error.map(_.code), Some(A2AErrorCode.InvalidRequest))
       assert(response.error.exists(_.message.contains("Request body exceeds 8 byte limit")))
+    }
+
+  // Regression for #58: zio-http's Server.Config.default caps request streaming at
+  // 100 KiB, so unless config.maxRequestBodyBytes is wired into the server the bound
+  // server 413s on larger bodies (e.g. base64 file uploads) before the handler runs.
+  // The handleHttp-based body-limit test above bypasses the Server.Config cap, so this
+  // exercises a real bound zio-http server end to end.
+  test("JVM bound server accepts JSON-RPC bodies larger than zio-http's default 100 KiB cap"):
+    // ~200 KiB: above zio-http's 100 KiB default, well below the 64 MiB configured limit.
+    val largeText = "x" * (200 * 1024)
+    val body = rpc(
+      A2AMethod.MessageSend,
+      A2ARequest.MessageSend(A2AMessage.userText(largeText)).toJsonAST.toOption.get,
+      58,
+    ).toJson
+
+    val program =
+      ZIO.scoped {
+        for
+          port <- freeLocalPort
+          config = A2AServerLive.Config(
+            name = "LargeBodyJvmTest",
+            description = "Large body JVM test server",
+            host = "127.0.0.1",
+            port = port,
+            executionOverride = Some(completedExecution),
+          )
+          _ <- A2AServerLive
+                 .create(config)
+                 .timeoutFail(new RuntimeException("server did not become ready"))(10.seconds)
+          result <- post(
+                      s"http://127.0.0.1:$port/",
+                      body,
+                      Map("Content-Type" -> A2AContentType.Json, A2AHeader.Version -> A2AProtocol.Version),
+                    )
+          response <- ZIO.fromEither(result._2.fromJson[JsonRpcResponse].left.map(new RuntimeException(_)))
+          task     <- sendTask(response)
+        yield (result._1, task)
+      }
+
+    runTask(program).map { case (status, task) =>
+      assertEquals(status, 200)
+      assertEquals(task.status.state, TaskState.Completed)
     }
 
   test("JVM start fails when the configured port is already bound"):
