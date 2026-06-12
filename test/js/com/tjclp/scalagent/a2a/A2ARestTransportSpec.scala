@@ -552,6 +552,44 @@ class A2ARestTransportSpec extends FunSuite:
       assert(response.error.exists(_.message.contains("Request body exceeds 8 byte limit")))
     }
 
+  // Parity with the JVM #58 fix: the JS server enforces maxRequestBodyBytes in
+  // readBodyLimited (not via a framework default), so the raised 64 MiB shared
+  // default must let it accept the same large inline uploads. Uses the default
+  // limit (no override) and a body well above zio-http's old 100 KiB cap.
+  test("accepts message/send bodies larger than the old 100 KiB cap with the default limit"):
+    val config = A2AServer.Config(
+      name = "LargeBodyTest",
+      description = "Large body test server",
+      host = "127.0.0.1",
+      port = 0,
+      executionOverride = Some(completedExecution),
+    )
+    // ~200 KiB: above zio-http's old 100 KiB cap, well below the 64 MiB default.
+    val request = A2ARequest
+      .MessageSend(A2AMessage.userText("x" * (200 * 1024)), configuration = Some(MessageSendConfiguration.default))
+      .toJson
+    val headers = Map(
+      "Content-Type" -> A2AContentType.A2AJson,
+      A2AHeader.Version -> A2AProtocol.Version,
+    )
+
+    val program =
+      ZIO.scoped {
+        for
+          server <- A2AServer.create(config)
+          sent   <- fetchText(server.url + "/message:send", method = "POST", body = Some(request), headers = headers)
+          result <- ZIO.fromEither(sent._3.fromJson[A2AResponse.SendMessageResult].left.map(new RuntimeException(_)))
+          task = result match
+            case A2AResponse.SendMessageResult.TaskResult(task) => task
+            case other                                          => throw new RuntimeException(s"Expected task, got $other")
+        yield (sent._1, task)
+      }
+
+    runTask(program).map { case (status, task) =>
+      assertEquals(status, 200)
+      assertEquals(task.status.state, TaskState.Completed)
+    }
+
   test("REST errors use google.rpc-style bodies"):
     val config = A2AServer.Config(
       name = "RestErrorTest",

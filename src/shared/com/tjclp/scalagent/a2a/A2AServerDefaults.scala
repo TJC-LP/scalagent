@@ -10,7 +10,10 @@ object A2AServerDefaults:
   val EventReplayLimit: Int                    = 1000
   val EventStoreAppendTimeout: Duration        = 2.seconds
   val EventStoreLoadTimeout: Duration          = 5.seconds
-  val MaxRequestBodyBytes: Int                 = 1024 * 1024
+  // A2A messages carry file uploads as base64 inside the JSON-RPC body
+  // (~33% inflation), so this must comfortably exceed the largest raw
+  // upload a client allows. 64 MiB covers rtalk's 32 MB raw cap encoded.
+  val MaxRequestBodyBytes: Int                 = 64 * 1024 * 1024
   val PushNotificationPostTimeout: Duration    = 20.seconds
   val PushNotificationMaxRetries: Int          = 2
   val PushNotificationRetryBaseDelay: Duration = 250.millis
