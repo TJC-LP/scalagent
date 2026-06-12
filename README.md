@@ -3,7 +3,7 @@
 Type-safe agent execution for mission-critical environments.
 Scala 3 + ZIO on the battle-tested TypeScript agent ecosystem.
 
-> SDK baseline `@anthropic-ai/claude-agent-sdk@^0.3.156` + `@openai/codex-sdk@^0.134.0` | Scalagent `0.10.0` | Scala `3.8.3` | Bun or Node.js 18+
+> SDK baseline `@anthropic-ai/claude-agent-sdk@^0.3.156` + `@openai/codex-sdk@^0.134.0` | Scalagent `0.10.1` | Scala `3.8.3` | Bun or Node.js 18+
 
 ```scala
 import com.tjclp.scalagent.*
@@ -188,13 +188,13 @@ val agent = ClaudeInterpreter.builder(claudeAgent)
 ### Mill
 
 ```scala
-ivy"com.tjclp::scalagent::0.10.0"
+ivy"com.tjclp::scalagent::0.10.1"
 ```
 
 ### SBT
 
 ```scala
-libraryDependencies += "com.tjclp" %%% "scalagent" % "0.10.0"
+libraryDependencies += "com.tjclp" %%% "scalagent" % "0.10.1"
 ```
 
 ### Maven
@@ -203,7 +203,7 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.10.0"
 <dependency>
   <groupId>com.tjclp</groupId>
   <artifactId>scalagent_sjs1_3</artifactId>
-  <version>0.10.0</version>
+  <version>0.10.1</version>
 </dependency>
 ```
 
@@ -212,6 +212,15 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.10.0"
 - Scala 3.8.3+ with Scala.js
 - Bun (preferred) or Node.js 18+
 - `bun install` to fetch the TypeScript SDK and ZIO dependencies
+
+### 0.10.1 Notes
+
+Patch release fixing A2A inline file uploads.
+
+**A2A request body limit**
+
+- The JVM A2A server now applies the configured `maxRequestBodyBytes` to its zio-http server. Previously the knob was never wired in, so every request was silently capped at zio-http's 100 KiB default (`RequestStreaming.Disabled`) and larger bodies were rejected with HTTP 413 before the handler ran — breaking inline `fileWithBytes` uploads (base64 adds ~33%, so even a few small files tripped it).
+- `A2AServerDefaults.MaxRequestBodyBytes` raised from 1 MiB to **64 MiB** to comfortably cover inline document uploads after base64 inflation. Clients with larger payloads should use `fileWithUri` references. The JS/Bun server already enforced this limit and shares the default, so it picks up the higher cap too.
 
 ### 0.10.0 Notes
 
