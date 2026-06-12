@@ -20,12 +20,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Set up JDK
-        uses: coursier/setup-action@v1
+        uses: coursier/setup-action@v3
         with:
           jvm: temurin:25
 
@@ -35,7 +35,7 @@ jobs:
           bun-version: latest
 
       - name: Cache Coursier
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/coursier
@@ -45,7 +45,7 @@ jobs:
             ${{ runner.os }}-coursier-
 
       - name: Cache Mill
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.mill
           key: ${{ runner.os }}-mill-${{ hashFiles('build.mill') }}
@@ -101,7 +101,7 @@ jobs:
           MILL_PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           body: ${{ steps.version.outputs.body }}
           generate_release_notes: ${{ steps.version.outputs.has_notes != 'true' }}
