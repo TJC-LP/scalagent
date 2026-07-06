@@ -103,7 +103,19 @@ final case class AgentDefinition(
   /** Memory scope for the agent */
   memory: Option[String] = None,
   /** Effort level for the agent's responses */
-  effort: Option[Effort] = None):
+  effort: Option[Effort] = None,
+  /**
+   * Agent type auto-spawned as a background observer whenever this agent runs
+   * (SDK 0.3.201). The observer receives read-only activity digests and
+   * reports via the ObserverReport tool; it never participates in the task.
+   */
+  observer: Option[String] = None,
+  /**
+   * Supplemental postamble appended (after the harness-owned default) to each
+   * activity digest sent to the observer (SDK 0.3.201). Blank values are
+   * ignored by the SDK.
+   */
+  observerMessage: Option[String] = None):
   /**
    * Convert to raw JavaScript object for SDK.
    *
@@ -131,6 +143,8 @@ final case class AgentDefinition(
     if background then obj.background = true
     memory.foreach(m => obj.memory = m)
     effort.foreach(e => obj.effort = e.toRaw)
+    observer.foreach(o => obj.observer = o)
+    observerMessage.foreach(m => obj.observerMessage = m)
     obj.asInstanceOf[js.Object]
   end toRaw
 
@@ -253,8 +267,10 @@ object AgentDefinition:
     }
     val maxTurnsField         = agent.maxTurns.map(mt => "maxTurns" -> Json.Num(mt))
     val criticalReminderField = agent.criticalSystemReminder.map(r => "criticalSystemReminder" -> Json.Str(r))
+    val observerField         = agent.observer.map(o => "observer" -> Json.Str(o))
+    val observerMessageField  = agent.observerMessage.map(m => "observerMessage" -> Json.Str(m))
     val fields                =
-      baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField ++ mcpServersField ++ skillsField ++ maxTurnsField ++ criticalReminderField
+      baseFields ++ toolsField ++ disallowedField ++ modelField ++ permissionField ++ hooksField ++ mcpServersField ++ skillsField ++ maxTurnsField ++ criticalReminderField ++ observerField ++ observerMessageField
     Json.Obj(zio.Chunk.fromIterable(fields)*)
   }
 
@@ -307,6 +323,8 @@ object AgentDefinition:
           skills = skillsList,
           maxTurns = maxTurnsOpt,
           criticalSystemReminder = criticalReminderOpt,
+          observer = fields.get("observer").flatMap(_.asString),
+          observerMessage = fields.get("observerMessage").flatMap(_.asString),
         )
       end for
     case _ => Left("Expected JSON object")
@@ -368,6 +386,21 @@ object AgentDefinition:
     /** Set critical system reminder (experimental). */
     def withCriticalSystemReminder(reminder: String): AgentDefinition =
       agent.copy(criticalSystemReminder = Some(reminder))
+
+    /**
+     * Attach a background observer agent (SDK 0.3.201).
+     *
+     * The named agent type is auto-spawned whenever this agent runs; it
+     * receives read-only activity digests and reports via the ObserverReport
+     * tool, never participating in the task itself.
+     *
+     * @param observerAgent
+     *   Agent type to spawn as the observer
+     * @param message
+     *   Optional supplemental postamble appended to each activity digest
+     */
+    def withObserver(observerAgent: String, message: Option[String] = None): AgentDefinition =
+      agent.copy(observer = Some(observerAgent), observerMessage = message)
 
     /**
      * Set maximum turns for this agent.

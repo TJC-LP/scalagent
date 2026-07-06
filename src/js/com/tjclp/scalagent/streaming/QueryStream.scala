@@ -32,6 +32,15 @@ trait RawQuery extends AsyncGenerator[js.Any, Unit, Unit]:
   /** Set maximum thinking tokens */
   def setMaxThinkingTokens(tokens: js.Any): js.Promise[Unit] = js.native
 
+  /** Set maximum thinking tokens and the thinking display mode (SDK 0.3.201) */
+  def setMaxThinkingTokens(tokens: js.Any, thinkingDisplay: js.Any): js.Promise[Unit] = js.native
+
+  /** Pin or clear a per-MCP-server permission-mode override (SDK 0.3.201) */
+  def setMcpPermissionModeOverride(serverName: String, mode: js.Any): js.Promise[js.Dynamic] = js.native
+
+  /** Re-send the initialize control request to an already-running CLI (SDK 0.3.201) */
+  def reinitialize(): js.Promise[js.Dynamic] = js.native
+
   /** Get supported slash commands */
   def supportedCommands(): js.Promise[js.Array[js.Dynamic]] = js.native
 
@@ -211,10 +220,64 @@ final class QueryStream private (rawQuery: RawQuery):
    *
    * @param tokens
    *   Maximum tokens, or None to disable limit
+   * @param thinkingDisplay
+   *   Thinking display mode for the rest of the session (SDK 0.3.201):
+   *   `Keep` (default) preserves the display mode from session start, `Clear`
+   *   resets to the API default, `Set(mode)` replaces it. Note a session
+   *   started with thinking disabled has no display mode, so re-enabling
+   *   thinking with `Keep` yields the API's default display.
    */
-  def setMaxThinkingTokens(tokens: Option[Int]): Task[Unit] =
+  def setMaxThinkingTokens(
+    tokens: Option[Int],
+    thinkingDisplay: ThinkingDisplayUpdate = ThinkingDisplayUpdate.Keep,
+  ): Task[Unit] =
     val jsTokens: js.Any = tokens.map(_.asInstanceOf[js.Any]).getOrElse(null)
-    ZIO.fromPromiseJS(rawQuery.setMaxThinkingTokens(jsTokens))
+    thinkingDisplay match
+      case ThinkingDisplayUpdate.Keep =>
+        ZIO.fromPromiseJS(rawQuery.setMaxThinkingTokens(jsTokens))
+      case ThinkingDisplayUpdate.Clear =>
+        ZIO.fromPromiseJS(rawQuery.setMaxThinkingTokens(jsTokens, null))
+      case ThinkingDisplayUpdate.Set(mode) =>
+        ZIO.fromPromiseJS(rawQuery.setMaxThinkingTokens(jsTokens, mode.toRaw))
+
+  /**
+   * Pin (or clear) a per-MCP-server permission-mode override (SDK 0.3.201).
+   *
+   * Tighten-only: the override applies only when the session mode would
+   * already auto-allow (bypassPermissions/auto), so it can never widen
+   * privilege. Only available in streaming input mode.
+   *
+   * @param serverName
+   *   The MCP server name (must match the name the server was registered under)
+   * @param mode
+   *   `Some(Default)` to force per-action prompts, `Some(Auto)` to route
+   *   through the auto-mode classifier, or `None` to clear the override
+   * @return
+   *   An optional warning — set when `serverName` does not match any currently
+   *   known MCP server. The override is stored regardless and applies once a
+   *   server with that exact name connects.
+   */
+  def setMcpPermissionModeOverride(
+    serverName: String,
+    mode: Option[McpPermissionModeOverride],
+  ): Task[Option[String]] =
+    val jsMode: js.Any = mode.map(_.toRaw.asInstanceOf[js.Any]).getOrElse(null)
+    ZIO
+      .fromPromiseJS(rawQuery.setMcpPermissionModeOverride(serverName, jsMode))
+      .map(result => result.warning.asInstanceOf[js.UndefOr[String]].toOption)
+
+  /**
+   * Re-send the `initialize` control request to an already-running CLI (SDK 0.3.201).
+   *
+   * Use after a transport gap (e.g. reattaching to a daemon): the CLI's
+   * response redelivers any control requests the loop is still blocked on.
+   * Unlike [[initializationResult]], this always sends a fresh request rather
+   * than returning the cached first-connect result.
+   */
+  def reinitialize: Task[InitializationResult] =
+    ZIO
+      .fromPromiseJS(rawQuery.reinitialize())
+      .map(InitializationResult.fromRaw)
 
   /**
    * Get MCP server connection status.
@@ -450,6 +513,37 @@ enum MessagePriority:
     case Next  => "next"
     case Later => "later"
 
+/** Thinking display mode for [[QueryStream.setMaxThinkingTokens]] (SDK 0.3.201) */
+enum ThinkingDisplay:
+  case Summarized, Omitted
+
+  def toRaw: String = this match
+    case Summarized => "summarized"
+    case Omitted    => "omitted"
+
+/**
+ * How [[QueryStream.setMaxThinkingTokens]] updates the session's thinking
+ * display mode (SDK 0.3.201): `Keep` leaves the mode from session start
+ * untouched, `Clear` resets to the API default, `Set` replaces it.
+ */
+enum ThinkingDisplayUpdate:
+  case Keep
+  case Clear
+  case Set(mode: ThinkingDisplay)
+
+/**
+ * Per-MCP-server permission-mode override for
+ * [[QueryStream.setMcpPermissionModeOverride]] (SDK 0.3.201). Tighten-only:
+ * `Default` forces per-action prompts; `Auto` routes through the auto-mode
+ * classifier.
+ */
+enum McpPermissionModeOverride:
+  case Default, Auto
+
+  def toRaw: String = this match
+    case Default => "default"
+    case Auto    => "auto"
+
 /** Information about a slash command */
 final case class SlashCommand(
   name: String,
@@ -467,7 +561,14 @@ object SlashCommand:
         .orElse(obj.args.asInstanceOf[js.UndefOr[String]].toOption),
     )
 
-/** Information about a supported model */
+/**
+ * Information about a supported model.
+ *
+ * @param resolvedModel
+ *   Canonical wire model id this row's `value` resolves to (e.g. `sonnet` →
+ *   `claude-sonnet-5`), letting hosts match a persisted explicit id against
+ *   the alias row that covers it (SDK 0.3.201).
+ */
 final case class ModelInfo(
   value: String,
   displayName: String,
@@ -476,7 +577,8 @@ final case class ModelInfo(
   supportedEffortLevels: Option[List[String]] = None,
   supportsAdaptiveThinking: Option[Boolean] = None,
   supportsFastMode: Option[Boolean] = None,
-  supportsAutoMode: Option[Boolean] = None)
+  supportsAutoMode: Option[Boolean] = None,
+  resolvedModel: Option[String] = None)
 
 object ModelInfo:
   def fromRaw(obj: js.Dynamic): ModelInfo =
@@ -490,6 +592,7 @@ object ModelInfo:
       supportsAdaptiveThinking = obj.supportsAdaptiveThinking.asInstanceOf[js.UndefOr[Boolean]].toOption,
       supportsFastMode = obj.supportsFastMode.asInstanceOf[js.UndefOr[Boolean]].toOption,
       supportsAutoMode = obj.supportsAutoMode.asInstanceOf[js.UndefOr[Boolean]].toOption,
+      resolvedModel = obj.resolvedModel.asInstanceOf[js.UndefOr[String]].toOption,
     )
 
 /** Information about a supported subagent */

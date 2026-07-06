@@ -282,6 +282,22 @@ object MessageConverter:
         guardedSystemEvent(raw, context, subtype) {
           parseMemoryRecallEvent(obj, raw)
         }
+      case Some("informational") =>
+        guardedSystemEvent(raw, context, subtype) {
+          parseInformationalEvent(obj, raw)
+        }
+      case Some("model_refusal_fallback") =>
+        guardedSystemEvent(raw, context, subtype) {
+          parseModelRefusalFallbackEvent(obj, raw)
+        }
+      case Some("model_refusal_no_fallback") =>
+        guardedSystemEvent(raw, context, subtype) {
+          parseModelRefusalNoFallbackEvent(obj, raw)
+        }
+      case Some("worker_shutting_down") =>
+        guardedSystemEvent(raw, context, subtype) {
+          parseWorkerShuttingDownEvent(obj, raw)
+        }
       case other =>
         SystemEvent.Unknown(unknownEnvelope(raw, "system", other, context))
 
@@ -680,6 +696,41 @@ object MessageConverter:
       )
     }
     SystemEvent.MemoryRecall(mode = mode, memories = memories)
+
+  private def parseInformationalEvent(obj: js.Dynamic, raw: Json): SystemEvent.Informational =
+    SystemEvent.Informational(
+      content = requiredString(obj, "content", raw),
+      level = InformationalLevel.fromString(requiredString(obj, "level", raw)),
+      toolUseId = stringField(obj, "tool_use_id").map(ToolUseId.apply),
+      preventContinuation = booleanField(obj, "prevent_continuation").getOrElse(false),
+    )
+
+  private def parseModelRefusalFallbackEvent(obj: js.Dynamic, raw: Json): SystemEvent.ModelRefusalFallback =
+    SystemEvent.ModelRefusalFallback(
+      originalModel = requiredString(obj, "original_model", raw),
+      fallbackModel = requiredString(obj, "fallback_model", raw),
+      content = stringField(obj, "content").getOrElse(""),
+      requestId = stringField(obj, "request_id"),
+      apiRefusalCategory = stringField(obj, "api_refusal_category"),
+      apiRefusalExplanation = stringField(obj, "api_refusal_explanation"),
+      retractedMessageUuids = stringArrayField(obj, "retracted_message_uuids").map(MessageUuid.apply),
+      refusedUserMessageUuid = stringField(obj, "refused_user_message_uuid").map(MessageUuid.apply),
+    )
+
+  private def parseModelRefusalNoFallbackEvent(obj: js.Dynamic, raw: Json): SystemEvent.ModelRefusalNoFallback =
+    SystemEvent.ModelRefusalNoFallback(
+      originalModel = requiredString(obj, "original_model", raw),
+      content = stringField(obj, "content").getOrElse(""),
+      requestId = stringField(obj, "request_id"),
+      apiRefusalCategory = stringField(obj, "api_refusal_category"),
+      apiRefusalExplanation = stringField(obj, "api_refusal_explanation"),
+      refusedUserMessageUuid = stringField(obj, "refused_user_message_uuid").map(MessageUuid.apply),
+    )
+
+  private def parseWorkerShuttingDownEvent(obj: js.Dynamic, raw: Json): SystemEvent.WorkerShuttingDown =
+    SystemEvent.WorkerShuttingDown(
+      reason = requiredString(obj, "reason", raw)
+    )
 
   private def parseMcpServer(server: js.Dynamic): Option[McpServerStatus] =
     for

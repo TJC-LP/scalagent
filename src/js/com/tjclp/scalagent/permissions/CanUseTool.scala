@@ -37,13 +37,19 @@ type CanUseTool = (ToolName, Json, PermissionContext) => Task[PermissionResult]
  *   Unique ID for this tool invocation
  * @param agentId
  *   Subagent ID if running in a subagent
+ * @param requestId
+ *   The control_request envelope's `request_id` (SDK 0.3.201). A
+ *   control_response sent out-of-band must echo this value for the worker to
+ *   match it; the facade always answers in-band, so this is informational
+ *   (e.g. for audit logs correlating decisions to wire requests).
  */
 final case class PermissionContext(
   suggestions: List[PermissionUpdate] = Nil,
   blockedPath: Option[String] = None,
   decisionReason: Option[String] = None,
   toolUseId: ToolUseId,
-  agentId: Option[SubagentId] = None)
+  agentId: Option[SubagentId] = None,
+  requestId: Option[String] = None)
 
 object CanUseTool:
   import scala.concurrent.ExecutionContext.Implicits.global
@@ -136,6 +142,7 @@ object CanUseTool:
       decisionReason = options.decisionReason.asInstanceOf[js.UndefOr[String]].toOption,
       toolUseId = ToolUseId(options.toolUseID.asInstanceOf[String]),
       agentId = options.agentID.asInstanceOf[js.UndefOr[String]].toOption.map(SubagentId.apply),
+      requestId = options.requestId.asInstanceOf[js.UndefOr[String]].toOption,
     )
 
   private def parseSuggestions(raw: js.Any): List[PermissionUpdate] =

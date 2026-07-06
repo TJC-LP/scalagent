@@ -110,6 +110,7 @@ object HookCallback:
     val transcriptPath = raw.transcript_path.asInstanceOf[String]
     val hookEvent      = firstString(raw, "hook_event", "hook_event_name").getOrElse("Unknown")
     val permissionMode = firstString(raw, "permission_mode", "permissionMode").map(PermissionMode.fromString)
+    val promptId       = firstString(raw, "prompt_id", "promptId")
     val baseAgentId    = firstString(raw, "agent_id", "agentId").map(SubagentId.apply)
     val baseAgentType  = firstString(raw, "agent_type", "agentType")
 
@@ -125,6 +126,7 @@ object HookCallback:
           agentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "PostToolUse" =>
@@ -139,6 +141,7 @@ object HookCallback:
           agentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "PostToolUseFailure" =>
@@ -154,6 +157,7 @@ object HookCallback:
           hookAgentType = baseAgentType,
           isInterrupt = optionalBoolean(raw, "is_interrupt").getOrElse(false),
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "PermissionRequest" =>
@@ -168,6 +172,7 @@ object HookCallback:
             .map(_.asInstanceOf[js.Array[js.Any]].toList.map(parseJson))
             .getOrElse(Nil),
           permissionMode = permissionMode,
+          promptId = promptId,
           toolUseId = firstString(raw, "tool_use_id", "toolUseId").map(ToolUseId.apply),
           agentId = baseAgentId,
           hookAgentType = baseAgentType,
@@ -187,6 +192,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "UserPromptSubmit" =>
@@ -198,6 +204,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "SessionStart" =>
@@ -212,6 +219,7 @@ object HookCallback:
           model = firstString(raw, "model"),
           hookAgentId = baseAgentId,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "SessionEnd" =>
@@ -223,6 +231,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
           totalCostUsd = optionalDouble(raw, "total_cost_usd", "totalCostUsd"),
         )
 
@@ -236,6 +245,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "StopFailure" =>
@@ -249,6 +259,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "SubagentStart" =>
@@ -259,6 +270,7 @@ object HookCallback:
           agentId = SubagentId(firstString(raw, "agent_id", "agentId").getOrElse("")),
           agentType = firstString(raw, "agent_type", "agentType").getOrElse(""),
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "SubagentStop" =>
@@ -272,6 +284,7 @@ object HookCallback:
           agentType = firstString(raw, "agent_type", "agentType").getOrElse(""),
           lastAssistantMessage = firstString(raw, "last_assistant_message", "lastAssistantMessage"),
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "PostCompact" =>
@@ -286,6 +299,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "PreCompact" =>
@@ -300,6 +314,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "Setup" =>
@@ -313,6 +328,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "TeammateIdle" =>
@@ -325,6 +341,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "TaskCompleted" =>
@@ -340,6 +357,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "Elicitation" =>
@@ -356,6 +374,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "ElicitationResult" =>
@@ -371,6 +390,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "ConfigChange" =>
@@ -383,6 +403,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "WorktreeCreate" =>
@@ -394,6 +415,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "WorktreeRemove" =>
@@ -405,6 +427,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "InstructionsLoaded" =>
@@ -427,6 +450,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "PermissionDenied" =>
@@ -441,6 +465,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "TaskCreated" =>
@@ -456,6 +481,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "CwdChanged" =>
@@ -468,6 +494,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "FileChanged" =>
@@ -480,6 +507,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case "MessageDisplay" =>
@@ -492,6 +520,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
 
       case other =>
@@ -504,6 +533,7 @@ object HookCallback:
           hookAgentId = baseAgentId,
           hookAgentType = baseAgentType,
           permissionMode = permissionMode,
+          promptId = promptId,
         )
     end match
   end parseHookInput
