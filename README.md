@@ -213,6 +213,11 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.10.1"
 - Bun (preferred) or Node.js 18+
 - `bun install` to fetch the TypeScript SDK and ZIO dependencies
 
+### Unreleased
+
+- Bump the Claude Agent SDK baseline to `^0.3.201` (from `^0.3.156`) and the Codex SDK to `^0.142.5` (from `^0.134.0`), with facade parity for the new SDK surface: observer agents, `promptId` on hook inputs, sandbox credential protection, per-MCP-server permission-mode overrides, `reinitialize`, thinking display control, and typed `informational` / `model_refusal_*` / `worker_shutting_down` system events. See `docs/COMPATIBILITY.md` for the full matrix.
+- **Binary compatibility**: several published case classes gained new defaulted fields (`HookInput.*`, `PermissionContext`, `SandboxSettings`, `ModelInfo`, `McpServerToolPolicy`, `AgentDefinition`). Source-compatible, but code compiled against earlier scalagent versions must be recompiled, and positional `unapply` extractors over these types need updating.
+
 ### 0.10.1 Notes
 
 Patch release fixing A2A inline file uploads.
