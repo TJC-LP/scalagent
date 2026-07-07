@@ -16,6 +16,7 @@ private[a2a] trait A2AServerCoreConfig:
   def agentCardAuth: A2AAgentCardAuth = A2AAgentCardAuth.permitAll
   def extendedAgentCardAuth: A2AExtendedAgentCardAuth
   def requestAuth: A2ARequestAuth
+  def orphanedRunReviver: Option[A2AOrphanedRunReviver]                                   = None
   def messageResponseOverride: Option[A2ARequest.MessageSend => Task[A2AMessage]]         = None
   def messageResponseSelector: Option[A2ARequest.MessageSend => Task[Option[A2AMessage]]] =
     messageResponseOverride.map(responder => params => responder(params).map(Some(_)))
@@ -97,6 +98,7 @@ private[a2a] object A2AServerCore:
       extendedAgentCardAuth = config.extendedAgentCardAuth,
       requestAuth = config.requestAuth,
       messageResponseSelector = config.messageResponseSelector,
+      orphanedRunReviver = config.orphanedRunReviver,
     )
     val requestHandler = A2ARequestHandler(
       requestConfig,

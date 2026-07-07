@@ -26,7 +26,8 @@ class A2AServerCoreSpec extends FunSuite:
     extendedAgentCardAuth: A2AExtendedAgentCardAuth = A2AExtendedAgentCardAuth.requireAuthorizationHeader,
     requestAuth: A2ARequestAuth = A2ARequestAuth.requireAuthorizationWhenAdvertised,
     messageResponseSelectorOverride: Option[A2ARequest.MessageSend => Task[Option[A2AMessage]]] = None,
-    override val messageResponseOverride: Option[A2ARequest.MessageSend => Task[A2AMessage]] = None)
+    override val messageResponseOverride: Option[A2ARequest.MessageSend => Task[A2AMessage]] = None,
+    override val orphanedRunReviver: Option[A2AOrphanedRunReviver] = None)
       extends A2AServerCoreConfig:
     override def messageResponseSelector: Option[A2ARequest.MessageSend => Task[Option[A2AMessage]]] =
       messageResponseSelectorOverride.orElse(super.messageResponseSelector)
@@ -149,7 +150,7 @@ class A2AServerCoreSpec extends FunSuite:
           status = TaskStatus.working(),
           history = List(userMessage),
         )
-        manager = ResultManager(taskStore, None, NoopPushSender, bus, registry, ServerCallContext(), userMessage)
+        manager = ResultManager(taskStore, None, NoopPushSender, bus, registry, ServerCallContext(), Some(userMessage))
         finalMessage = A2AMessage.agentText("done", Some(task.contextId)).copy(taskId = Some(task.id))
         finalEvent = A2AResponse.StreamEvent.TaskStatusUpdate(
           task.id,
@@ -268,7 +269,7 @@ class A2AServerCoreSpec extends FunSuite:
           status = TaskStatus.working(),
           history = List(userMessage),
         )
-        manager = ResultManager(taskStore, None, NoopPushSender, bus, registry, ServerCallContext(), userMessage)
+        manager = ResultManager(taskStore, None, NoopPushSender, bus, registry, ServerCallContext(), Some(userMessage))
         prompt = A2AMessage.agentText("need input", Some(task.contextId)).copy(taskId = Some(task.id))
         interruptedEvent = A2AResponse.StreamEvent.TaskStatusUpdate(
           task.id,
@@ -299,7 +300,7 @@ class A2AServerCoreSpec extends FunSuite:
           status = TaskStatus.working(),
           history = List(userMessage),
         )
-        manager = ResultManager(taskStore, None, NoopPushSender, bus, registry, ServerCallContext(), userMessage)
+        manager = ResultManager(taskStore, None, NoopPushSender, bus, registry, ServerCallContext(), Some(userMessage))
         finalMessage = A2AMessage.agentText("done", Some(contextId)).copy(taskId = Some(taskId))
         finalEvent = A2AResponse.StreamEvent.TaskStatusUpdate(
           taskId,
@@ -606,6 +607,189 @@ class A2AServerCoreSpec extends FunSuite:
 
     runTask(effect).map { loaded =>
       assertEquals(loaded.status.state, TaskState.Completed)
+    }
+
+  private def awaitTask(store: A2ATaskStore, id: TaskId)(p: A2ATask => Boolean): Task[A2ATask] =
+    def loop: Task[A2ATask] =
+      store.load(id, None).flatMap {
+        case Some(task) if p(task) => ZIO.succeed(task)
+        case _                     => ZIO.sleep(10.millis) *> loop
+      }
+    loop.timeoutFail(new TimeoutException(s"task ${id.value} never reached the expected state"))(10.seconds)
+
+  private def orphanedWorkingTask(taskId: TaskId, contextId: ContextId): A2ATask =
+    val prompt = A2AMessage.userText("run it").copy(taskId = Some(taskId), contextId = Some(contextId))
+    A2ATask(id = taskId, contextId = contextId, status = TaskStatus.working(), history = List(prompt))
+
+  test("reconcile revives an orphaned task when a reviver re-attaches a run"):
+    val taskId    = TaskId("revivable-task")
+    val contextId = ContextId("revivable-context")
+
+    val effect =
+      for
+        taskStore <- ZIO.succeed(A2ATaskStore.inMemory)
+        _         <- taskStore.save(orphanedWorkingTask(taskId, contextId), None)
+        registry  <- A2ARuntimeRegistry.make
+        done      <- Promise.make[Nothing, Unit]
+        reviver = new A2AOrphanedRunReviver:
+          def revive(task: A2ATask): Task[Option[A2AEventPublisher => Task[Unit]]] =
+            ZIO.some { publisher =>
+              publisher.publish(
+                A2AResponse.StreamEvent.TaskStatusUpdate(
+                  taskId,
+                  contextId,
+                  TaskStatus.completed(A2AMessage.agentText("revived and done", Some(contextId))),
+                  `final` = true,
+                )
+              ) *> done.succeed(()).unit
+            }
+        core = A2AServerCore.make(
+          TestConfig(taskStore = Some(taskStore), orphanedRunReviver = Some(reviver)),
+          runtime,
+          registry,
+          NoopPushPoster,
+          () => card("Revive"),
+          (_, _) => ZIO.unit,
+        )
+        polled <- core.requestHandler.getTask(A2ARequest.TasksGet(taskId), ServerCallContext())
+        _      <- done.await
+        result <- awaitTask(taskStore, taskId)(_.status.state == TaskState.Completed)
+      yield (polled.status.state, result.status.message.map(_.text))
+
+    runTask(effect).map { case (polledState, text) =>
+      assertEquals(polledState, TaskState.Working)
+      assertEquals(text, Some("revived and done"))
+    }
+
+  test("reconcile terminal-fails an orphaned task when the reviver declines"):
+    val taskId    = TaskId("declined-task")
+    val contextId = ContextId("declined-context")
+
+    val effect =
+      for
+        taskStore <- ZIO.succeed(A2ATaskStore.inMemory)
+        _         <- taskStore.save(orphanedWorkingTask(taskId, contextId), None)
+        registry  <- A2ARuntimeRegistry.make
+        reviver = new A2AOrphanedRunReviver:
+          def revive(task: A2ATask): Task[Option[A2AEventPublisher => Task[Unit]]] = ZIO.none
+        core = A2AServerCore.make(
+          TestConfig(taskStore = Some(taskStore), orphanedRunReviver = Some(reviver)),
+          runtime,
+          registry,
+          NoopPushPoster,
+          () => card("Decline"),
+          (_, _) => ZIO.unit,
+        )
+        loaded <- core.requestHandler.getTask(A2ARequest.TasksGet(taskId), ServerCallContext())
+      yield loaded
+
+    runTask(effect).map { loaded =>
+      assertEquals(loaded.status.state, TaskState.Failed)
+      assert(loaded.status.message.exists(_.text.contains("Task interrupted")))
+    }
+
+  test("reconcile terminal-fails an orphaned task when the reviver itself fails"):
+    val taskId    = TaskId("reviver-crash-task")
+    val contextId = ContextId("reviver-crash-context")
+
+    val effect =
+      for
+        taskStore <- ZIO.succeed(A2ATaskStore.inMemory)
+        _         <- taskStore.save(orphanedWorkingTask(taskId, contextId), None)
+        registry  <- A2ARuntimeRegistry.make
+        reviver = new A2AOrphanedRunReviver:
+          def revive(task: A2ATask): Task[Option[A2AEventPublisher => Task[Unit]]] =
+            ZIO.fail(new RuntimeException("probe blew up"))
+        core = A2AServerCore.make(
+          TestConfig(taskStore = Some(taskStore), orphanedRunReviver = Some(reviver)),
+          runtime,
+          registry,
+          NoopPushPoster,
+          () => card("ReviverCrash"),
+          (_, _) => ZIO.unit,
+        )
+        loaded <- core.requestHandler.getTask(A2ARequest.TasksGet(taskId), ServerCallContext())
+      yield loaded
+
+    runTask(effect).map { loaded =>
+      assertEquals(loaded.status.state, TaskState.Failed)
+      assert(loaded.status.message.exists(_.text.contains("Task interrupted")))
+    }
+
+  test("concurrent polls of an orphaned task revive at most one run"):
+    val taskId    = TaskId("race-revive-task")
+    val contextId = ContextId("race-revive-context")
+
+    val effect =
+      for
+        taskStore <- ZIO.succeed(A2ATaskStore.inMemory)
+        _         <- taskStore.save(orphanedWorkingTask(taskId, contextId), None)
+        registry  <- A2ARuntimeRegistry.make
+        starts    <- Ref.make(0)
+        gate      <- Promise.make[Nothing, Unit]
+        done      <- Promise.make[Nothing, Unit]
+        reviver = new A2AOrphanedRunReviver:
+          def revive(task: A2ATask): Task[Option[A2AEventPublisher => Task[Unit]]] =
+            ZIO.some { publisher =>
+              starts.update(_ + 1) *> gate.await *>
+                publisher.publish(
+                  A2AResponse.StreamEvent.TaskStatusUpdate(
+                    taskId,
+                    contextId,
+                    TaskStatus.completed(A2AMessage.agentText("raced", Some(contextId))),
+                    `final` = true,
+                  )
+                ) *> done.succeed(()).unit
+            }
+        core = A2AServerCore.make(
+          TestConfig(taskStore = Some(taskStore), orphanedRunReviver = Some(reviver)),
+          runtime,
+          registry,
+          NoopPushPoster,
+          () => card("Race"),
+          (_, _) => ZIO.unit,
+        )
+        pair  <- core.requestHandler
+          .getTask(A2ARequest.TasksGet(taskId), ServerCallContext())
+          .zipPar(core.requestHandler.getTask(A2ARequest.TasksGet(taskId), ServerCallContext()))
+        _     <- gate.succeed(())
+        _     <- done.await
+        count <- starts.get
+      yield (pair, count)
+
+    runTask(effect).map { case ((first, second), count) =>
+      assertEquals(count, 1)
+      assert(first.status.state != TaskState.Failed, "concurrent poll must not orphan-fail a revived task")
+      assert(second.status.state != TaskState.Failed, "concurrent poll must not orphan-fail a revived task")
+    }
+
+  test("a crashed revived run terminal-fails the task with the error detail"):
+    val taskId    = TaskId("revived-crash-task")
+    val contextId = ContextId("revived-crash-context")
+
+    val effect =
+      for
+        taskStore <- ZIO.succeed(A2ATaskStore.inMemory)
+        _         <- taskStore.save(orphanedWorkingTask(taskId, contextId), None)
+        registry  <- A2ARuntimeRegistry.make
+        reviver = new A2AOrphanedRunReviver:
+          def revive(task: A2ATask): Task[Option[A2AEventPublisher => Task[Unit]]] =
+            ZIO.some(_ => ZIO.fail(new RuntimeException("revival boom")))
+        core = A2AServerCore.make(
+          TestConfig(taskStore = Some(taskStore), orphanedRunReviver = Some(reviver)),
+          runtime,
+          registry,
+          NoopPushPoster,
+          () => card("RevivedCrash"),
+          (_, _) => ZIO.unit,
+        )
+        polled <- core.requestHandler.getTask(A2ARequest.TasksGet(taskId), ServerCallContext())
+        result <- awaitTask(taskStore, taskId)(_.status.state == TaskState.Failed)
+      yield (polled.status.state, result.status.message.map(_.text))
+
+    runTask(effect).map { case (polledState, text) =>
+      assertEquals(polledState, TaskState.Working)
+      assert(text.exists(_.contains("Error: revival boom")))
     }
 
   test("shared request handler can return message-only SendMessageResponse without creating a task"):

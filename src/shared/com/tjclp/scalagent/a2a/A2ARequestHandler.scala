@@ -18,7 +18,8 @@ private[a2a] object A2ARequestHandler:
     agentCardAuth: A2AAgentCardAuth,
     extendedAgentCardAuth: A2AExtendedAgentCardAuth,
     requestAuth: A2ARequestAuth,
-    messageResponseSelector: Option[MessageResponseSelector])
+    messageResponseSelector: Option[MessageResponseSelector],
+    orphanedRunReviver: Option[A2AOrphanedRunReviver] = None)
 
   final case class PreparedRun(
     message: A2AMessage,
@@ -160,30 +161,79 @@ private[a2a] final class A2ARequestHandler(
           // its bus (terminal-persist happens-before bus-removal in
           // ResultManager.publish), so "no bus" can mean "orphaned" OR "just
           // completed". Re-check the bus once more (catches a retry run that
-          // registered a fresh bus), then transition via the store's
-          // compare-and-set so a concurrent terminal write is honored, not
-          // clobbered, and a deleted task isn't resurrected.
+          // registered a fresh bus), then either revive (a configured reviver
+          // re-attaches a run to the still-live underlying work) or transition
+          // via the store's compare-and-set so a concurrent terminal write is
+          // honored, not clobbered, and a deleted task isn't resurrected.
           runtimeRegistry.bus(taskRuntimeKey(task.id, context)).flatMap {
             case Some(_) => ZIO.succeed(task)
             case None    =>
-              ZIO.logWarning(s"Reconciling orphaned non-terminal task ${task.id.value} -> failed") *>
-                taskStore
-                  .transformIfNotTerminal(task.id, context.tenant) { fresh =>
-                    val message = A2AMessage
-                      .agentText(
-                        "Task interrupted: no active run (the server restarted or the run ended without " +
-                          "completing). Resend the message to retry.",
-                        Some(fresh.contextId),
-                      )
-                      .copy(taskId = Some(fresh.id))
-                    fresh.copy(status = TaskStatus.failed(message))
-                  }
-                  .flatMap {
-                    case Some(result) => ZIO.succeed(result)
-                    case None         => ZIO.fail(A2AError.taskNotFound(task.id))
-                  }
+              config.orphanedRunReviver match
+                case Some(reviver) => reviveOrphaned(reviver, task, context)
+                case None          => failOrphaned(task, context)
           }
       }
+
+  private def failOrphaned(task: A2ATask, context: ServerCallContext): Task[A2ATask] =
+    ZIO.logWarning(s"Reconciling orphaned non-terminal task ${task.id.value} -> failed") *>
+      taskStore
+        .transformIfNotTerminal(task.id, context.tenant) { fresh =>
+          val message = A2AMessage
+            .agentText(
+              "Task interrupted: no active run (the server restarted or the run ended without " +
+                "completing). Resend the message to retry.",
+              Some(fresh.contextId),
+            )
+            .copy(taskId = Some(fresh.id))
+          fresh.copy(status = TaskStatus.failed(message))
+        }
+        .flatMap {
+          case Some(result) => ZIO.succeed(result)
+          case None         => ZIO.fail(A2AError.taskNotFound(task.id))
+        }
+
+  /**
+   * Ask the reviver for a replacement run and re-attach it under the task's
+   * runtime slot. The `reserve` is the mutex: concurrent reconciles (or a
+   * concurrent follow-up `prepare`) contend on it and at most one run forks —
+   * losers just return the task as-is (a bus now exists, so their callers see
+   * `working`). A decline or a reviver failure falls back to the terminal
+   * orphan failure, keeping the safety net convergent.
+   */
+  private def reviveOrphaned(
+    reviver: A2AOrphanedRunReviver,
+    task: A2ATask,
+    context: ServerCallContext,
+  ): Task[A2ATask] =
+    reviver
+      .revive(task)
+      .foldZIO(
+        error =>
+          ZIO.logWarning(
+            s"Orphan revival for task ${task.id.value} failed (${Option(error.getMessage).getOrElse(error.getClass.getName)}); falling back to terminal failure"
+          ) *> failOrphaned(task, context),
+        {
+          case None      => failOrphaned(task, context)
+          case Some(run) =>
+            val key = taskRuntimeKey(task.id, context)
+            runtimeRegistry.reserve(key, config.eventReplayLimit).flatMap {
+              case None      => ZIO.succeed(task)
+              case Some(bus) =>
+                // Re-load AFTER winning the slot: the task may have been
+                // canceled or terminal-failed while the decision ran.
+                taskStore.load(task.id, context.tenant).flatMap {
+                  case None =>
+                    runtimeRegistry.remove(key) *> ZIO.fail(A2AError.taskNotFound(task.id))
+                  case Some(fresh) if fresh.isStreamEnding =>
+                    runtimeRegistry.remove(key).as(fresh)
+                  case Some(fresh) =>
+                    ZIO.logInfo(
+                      s"Reviving orphaned non-terminal task ${task.id.value}: re-attaching a run"
+                    ) *> startRevivedRun(fresh, bus, run, context).as(fresh)
+                }
+            }
+        },
+      )
 
   def listTasks(params: A2ARequest.TasksList, context: ServerCallContext): Task[A2AResponse.ListTasksResult] =
     authorizeRequest(context) *> taskStore.list(params, context.tenant)
@@ -406,36 +456,90 @@ private[a2a] final class A2ARequestHandler(
     context: ServerCallContext,
   ): UIO[Fiber.Runtime[Throwable, Unit]] =
     val manager =
-      ResultManager(taskStore, eventPersister, pushSender, prepared.bus, runtimeRegistry, context, prepared.message)
-    val key = taskRuntimeKey(prepared.task.id, context)
-    val run =
+      ResultManager(
+        taskStore,
+        eventPersister,
+        pushSender,
+        prepared.bus,
+        runtimeRegistry,
+        context,
+        Some(prepared.message),
+      )
+    forkManagedRun(
+      prepared.task.id,
+      prepared.task.contextId,
+      context,
+      manager,
       manager.publish(A2AResponse.StreamEvent.TaskSnapshot(prepared.task)) *>
-        executeRun(prepared, manager)
-          .catchAll { error =>
-            val detail       = Option(error.getMessage).getOrElse(error.getClass.getName)
-            val errorMessage = A2AMessage
-              .agentText(s"Error: $detail", Some(prepared.task.contextId))
-              .copy(taskId = Some(prepared.task.id))
-            manager.publish(
-              A2AResponse.StreamEvent.TaskStatusUpdate(
-                prepared.task.id,
-                prepared.task.contextId,
-                TaskStatus.failed(errorMessage),
-                `final` = true,
-              )
+        executeRun(prepared, manager),
+    )
+  end startExecution
+
+  /**
+   * Fork a reviver-supplied run for an orphaned task under its (already
+   * reserved) bus. No initial `TaskSnapshot` is published — the task already
+   * exists and durable replay filters snapshots anyway; the run itself decides
+   * what to emit. `userMessage` for history-repair is reconstructed from the
+   * persisted history (revival has no in-flight `PreparedRun`).
+   */
+  private def startRevivedRun(
+    task: A2ATask,
+    bus: A2AEventBus,
+    run: A2AEventPublisher => Task[Unit],
+    context: ServerCallContext,
+  ): UIO[Fiber.Runtime[Throwable, Unit]] =
+    val manager =
+      ResultManager(
+        taskStore,
+        eventPersister,
+        pushSender,
+        bus,
+        runtimeRegistry,
+        context,
+        task.history.findLast(_.role == A2ARole.User),
+      )
+    forkManagedRun(task.id, task.contextId, context, manager, run(manager))
+
+  /**
+   * The shared run lifecycle: any failure becomes a terminal `failed` status,
+   * and the runtime entry is finished + removed exactly once at the end
+   * (unless a cancel already owned the shutdown).
+   */
+  private def forkManagedRun(
+    taskId: TaskId,
+    contextId: ContextId,
+    context: ServerCallContext,
+    manager: ResultManager,
+    body: Task[Unit],
+  ): UIO[Fiber.Runtime[Throwable, Unit]] =
+    val key = taskRuntimeKey(taskId, context)
+    val run =
+      body
+        .catchAll { error =>
+          val detail       = Option(error.getMessage).getOrElse(error.getClass.getName)
+          val errorMessage = A2AMessage
+            .agentText(s"Error: $detail", Some(contextId))
+            .copy(taskId = Some(taskId))
+          manager.publish(
+            A2AResponse.StreamEvent.TaskStatusUpdate(
+              taskId,
+              contextId,
+              TaskStatus.failed(errorMessage),
+              `final` = true,
             )
-          }
-          .ensuring(
-            runtimeRegistry.isCanceled(key).flatMap { canceled =>
-              if canceled then ZIO.unit else manager.finish
-            } *> runtimeRegistry.remove(key)
           )
+        }
+        .ensuring(
+          runtimeRegistry.isCanceled(key).flatMap { canceled =>
+            if canceled then ZIO.unit else manager.finish
+          } *> runtimeRegistry.remove(key)
+        )
     ZIO
       .succeed {
         Unsafe.unsafe { implicit unsafe => runtime.unsafe.fork(run) }
       }
       .tap(fiber => runtimeRegistry.attachFiber(key, fiber))
-  end startExecution
+  end forkManagedRun
 
   private def waitForFinal(
     taskId: TaskId,

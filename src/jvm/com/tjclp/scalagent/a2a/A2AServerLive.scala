@@ -42,6 +42,7 @@ object A2AServerLive:
     skills: List[AgentSkill] = Nil,
     extendedAgentCard: Option[AgentCard] = None,
     executionOverride: Option[(A2AMessage, TaskId, ContextId, A2AEventPublisher) => Task[Unit]] = None,
+    override val orphanedRunReviver: Option[A2AOrphanedRunReviver] = None,
     pushNotificationStore: Option[A2APushNotificationStore] = None,
     taskStore: Option[A2ATaskStore] = None,
     eventStore: Option[A2AEventStore] = None,
@@ -142,10 +143,10 @@ private[a2a] final class A2AServerLiveImpl(
           // they'd 413. disableRequestStreaming keeps full-body aggregation
           // (the routes parse the whole JSON-RPC body) with the larger cap.
           serverEnv <- (ZLayer.succeed(
-                         Server.Config.default
-                           .binding(config.host, config.port)
-                           .disableRequestStreaming(config.maxRequestBodyBytes)
-                       ) >>> Server.live)
+            Server.Config.default
+              .binding(config.host, config.port)
+              .disableRequestStreaming(config.maxRequestBodyBytes)
+          ) >>> Server.live)
             .build(scope)
           _ <- Server.install(a2aRoutes).provideEnvironment(serverEnv)
           _ <- startGrpcServer
