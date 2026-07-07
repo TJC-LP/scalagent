@@ -1,6 +1,6 @@
 # Compatibility Matrix
 
-Baseline: `@anthropic-ai/claude-agent-sdk` `^0.3.156`, `@openai/codex-sdk` `^0.134.0`
+Baseline: `@anthropic-ai/claude-agent-sdk` `^0.3.201`, `@openai/codex-sdk` `^0.142.5`
 
 This document tracks the current compatibility posture of `scalagent` against the installed TypeScript SDK baseline.
 
@@ -9,6 +9,20 @@ This document tracks the current compatibility posture of `scalagent` against th
 | Surface | Status | Notes |
 |--------|--------|-------|
 | `Options` core fields | Exact / adapted mirror | Strongly-typed Scala wrappers over SDK options such as `model`, `cwd`, `systemPrompt`, `tools`, `allowedTools`, `disallowedTools`, `maxTurns`, `mcpServers`, `thinking`, `effort`, `promptSuggestions`, `sessionId`, debug controls, `executable`, `executableArgs`, `pathToClaudeCodeExecutable`, `permissionPromptToolName`, and `stderr`. |
+| `AgentDefinition.observer` / `observerMessage` (SDK 0.3.201) | Exact mirror | Background observer agent auto-spawned per run; `AgentDefinition.withObserver(...)`. |
+| `CanUseTool` `options.requestId` (SDK 0.3.201) | Adapted mirror | Exposed as `PermissionContext.requestId` for audit correlation. The nullable return (out-of-band control_response) is intentionally not wrapped — the facade always answers in-band. |
+| `Query.reinitialize` (SDK 0.3.201) | Exact mirror | `QueryStream.reinitialize` re-sends the initialize control request after a transport gap. |
+| `Query.setMcpPermissionModeOverride` (SDK 0.3.201) | Exact mirror | `QueryStream.setMcpPermissionModeOverride(serverName, Option[McpPermissionModeOverride])`; returns the optional warning. |
+| `Query.setMaxThinkingTokens` `thinkingDisplay` (SDK 0.3.201) | Adapted mirror | Omitted/null/value tri-state modeled as `ThinkingDisplayUpdate.{Keep, Clear, Set}`. |
+| `BaseHookInput.prompt_id` (SDK 0.3.201) | Exact mirror | `HookInput.promptId` on every hook input; joins hook output to OTel events at prompt grain. |
+| `sandbox.credentials` + `allowAppleEvents` (SDK 0.3.201) | Exact mirror | `SandboxCredentialsConfig` (file deny rules, env var deny/mask rules with `injectHosts`, `allowPlaintextInject`) and `SandboxSettings.withAllowAppleEvents`. |
+| `system/informational` (SDK 0.3.201) | Exact mirror | `SystemEvent.Informational(content, level, toolUseId, preventContinuation)` with `InformationalLevel` enum. |
+| `system/model_refusal_fallback` + `model_refusal_no_fallback` (SDK 0.3.201) | Exact mirror | `SystemEvent.ModelRefusalFallback` / `ModelRefusalNoFallback` with refusal category/explanation and retraction uuids. |
+| `system/worker_shutting_down` (SDK 0.3.201) | Exact mirror | `SystemEvent.WorkerShuttingDown(reason)`; live-tail signal only. |
+| `ModelInfo.resolvedModel` (SDK 0.3.201) | Exact mirror | Canonical wire model id an alias row resolves to. |
+| `listSessions.includeProgrammatic` (SDK 0.3.201) | Exact mirror | `Claude.listSessions(..., includeProgrammatic = false)` filters SDK/daemon sessions. |
+| `McpServerToolPolicy.org_max_permission` (SDK 0.3.201) | Exact mirror | `McpOrgMaxPermission` enum (`allow` / `ask` / `blocked`); SDK-side `permission_policy` optionality not mirrored (facade is write-side). |
+| `SDKConversationResetMessage` / `SDKControlRequestProgressMessage` (SDK 0.3.201) | Structural fallback | Referenced in the SDKMessage union but not declared in the published d.ts; preserved as `AgentMessage.Unknown`. |
 | `AgentDefinition.maxTurns` | Exact mirror | Per-agent turn limit exposed via builder and JSON codecs. |
 | `agentProgressSummaries` | Exact mirror | Enables periodic AI-generated progress summaries for subagents. |
 | `TaskProgress.summary` | Exact mirror | AI-generated progress summary text on task_progress events. |

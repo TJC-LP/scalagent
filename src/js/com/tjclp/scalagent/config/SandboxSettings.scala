@@ -38,6 +38,12 @@ import zio.json.*
  *   Needed for Go-based CLI tools (gh, gcloud, terraform, etc.) to verify TLS
  *   certificates when using httpProxyPort with a MITM proxy and custom CA.
  *   Reduces security. Default: false
+ * @param allowAppleEvents
+ *   macOS only: Allow sandboxed commands to send Apple Events (SDK 0.3.201).
+ *   Needed for `open`, `osascript`, and browser-based auth flows that open
+ *   URLs. Removes code-execution isolation. Default: false
+ * @param credentials
+ *   Credential protection rules for sandboxed commands (SDK 0.3.201)
  */
 final case class SandboxSettings(
   enabled: Boolean = true,
@@ -50,7 +56,9 @@ final case class SandboxSettings(
   excludedCommands: List[String] = Nil,
   ripgrep: Option[RipgrepConfig] = None,
   filesystem: Option[SandboxFilesystemConfig] = None,
-  failIfUnavailable: Boolean = false):
+  failIfUnavailable: Boolean = false,
+  allowAppleEvents: Boolean = false,
+  credentials: Option[SandboxCredentialsConfig] = None):
   /** Convert to raw JavaScript object for SDK */
   def toRaw: js.Object =
     val obj = js.Dynamic.literal(enabled = enabled)
@@ -74,6 +82,8 @@ final case class SandboxSettings(
     filesystem.foreach(fs => obj.filesystem = fs.toRaw)
 
     if failIfUnavailable then obj.failIfUnavailable = true
+    if allowAppleEvents then obj.allowAppleEvents = true
+    credentials.foreach(c => obj.credentials = c.toRaw)
 
     obj.asInstanceOf[js.Object]
   end toRaw
@@ -128,6 +138,18 @@ object SandboxSettings:
     /** Fail if sandbox is unavailable on this platform. */
     def withFailIfUnavailable: SandboxSettings =
       ss.copy(failIfUnavailable = true)
+
+    /**
+     * macOS only: Allow sandboxed commands to send Apple Events (SDK 0.3.201).
+     * Removes code-execution isolation — sandboxed commands can launch other
+     * applications unsandboxed and script running apps.
+     */
+    def withAllowAppleEvents: SandboxSettings =
+      ss.copy(allowAppleEvents = true)
+
+    /** Set credential protection rules for sandboxed commands (SDK 0.3.201). */
+    def withCredentials(config: SandboxCredentialsConfig): SandboxSettings =
+      ss.copy(credentials = Some(config))
   end extension
 end SandboxSettings
 
@@ -223,6 +245,94 @@ final case class SandboxFilesystemConfig(
 object SandboxFilesystemConfig:
   given JsonDecoder[SandboxFilesystemConfig] = DeriveJsonDecoder.gen[SandboxFilesystemConfig]
   given JsonEncoder[SandboxFilesystemConfig] = DeriveJsonEncoder.gen[SandboxFilesystemConfig]
+
+/**
+ * Credential protection rules for sandboxed commands (SDK 0.3.201).
+ *
+ * @param files
+ *   Credential files or directories to protect; reads are blocked inside the sandbox
+ * @param envVars
+ *   Environment variables to protect (deny = unset; mask = sentinel value,
+ *   real value injected at the proxy)
+ * @param allowPlaintextInject
+ *   Allow sentinel→real substitution on the plain-HTTP proxy path. Defaults
+ *   to false: without TLS termination the upstream identity is unverified and
+ *   the credential travels in cleartext. Set only for trusted-network test
+ *   fixtures.
+ */
+final case class SandboxCredentialsConfig(
+  files: List[CredentialFileRule] = Nil,
+  envVars: List[CredentialEnvVarRule] = Nil,
+  allowPlaintextInject: Boolean = false):
+  def toRaw: js.Object =
+    val obj = js.Dynamic.literal()
+    if files.nonEmpty then obj.files = files.map(_.toRaw).toJSArray
+    if envVars.nonEmpty then obj.envVars = envVars.map(_.toRaw).toJSArray
+    if allowPlaintextInject then obj.allowPlaintextInject = true
+    obj.asInstanceOf[js.Object]
+
+object SandboxCredentialsConfig:
+  given JsonDecoder[SandboxCredentialsConfig] = DeriveJsonDecoder.gen[SandboxCredentialsConfig]
+  given JsonEncoder[SandboxCredentialsConfig] = DeriveJsonEncoder.gen[SandboxCredentialsConfig]
+
+/**
+ * A credential file or directory to protect (SDK 0.3.201). Reads inside the
+ * sandbox are denied (the only supported mode).
+ *
+ * @param path
+ *   Absolute, ~-expanded, or relative to the settings file root
+ */
+final case class CredentialFileRule(path: String):
+  def toRaw: js.Object =
+    js.Dynamic.literal(path = path, mode = "deny").asInstanceOf[js.Object]
+
+object CredentialFileRule:
+  given JsonDecoder[CredentialFileRule] = DeriveJsonDecoder.gen[CredentialFileRule]
+  given JsonEncoder[CredentialFileRule] = DeriveJsonEncoder.gen[CredentialFileRule]
+
+/**
+ * An environment variable to protect in the sandbox (SDK 0.3.201).
+ *
+ * @param name
+ *   Environment variable name
+ * @param mode
+ *   `Deny` unsets the variable for sandboxed commands; `Mask` shows sandboxed
+ *   commands a sentinel and the host proxy swaps sentinel→real on egress
+ * @param injectHosts
+ *   Optional narrowing of where the proxy substitutes this credential. Only
+ *   meaningful for `Mask`; defaults to `network.allowedDomains` when empty
+ */
+final case class CredentialEnvVarRule(
+  name: String,
+  mode: CredentialEnvVarMode,
+  injectHosts: List[String] = Nil):
+  def toRaw: js.Object =
+    val obj = js.Dynamic.literal(name = name, mode = mode.toRaw)
+    if injectHosts.nonEmpty then obj.injectHosts = injectHosts.toJSArray
+    obj.asInstanceOf[js.Object]
+
+object CredentialEnvVarRule:
+  given JsonDecoder[CredentialEnvVarRule] = DeriveJsonDecoder.gen[CredentialEnvVarRule]
+  given JsonEncoder[CredentialEnvVarRule] = DeriveJsonEncoder.gen[CredentialEnvVarRule]
+
+/** Access mode for a protected environment variable (SDK 0.3.201) */
+enum CredentialEnvVarMode:
+  case Deny
+  case Mask
+
+  def toRaw: String = this match
+    case Deny => "deny"
+    case Mask => "mask"
+
+object CredentialEnvVarMode:
+  import com.tjclp.scalagent.json.StringEnumJsonCodec
+
+  given JsonEncoder[CredentialEnvVarMode] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[CredentialEnvVarMode] = StringEnumJsonCodec.decoderOrFail {
+    case "deny" => Right(Deny)
+    case "mask" => Right(Mask)
+    case other  => Left(s"Unknown credential env var mode: $other")
+  }
 
 /**
  * Ripgrep configuration for sandbox.

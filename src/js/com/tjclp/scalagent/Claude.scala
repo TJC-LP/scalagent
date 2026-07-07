@@ -219,6 +219,10 @@ object Claude:
    *   Maximum number of sessions to return (default: 50)
    * @param includeWorktrees
    *   When dir is inside a git repo, include sessions from all worktree paths (default: true)
+   * @param includeProgrammatic
+   *   Include programmatic/headless sessions (SDK entrypoints) and
+   *   daemon/daemon-worker sessions (default: true). Session pickers pass
+   *   false for parity with terminal `/resume`. SDK 0.3.201.
    * @return
    *   A list of session info objects
    */
@@ -226,13 +230,23 @@ object Claude:
     dir: String,
     limit: Int = 50,
     includeWorktrees: Boolean = true,
+    includeProgrammatic: Boolean = true,
   ): IO[AgentError, List[SessionInfo]] =
-    val opts = js.Dynamic.literal(dir = dir, limit = limit)
-    if !includeWorktrees then opts.includeWorktrees = false
     ZIO
-      .fromPromiseJS(SdkModule.listSessions(opts))
+      .fromPromiseJS(SdkModule.listSessions(listSessionsOptions(dir, limit, includeWorktrees, includeProgrammatic)))
       .map(_.toList.map(SessionInfo.fromRaw))
       .mapError(AgentError.fromThrowable)
+
+  private[scalagent] def listSessionsOptions(
+    dir: String,
+    limit: Int,
+    includeWorktrees: Boolean,
+    includeProgrammatic: Boolean,
+  ): js.Dynamic =
+    val opts = js.Dynamic.literal(dir = dir, limit = limit)
+    if !includeWorktrees then opts.includeWorktrees = false
+    if !includeProgrammatic then opts.includeProgrammatic = false
+    opts
 
   /**
    * Get the messages from a previous session's transcript.

@@ -66,6 +66,16 @@ enum ToolName(val raw: String):
   /** Background script event watcher tool. Added in SDK 0.3.x. */
   case Monitor extends ToolName("Monitor")
 
+  /** Report code-review findings as a typed list. Added in SDK 0.3.201. */
+  case ReportFindings extends ToolName("ReportFindings")
+
+  // MCP resource tools
+  case ListMcpResources extends ToolName("ListMcpResources")
+  case ReadMcpResource  extends ToolName("ReadMcpResource")
+
+  /** List a directory MCP resource's children. Added in SDK 0.3.201. */
+  case ReadMcpResourceDir extends ToolName("ReadMcpResourceDir")
+
   // MCP tools (context7)
   case McpResolveLibraryId extends ToolName("mcp__context7__resolve-library-id")
   case McpGetLibraryDocs   extends ToolName("mcp__context7__get-library-docs")
@@ -123,6 +133,14 @@ object ToolName:
     case "SlashCommand" => SlashCommand
     case "Skill"        => Skill
     case "Monitor"      => Monitor
+
+    // Review reporting
+    case "ReportFindings" => ReportFindings
+
+    // MCP resource tools
+    case "ListMcpResources"   => ListMcpResources
+    case "ReadMcpResource"    => ReadMcpResource
+    case "ReadMcpResourceDir" => ReadMcpResourceDir
 
     // MCP tools
     case "mcp__context7__resolve-library-id" => McpResolveLibraryId

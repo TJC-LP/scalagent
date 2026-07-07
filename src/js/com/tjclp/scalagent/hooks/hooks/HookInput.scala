@@ -23,6 +23,14 @@ sealed trait HookInput:
   /** Path to the transcript file */
   def transcriptPath: String
 
+  /**
+   * UUID correlating a user prompt with all subsequent events until the next
+   * prompt (SDK 0.3.201). Matches the `prompt.id` attribute on OpenTelemetry
+   * events, so hook output can be joined to OTel events at prompt grain.
+   * Absent until the first user input of the process lifetime.
+   */
+  def promptId: Option[String]
+
   /** Permission mode active for this session */
   def permissionMode: Option[PermissionMode]
 
@@ -52,7 +60,8 @@ object HookInput:
     toolUseId: ToolUseId,
     agentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput:
     def hookAgentId: Option[SubagentId] = agentId
 
@@ -67,7 +76,8 @@ object HookInput:
     toolResponse: String,
     agentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput:
     def hookAgentId: Option[SubagentId] = agentId
 
@@ -83,7 +93,8 @@ object HookInput:
     agentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
     isInterrupt: Boolean = false,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput:
     def hookAgentId: Option[SubagentId] = agentId
 
@@ -101,7 +112,8 @@ object HookInput:
     hookAgentType: Option[String] = None,
     title: Option[String] = None,
     displayName: Option[String] = None,
-    description: Option[String] = None)
+    description: Option[String] = None,
+    promptId: Option[String] = None)
       extends HookInput:
     def hookAgentId: Option[SubagentId] = agentId
 
@@ -115,7 +127,8 @@ object HookInput:
     notificationType: String = "info",
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for UserPromptSubmit hook */
@@ -126,7 +139,8 @@ object HookInput:
     prompt: String,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for SessionStart hook */
@@ -138,7 +152,8 @@ object HookInput:
     agentType: Option[String] = None,
     model: Option[String] = None,
     hookAgentId: Option[SubagentId] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput:
     def hookAgentType: Option[String] = agentType
 
@@ -151,7 +166,8 @@ object HookInput:
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
     permissionMode: Option[PermissionMode] = None,
-    totalCostUsd: Option[Double] = None)
+    totalCostUsd: Option[Double] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for Stop hook */
@@ -163,7 +179,8 @@ object HookInput:
     lastAssistantMessage: Option[String] = None,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for StopFailure hook - triggered when agent fails to stop cleanly */
@@ -176,7 +193,8 @@ object HookInput:
     lastAssistantMessage: Option[String] = None,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for SubagentStart hook */
@@ -186,7 +204,8 @@ object HookInput:
     transcriptPath: String,
     agentId: SubagentId,
     agentType: String,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput:
     def hookAgentId: Option[SubagentId] = Some(agentId)
     def hookAgentType: Option[String]   = Some(agentType)
@@ -207,7 +226,8 @@ object HookInput:
     agentTranscriptPath: String,
     agentType: String,
     lastAssistantMessage: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput:
     def hookAgentId: Option[SubagentId] = Some(agentId)
     def hookAgentType: Option[String]   = Some(agentType)
@@ -217,6 +237,7 @@ object HookInput:
 
     @deprecated("Use agentType", "0.2.63")
     def subagentType: String = agentType
+  end SubagentStop
 
   /** Input for PostCompact hook - after context compaction completes */
   final case class PostCompact(
@@ -227,7 +248,8 @@ object HookInput:
     compactSummary: String,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for PreCompact hook - before context compaction */
@@ -239,7 +261,8 @@ object HookInput:
     customInstructions: Option[String] = None,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for Setup hook */
@@ -250,7 +273,8 @@ object HookInput:
     trigger: SetupTrigger,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for TeammateIdle hook - multi-agent coordination */
@@ -262,7 +286,8 @@ object HookInput:
     teamName: String,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for TaskCompleted hook */
@@ -277,7 +302,8 @@ object HookInput:
     teamName: Option[String] = None,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for Elicitation hook - MCP elicitation request */
@@ -293,7 +319,8 @@ object HookInput:
     requestedSchema: Option[Json] = None,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for ElicitationResult hook */
@@ -308,7 +335,8 @@ object HookInput:
     content: Option[Json] = None,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for ConfigChange hook */
@@ -320,7 +348,8 @@ object HookInput:
     filePath: Option[String] = None,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for WorktreeCreate hook */
@@ -331,7 +360,8 @@ object HookInput:
     name: String,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for WorktreeRemove hook */
@@ -342,7 +372,8 @@ object HookInput:
     worktreePath: String,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for InstructionsLoaded hook - when CLAUDE.md or memory files are loaded */
@@ -358,7 +389,8 @@ object HookInput:
     parentFilePath: Option[String] = None,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for PermissionDenied hook - when a tool permission is denied */
@@ -372,7 +404,8 @@ object HookInput:
     reason: Option[String] = None,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for TaskCreated hook - when a background task is created */
@@ -387,7 +420,8 @@ object HookInput:
     teamName: Option[String] = None,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for CwdChanged hook - when the working directory changes */
@@ -399,7 +433,8 @@ object HookInput:
     newCwd: String,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for FileChanged hook - when a watched file changes */
@@ -411,7 +446,8 @@ object HookInput:
     event: FileChangeEvent,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 
   /** Input for MessageDisplay hook - before assistant text is displayed */
@@ -423,7 +459,8 @@ object HookInput:
     finalContent: Option[String] = None,
     hookAgentId: Option[SubagentId] = None,
     hookAgentType: Option[String] = None,
-    permissionMode: Option[PermissionMode] = None)
+    permissionMode: Option[PermissionMode] = None,
+    promptId: Option[String] = None)
       extends HookInput
 end HookInput
 

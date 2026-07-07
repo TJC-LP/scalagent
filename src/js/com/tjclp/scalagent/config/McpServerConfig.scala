@@ -150,18 +150,47 @@ end McpServerConfig
  *
  * Carried on `mcp_set_servers` for HTTP and SSE server configs. Specifies
  * whether a given tool is always allowed, always prompts, or always denied.
+ *
+ * @param orgMaxPermission
+ *   Org admin's per-tool ceiling (SDK 0.3.201). Drives the auto-mode
+ *   `isOrgAskCeiling` gate, so an admin `Ask` cap forces a user prompt even in
+ *   auto mode.
  */
 final case class McpServerToolPolicy(
   name: ToolName,
-  policy: McpToolPolicy):
+  policy: McpToolPolicy,
+  orgMaxPermission: Option[McpOrgMaxPermission] = None):
   def toRaw: js.Object =
-    js.Dynamic
-      .literal(name = name.raw, permission_policy = policy.toRaw)
-      .asInstanceOf[js.Object]
+    val obj = js.Dynamic.literal(name = name.raw, permission_policy = policy.toRaw)
+    orgMaxPermission.foreach(p => obj.org_max_permission = p.toRaw)
+    obj.asInstanceOf[js.Object]
 
 object McpServerToolPolicy:
   given JsonDecoder[McpServerToolPolicy] = DeriveJsonDecoder.gen[McpServerToolPolicy]
   given JsonEncoder[McpServerToolPolicy] = DeriveJsonEncoder.gen[McpServerToolPolicy]
+
+/** Org admin's per-tool permission ceiling for MCP tools (SDK 0.3.201). */
+enum McpOrgMaxPermission:
+  case Allow
+  case Ask
+  case Blocked
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Allow     => "allow"
+    case Ask       => "ask"
+    case Blocked   => "blocked"
+    case Custom(v) => v
+
+object McpOrgMaxPermission:
+  given JsonEncoder[McpOrgMaxPermission] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[McpOrgMaxPermission] = StringEnumJsonCodec.decoder(fromString)
+
+  def fromString(s: String): McpOrgMaxPermission = s match
+    case "allow"   => Allow
+    case "ask"     => Ask
+    case "blocked" => Blocked
+    case other     => Custom(other)
 
 /** Allowed values for a per-tool MCP permission policy (SDK 0.2.111). */
 enum McpToolPolicy:

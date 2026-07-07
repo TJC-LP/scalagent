@@ -48,6 +48,27 @@ class HookCallbackSpec extends FunSuite:
       case other => fail(s"Expected TeammateIdle, got: $other")
     }
 
+  test("parseHookInput surfaces prompt_id when present (SDK 0.3.201)"):
+    val raw = baseInput("UserPromptSubmit")
+    raw.prompt = "hello"
+    raw.prompt_id = "prompt-uuid-1"
+
+    parseInput(raw).map {
+      case input: HookInput.UserPromptSubmit =>
+        assertEquals(input.promptId, Some("prompt-uuid-1"))
+      case other => fail(s"Expected UserPromptSubmit, got: $other")
+    }
+
+  test("parseHookInput leaves promptId empty when prompt_id is absent"):
+    val raw = baseInput("PreToolUse")
+    raw.tool_name = "Bash"
+    raw.tool_input = js.Dynamic.literal(command = "ls")
+    raw.tool_use_id = "tool-1"
+
+    parseInput(raw).map { input =>
+      assertEquals(input.promptId, None)
+    }
+
   test("parseHookInput handles TaskCompleted"):
     val raw = baseInput("TaskCompleted")
     raw.task_id = "task-99"

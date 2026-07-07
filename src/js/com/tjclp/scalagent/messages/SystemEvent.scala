@@ -3,6 +3,7 @@ package com.tjclp.scalagent.messages
 import com.tjclp.scalagent.json.StringEnumJsonCodec
 import com.tjclp.scalagent.config.{CommandName, FastModeState, Model, OutputStyle, PermissionMode, SkillName}
 import com.tjclp.scalagent.tools.ToolName
+import com.tjclp.scalagent.types.{MessageUuid, ToolUseId}
 import zio.json.*
 
 /** System-level events emitted during agent execution */
@@ -79,6 +80,52 @@ enum SystemEvent:
     mode: MemoryRecallMode,
     memories: List[RecalledMemory])
 
+  /**
+   * Generic text banner emitted by the loop (SDK 0.3.201) — non-error status
+   * lines, hook feedback (e.g. a UserPromptSubmit hook's block reason), and
+   * slash-command output. Render `content` as plaintext at the given level.
+   */
+  case Informational(
+    content: String,
+    level: InformationalLevel,
+    toolUseId: Option[ToolUseId] = None,
+    preventContinuation: Boolean = false)
+
+  /**
+   * Emitted when a model refusal triggered a retry on the configured fallback
+   * model (SDK 0.3.201). `retractedMessageUuids` is a resolution-time eviction
+   * signal: remove those messages from transcript state on receipt.
+   */
+  case ModelRefusalFallback(
+    originalModel: String,
+    fallbackModel: String,
+    content: String,
+    requestId: Option[String] = None,
+    apiRefusalCategory: Option[String] = None,
+    apiRefusalExplanation: Option[String] = None,
+    retractedMessageUuids: List[MessageUuid] = Nil,
+    refusedUserMessageUuid: Option[MessageUuid] = None)
+
+  /**
+   * Emitted when the model ends the stream with stop_reason "refusal" and no
+   * fallback model is configured, so the turn ends as an error (SDK 0.3.201).
+   */
+  case ModelRefusalNoFallback(
+    originalModel: String,
+    content: String,
+    requestId: Option[String] = None,
+    apiRefusalCategory: Option[String] = None,
+    apiRefusalExplanation: Option[String] = None,
+    refusedUserMessageUuid: Option[MessageUuid] = None)
+
+  /**
+   * Emitted on opt-in graceful worker teardown, before the heartbeat stops
+   * (SDK 0.3.201). Treat as a live-tail signal only — a resumed session may
+   * replay historical instances mid-stream.
+   */
+  case WorkerShuttingDown(
+    reason: String)
+
   /** Forward-compatible fallback for unknown system events */
   case Unknown(
     envelope: UnknownEnvelope)
@@ -130,6 +177,36 @@ object CompactTrigger:
     case "manual" => Manual
     case "auto"   => Auto
     case other    => Custom(other)
+
+/**
+ * Render level for [[SystemEvent.Informational]] banners (SDK 0.3.201).
+ * `Info` shows only in transcript mode; `Notice` renders in inactive gray;
+ * `Suggestion` and `Warning` are more prominent.
+ */
+enum InformationalLevel:
+  case Info
+  case Notice
+  case Suggestion
+  case Warning
+  case Custom(value: String)
+
+  def toRaw: String = this match
+    case Info       => "info"
+    case Notice     => "notice"
+    case Suggestion => "suggestion"
+    case Warning    => "warning"
+    case Custom(v)  => v
+
+object InformationalLevel:
+  given JsonEncoder[InformationalLevel] = StringEnumJsonCodec.encoder(_.toRaw)
+  given JsonDecoder[InformationalLevel] = StringEnumJsonCodec.decoder(fromString)
+
+  def fromString(s: String): InformationalLevel = s match
+    case "info"       => Info
+    case "notice"     => Notice
+    case "suggestion" => Suggestion
+    case "warning"    => Warning
+    case other        => Custom(other)
 
 /** SDK status values */
 enum SdkStatus:
