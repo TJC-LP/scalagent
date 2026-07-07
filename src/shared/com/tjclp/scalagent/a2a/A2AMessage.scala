@@ -128,7 +128,7 @@ object A2AMessage:
 end A2AMessage
 
 /** Message sender role */
-enum A2ARole:
+enum A2ARole derives CanEqual:
   case Unspecified
   case User
   case Agent
