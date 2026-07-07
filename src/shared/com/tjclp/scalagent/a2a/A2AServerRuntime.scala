@@ -276,7 +276,9 @@ private[a2a] final class ResultManager(
   bus: A2AEventBus,
   runtimeRegistry: A2ARuntimeRegistry,
   context: ServerCallContext,
-  userMessage: A2AMessage)
+  // The user message that started this run, for history repair on snapshots.
+  // `None` for revived runs (no in-flight message; history is already durable).
+  userMessage: Option[A2AMessage])
     extends A2AEventPublisher:
 
   override def publish(event: A2AResponse.StreamEvent): UIO[Unit] =
@@ -349,6 +351,8 @@ private[a2a] final class ResultManager(
     eventPersister.fold[UIO[UIO[Unit]]](ZIO.succeed(ZIO.unit))(_.enqueue(event, context.tenant))
 
   private def ensureHistory(task: A2ATask): A2ATask =
-    if task.history.exists(_.messageId == userMessage.messageId) then task
-    else task.copy(history = userMessage :: task.history)
+    userMessage match
+      case Some(message) if !task.history.exists(_.messageId == message.messageId) =>
+        task.copy(history = message :: task.history)
+      case _ => task
 end ResultManager

@@ -7,9 +7,9 @@ object A2AServerDefaults:
   val JvmHost: String = "0.0.0.0"
   val Port: Int       = 3000
 
-  val EventReplayLimit: Int                    = 1000
-  val EventStoreAppendTimeout: Duration        = 2.seconds
-  val EventStoreLoadTimeout: Duration          = 5.seconds
+  val EventReplayLimit: Int             = 1000
+  val EventStoreAppendTimeout: Duration = 2.seconds
+  val EventStoreLoadTimeout: Duration   = 5.seconds
   // A2A messages carry file uploads as base64 inside the JSON-RPC body
   // (~33% inflation), so this must comfortably exceed the largest raw
   // upload a client allows. 64 MiB covers rtalk's 32 MB raw cap encoded.

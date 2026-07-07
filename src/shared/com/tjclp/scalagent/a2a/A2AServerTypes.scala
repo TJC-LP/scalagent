@@ -30,6 +30,33 @@ trait A2AEventPublisher:
 end A2AEventPublisher
 
 /**
+ * Revival hook for orphaned non-terminal tasks.
+ *
+ * `tasks/get`'s reconcile safety net consults this BEFORE terminal-failing a
+ * non-terminal task that has no in-process run (the server restarted/recycled
+ * and dropped the forked execution, but the underlying work — e.g. a remotely
+ * managed agent session — may still be alive). Return `Some(run)` to
+ * RE-ATTACH: the server reserves the task's runtime slot (so concurrent polls
+ * revive at most one run), re-loads the task to honor a concurrent terminal
+ * write, and forks `run(publisher)` with the same failure/cleanup lifecycle
+ * as a normal execution — the poll then returns the task still `working`.
+ * Return `None` to decline: the task is terminal-failed exactly as before.
+ * A failed `revive` is logged and treated as a decline, so the safety net
+ * still converges.
+ *
+ * The decision phase runs unreserved on the `tasks/get` path (concurrent
+ * polls may each call `revive`) — keep it prompt, read-only, and idempotent;
+ * only the returned run is guarded by the runtime-registry mutex. The server
+ * does NOT apply `Config.taskTimeout` to revived runs — bound the run
+ * yourself if it needs a budget. The run must end by publishing a
+ * stream-ending status (completed/failed/…); if it dies without one, the
+ * next poll reconciles the task again.
+ */
+trait A2AOrphanedRunReviver:
+  def revive(task: A2ATask): Task[Option[A2AEventPublisher => Task[Unit]]]
+end A2AOrphanedRunReviver
+
+/**
  * Durable per-task stream event store used to replay history after process restart.
  *
  * Implementations should treat persistence as best-effort — the server wraps every
