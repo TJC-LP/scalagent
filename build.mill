@@ -68,7 +68,7 @@ private def sharedPomSettings = PomSettings(
 )
 
 private def sharedPublishVersion = Task.Input {
-  Task.env.get("PUBLISH_VERSION").getOrElse("0.11.0")
+  Task.env.get("PUBLISH_VERSION").getOrElse("0.11.1-SNAPSHOT")
 }
 
 // Empty Javadoc jar (Scala.js facades trip Scaladoc; we keep parity on JVM).
