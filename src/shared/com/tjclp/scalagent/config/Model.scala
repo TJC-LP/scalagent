@@ -154,10 +154,16 @@ object Model:
     case "claude-3-haiku-20240307"  => Haiku3
     case other                      => Custom(other)
 
-  /** Default model for Claude Agent SDK - balanced for general-purpose agent use */
+  /**
+   * Default model for Claude Agent SDK - balanced for general-purpose agent
+   * use. Intentionally Sonnet 5 rather than Fable 5: Fable requires org-level
+   * data retention and is not generally accessible, so it is opt-in via
+   * [[fable]].
+   */
   val default: Model = Sonnet5
 
-  // Convenience aliases (point to current generation)
+  // Convenience aliases (track each tier's current generation; there is no
+  // Opus-tier Claude 5, so `opus` stays on the 4.8 family)
   val fable: Model  = Fable5
   val opus: Model   = Opus4_8
   val sonnet: Model = Sonnet5
