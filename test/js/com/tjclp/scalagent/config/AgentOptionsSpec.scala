@@ -48,6 +48,10 @@ class AgentOptionsSpec extends FunSuite:
     assert(typeChecks("""
       import com.tjclp.scalagent.config.*
 
+      AgentOptions.default.withModelAndEffort(Model.Fable5, Effort.XHigh)
+      AgentOptions.default.withModelAndEffort(Model.Fable5, Effort.Max)
+      AgentOptions.default.withModelAndEffort(Model.Sonnet5, Effort.XHigh)
+      AgentOptions.default.withModelAndEffort(Model.Sonnet5, Effort.Max)
       AgentOptions.default.withModelAndEffort(Model.Opus4_8, Effort.XHigh)
       AgentOptions.default.withModelAndEffort(Model.Opus4_7, Effort.XHigh)
       AgentOptions.default.withModelAndEffort(Model.Opus4_8, Effort.Max)

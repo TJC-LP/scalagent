@@ -9,6 +9,10 @@ class ModelSpec extends FunSuite:
   // Enum Values
   // ============================================
 
+  test("Model enum has correct IDs for Claude 5 family"):
+    assertEquals(Model.Fable5.id, "claude-fable-5")
+    assertEquals(Model.Sonnet5.id, "claude-sonnet-5")
+
   test("Model enum has correct IDs for Claude 4.8 family"):
     assertEquals(Model.Opus4_8.id, "claude-opus-4-8")
 
@@ -47,6 +51,10 @@ class ModelSpec extends FunSuite:
   // ============================================
   // fromId Parsing
   // ============================================
+
+  test("fromId parses known Claude 5 models"):
+    assertEquals(Model.fromId("claude-fable-5"), Model.Fable5)
+    assertEquals(Model.fromId("claude-sonnet-5"), Model.Sonnet5)
 
   test("fromId parses known Claude 4.8 models"):
     assertEquals(Model.fromId("claude-opus-4-8"), Model.Opus4_8)
@@ -87,6 +95,9 @@ class ModelSpec extends FunSuite:
 
   test("fromId round-trips with all known models"):
     val knownModels = List(
+      // Claude 5 Family
+      Model.Fable5,
+      Model.Sonnet5,
       // Claude 4.8 Family
       Model.Opus4_8,
       // Claude 4.7 Family
@@ -120,9 +131,18 @@ class ModelSpec extends FunSuite:
   // ============================================
 
   test("convenience aliases point to current generation models"):
+    assertEquals(Model.fable, Model.Fable5)
     assertEquals(Model.opus, Model.Opus4_8)
-    assertEquals(Model.sonnet, Model.Sonnet4_6)
+    assertEquals(Model.sonnet, Model.Sonnet5)
     assertEquals(Model.haiku, Model.Haiku4_5)
+
+  test("Fable 5 maps to claude-fable-5"):
+    assertEquals(Model.Fable5.id, "claude-fable-5")
+    assertEquals(Model.fromId("claude-fable-5"), Model.Fable5)
+
+  test("Sonnet 5 maps to claude-sonnet-5"):
+    assertEquals(Model.Sonnet5.id, "claude-sonnet-5")
+    assertEquals(Model.fromId("claude-sonnet-5"), Model.Sonnet5)
 
   test("Opus 4.8 maps to claude-opus-4-8"):
     assertEquals(Model.Opus4_8.id, "claude-opus-4-8")
@@ -132,8 +152,8 @@ class ModelSpec extends FunSuite:
     assertEquals(Model.Opus4_7.id, "claude-opus-4-7")
     assertEquals(Model.fromId("claude-opus-4-7"), Model.Opus4_7)
 
-  test("default model is Sonnet4_6"):
-    assertEquals(Model.default, Model.Sonnet4_6)
+  test("default model is Sonnet5"):
+    assertEquals(Model.default, Model.Sonnet5)
 
   // ============================================
   // JSON Serialization
@@ -163,6 +183,8 @@ class ModelSpec extends FunSuite:
 
   test("JSON round-trip preserves model"):
     val models = List(
+      Model.Fable5,
+      Model.Sonnet5,
       Model.Opus4_8,
       Model.Opus4_7,
       Model.Opus4_6,
