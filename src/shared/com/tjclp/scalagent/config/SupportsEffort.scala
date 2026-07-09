@@ -14,9 +14,13 @@ object SupportsEffort:
   given medium[M <: Model]: SupportsEffort[M, Effort.Medium.type] with {}
   given high[M <: Model]: SupportsEffort[M, Effort.High.type] with     {}
 
+  given xhighFable5: SupportsEffort[Model.Fable5.type, Effort.XHigh.type] with   {}
+  given xhighSonnet5: SupportsEffort[Model.Sonnet5.type, Effort.XHigh.type] with {}
   given xhighOpus4_8: SupportsEffort[Model.Opus4_8.type, Effort.XHigh.type] with {}
   given xhighOpus4_7: SupportsEffort[Model.Opus4_7.type, Effort.XHigh.type] with {}
 
+  given maxFable5: SupportsEffort[Model.Fable5.type, Effort.Max.type] with       {}
+  given maxSonnet5: SupportsEffort[Model.Sonnet5.type, Effort.Max.type] with     {}
   given maxOpus4_8: SupportsEffort[Model.Opus4_8.type, Effort.Max.type] with     {}
   given maxOpus4_7: SupportsEffort[Model.Opus4_7.type, Effort.Max.type] with     {}
   given maxOpus4_6: SupportsEffort[Model.Opus4_6.type, Effort.Max.type] with     {}
