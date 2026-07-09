@@ -3,7 +3,7 @@
 Type-safe agent execution for mission-critical environments.
 Scala 3 + ZIO on the battle-tested TypeScript agent ecosystem.
 
-> SDK baseline `@anthropic-ai/claude-agent-sdk@^0.3.201` + `@openai/codex-sdk@^0.142.5` | Scalagent `0.11.0` | Scala `3.8.3` | Bun or Node.js 18+
+> SDK baseline `@anthropic-ai/claude-agent-sdk@^0.3.201` + `@openai/codex-sdk@^0.142.5` | Scalagent `0.13.0` | Scala `3.8.3` | Bun or Node.js 18+
 
 ```scala
 import com.tjclp.scalagent.*
@@ -188,13 +188,13 @@ val agent = ClaudeInterpreter.builder(claudeAgent)
 ### Mill
 
 ```scala
-ivy"com.tjclp::scalagent::0.11.0"
+ivy"com.tjclp::scalagent::0.13.0"
 ```
 
 ### SBT
 
 ```scala
-libraryDependencies += "com.tjclp" %%% "scalagent" % "0.11.0"
+libraryDependencies += "com.tjclp" %%% "scalagent" % "0.13.0"
 ```
 
 ### Maven
@@ -203,7 +203,7 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.11.0"
 <dependency>
   <groupId>com.tjclp</groupId>
   <artifactId>scalagent_sjs1_3</artifactId>
-  <version>0.11.0</version>
+  <version>0.13.0</version>
 </dependency>
 ```
 
@@ -212,6 +212,18 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.11.0"
 - Scala 3.8.3+ with Scala.js
 - Bun (preferred) or Node.js 18+
 - `bun install` to fetch the TypeScript SDK and ZIO dependencies
+
+### 0.13.0 Notes
+
+Claude 5 family support in the typed model surface.
+
+- `Model.Fable5` (`claude-fable-5`) and `Model.Sonnet5` (`claude-sonnet-5`) enum cases with `fromId` mappings; unknown ids still fall through to `Custom`.
+- New `Model.fable` alias. `Model.sonnet` and `Model.default` now point at `Sonnet5` (previously `Sonnet4_6`) — callers that never set a model pick up Claude Sonnet 5. `Model.default` intentionally stays Sonnet-tier: Fable 5 requires org-level data retention and is opt-in via `Model.fable`.
+- `SupportsEffort` compile-time evidence for `XHigh` and `Max` on both new models (Sonnet 5 is the first Sonnet tier with `xhigh`).
+
+### 0.12.0 Notes
+
+- A2A orphaned-run revival seam (#66): `reconcileOrphaned` consults the public `A2AOrphanedRunReviver` before terminal-failing a non-terminal task whose run vanished (e.g. after a serve-tier recycle), so re-attachable backends can revive instead of failing.
 
 ### 0.11.0 Notes
 
