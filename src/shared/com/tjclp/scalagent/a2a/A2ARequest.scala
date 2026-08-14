@@ -167,6 +167,7 @@ object A2ARequest:
         yield TasksGet(TaskId(id), historyLength, includeArtifacts, tenant)
       }
     }
+  end TasksGet
   type GetTaskRequest = TasksGet
 
   /** Parameters for ListTasks. */
