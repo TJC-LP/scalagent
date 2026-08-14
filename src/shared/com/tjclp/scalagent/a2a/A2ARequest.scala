@@ -145,6 +145,7 @@ object A2ARequest:
   final case class TasksGet(
     id: TaskId,
     historyLength: Option[Int] = None,
+    includeArtifacts: Option[Boolean] = None,
     tenant: Option[String] = None)
   object TasksGet:
     given JsonEncoder[TasksGet] = JsonEncoder[Json].contramap { request =>
@@ -153,15 +154,17 @@ object A2ARequest:
       request.historyLength.foreach(value =>
         obj = obj.add("historyLength", Json.Num(java.math.BigDecimal.valueOf(value.toLong)))
       )
+      request.includeArtifacts.foreach(value => obj = obj.add("includeArtifacts", Json.Bool(value)))
       obj
     }
     given JsonDecoder[TasksGet] = JsonDecoder[Json].mapOrFail { json =>
       objectFields(json, "GetTaskRequest").flatMap { fields =>
         for
-          id            <- requiredString(fields, "id")
-          historyLength <- optionalNonNegativeInt(fields, "historyLength", "history_length")
-          tenant        <- optionalString(fields, "tenant")
-        yield TasksGet(TaskId(id), historyLength, tenant)
+          id               <- requiredString(fields, "id")
+          historyLength    <- optionalNonNegativeInt(fields, "historyLength", "history_length")
+          includeArtifacts <- optionalBool(fields, "includeArtifacts", "include_artifacts")
+          tenant           <- optionalString(fields, "tenant")
+        yield TasksGet(TaskId(id), historyLength, includeArtifacts, tenant)
       }
     }
   type GetTaskRequest = TasksGet

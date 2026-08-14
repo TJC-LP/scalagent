@@ -334,6 +334,48 @@ class A2AServerCoreSpec extends FunSuite:
       assertEquals(stored.history.map(_.text), List("run"))
     }
 
+  test("getTask trims artifacts only when includeArtifacts is false"):
+    val effect =
+      for
+        taskStore <- ZIO.succeed(A2ATaskStore.inMemory)
+        registry  <- A2ARuntimeRegistry.make
+        taskId    = TaskId("artifact-trim-task")
+        contextId = ContextId("artifact-trim-context")
+        task = A2ATask(
+          id = taskId,
+          contextId = contextId,
+          status = TaskStatus.completed(A2AMessage.agentText("done", Some(contextId))),
+          artifacts = List(Artifact("keep-or-trim", parts = List(Part.Text("payload")))),
+        )
+        _ <- taskStore.save(task, None)
+        core = A2AServerCore.make(
+          TestConfig(taskStore = Some(taskStore)),
+          runtime,
+          registry,
+          NoopPushPoster,
+          () => card("ArtifactTrim"),
+          (_, _) => ZIO.unit,
+        )
+        defaulted <- core.requestHandler.getTask(A2ARequest.TasksGet(taskId), ServerCallContext())
+        explicit <- core.requestHandler.getTask(
+          A2ARequest.TasksGet(taskId, includeArtifacts = Some(true)),
+          ServerCallContext(),
+        )
+        trimmed <- core.requestHandler.getTask(
+          A2ARequest.TasksGet(taskId, includeArtifacts = Some(false)),
+          ServerCallContext(),
+        )
+        stored <- taskStore.load(taskId, None)
+      yield (defaulted, explicit, trimmed, stored)
+
+    runTask(effect).map { case (defaulted, explicit, trimmed, stored) =>
+      assertEquals(defaulted.artifacts.map(_.artifactId), List("keep-or-trim"))
+      assertEquals(explicit.artifacts.map(_.artifactId), List("keep-or-trim"))
+      assertEquals(trimmed.artifacts, Nil)
+      // read-projection only: the stored task keeps its artifacts
+      assertEquals(stored.map(_.artifacts.map(_.artifactId)), Some(List("keep-or-trim")))
+    }
+
   test("shared request handler preserves inactive interrupted tasks"):
     val effect =
       for

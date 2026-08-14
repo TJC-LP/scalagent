@@ -1019,7 +1019,7 @@ class A2AProtoParitySpec extends FunSuite:
 
   private def expectedRestQueryFields: Map[String, Set[String]] =
     Map(
-      A2AMethod.TasksGet -> Set("historyLength"),
+      A2AMethod.TasksGet -> Set("historyLength", "includeArtifacts"),
       A2AMethod.TasksList -> Set(
         "contextId",
         "status",
@@ -1251,7 +1251,9 @@ class A2AProtoParitySpec extends FunSuite:
       "SendMessageRequest" -> jsonFields(
         A2ARequest.MessageSend(message, configuration = Some(sendConfig), metadata = Some(Json.Obj("m" -> Json.Str("request"))), tenant = Some("tenant-a"))
       ),
-      "GetTaskRequest" -> jsonFields(A2ARequest.TasksGet(taskId, historyLength = Some(2), tenant = Some("tenant-a"))),
+      "GetTaskRequest" -> jsonFields(
+        A2ARequest.TasksGet(taskId, historyLength = Some(2), includeArtifacts = Some(false), tenant = Some("tenant-a"))
+      ),
       "ListTasksRequest" -> jsonFields(
         A2ARequest.TasksList(
           contextId = Some(contextId),

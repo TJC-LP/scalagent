@@ -97,7 +97,9 @@ class A2APathRoutingSpec extends FunSuite:
     )
     assertEquals(
       A2APathRouting.tasksGet("task-1", query, Some("tenant-a")),
-      Right(A2ARequest.TasksGet(TaskId("task-1"), Some(3), Some("tenant-a"))),
+      Right(
+        A2ARequest.TasksGet(TaskId("task-1"), Some(3), includeArtifacts = Some(false), tenant = Some("tenant-a"))
+      ),
     )
     assertEquals(
       A2APathRouting.pushConfigList("task-1", query, Some("tenant-a")),
