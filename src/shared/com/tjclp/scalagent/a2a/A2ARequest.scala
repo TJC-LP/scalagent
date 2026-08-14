@@ -141,7 +141,15 @@ object A2ARequest:
   type SendMessageRequest          = MessageSend
   type SendStreamingMessageRequest = MessageSend
 
-  /** Parameters for GetTask. */
+  /**
+   * Parameters for GetTask.
+   *
+   * `includeArtifacts`: absent or true returns artifacts (the spec-shaped
+   * response); false trims them for lean status polls — a local extension
+   * with the opposite default of ListTasks. Suppressed artifacts are
+   * omitted from the wire, indistinguishable from a task that has none, so
+   * a trimmed GetTask result must never be written back to a store.
+   */
   final case class TasksGet(
     id: TaskId,
     historyLength: Option[Int] = None,

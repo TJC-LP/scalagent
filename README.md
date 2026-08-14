@@ -213,6 +213,17 @@ libraryDependencies += "com.tjclp" %%% "scalagent" % "0.11.0"
 - Bun (preferred) or Node.js 18+
 - `bun install` to fetch the TypeScript SDK and ZIO dependencies
 
+### 0.13.1 Notes
+
+- `GetTask` accepts `includeArtifacts` (JSON-RPC/REST `includeArtifacts` /
+  `include_artifacts`, gRPC `optional bool include_artifacts = 4`). Absent or
+  true keeps the spec-shaped response with artifacts; false trims them for
+  lean status polls. The default is the opposite of ListTasks (which excludes
+  unless asked), and suppressed artifacts are omitted from the wire — a
+  trimmed result is indistinguishable from a task with no artifacts and must
+  not be written back to a store. Local protocol extension, recorded in
+  `proto/A2A_PROTO_SOURCE.txt`.
+
 ### 0.11.0 Notes
 
 - Bump the Claude Agent SDK baseline to `^0.3.201` (from `^0.3.156`) and the Codex SDK to `^0.142.5` (from `^0.134.0`), with facade parity for the new SDK surface: observer agents, `promptId` on hook inputs, sandbox credential protection, per-MCP-server permission-mode overrides, `reinitialize`, thinking display control, and typed `informational` / `model_refusal_*` / `worker_shutting_down` system events. See `docs/COMPATIBILITY.md` for the full matrix.
@@ -347,6 +358,9 @@ task push notification config endpoints.
 The v1 agent card advertises `JSONRPC` first and `HTTP+JSON` second, both with
 `protocolVersion = "1.0"`. `A2AClient.discover` fetches the well-known card and
 selects a JSON-RPC endpoint.
+
+`GetTask` accepts `historyLength` and `includeArtifacts` (default include —
+the opposite of ListTasks; pass `false` for lean status polls).
 
 `SendMessage` defaults to `returnImmediately = false`, so it waits until the
 task reaches a terminal or interrupted state. Use `client.submit(...)` or set

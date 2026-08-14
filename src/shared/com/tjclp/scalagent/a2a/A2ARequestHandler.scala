@@ -136,8 +136,10 @@ private[a2a] final class A2ARequestHandler(
       taskStore.load(params.id, context.tenant).flatMap {
         case Some(task) =>
           reconcileOrphaned(task, context).map { reconciled =>
-            val trimmed = A2ATaskStore.applyHistoryLength(reconciled, params.historyLength)
-            if params.includeArtifacts.contains(false) then trimmed.copy(artifacts = Nil) else trimmed
+            A2ATaskStore.applyArtifactProjection(
+              A2ATaskStore.applyHistoryLength(reconciled, params.historyLength),
+              includeArtifacts = params.includeArtifacts.getOrElse(true),
+            )
           }
         case None => ZIO.fail(A2AError.taskNotFound(params.id))
       }

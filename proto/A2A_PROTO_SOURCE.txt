@@ -1,2 +1,7 @@
 a2a.proto vendored from github.com/a2aproject/A2A specification/a2a.proto
 upstream commit: cd87b9341bc0e4982d46550aaab2319b903271e4
+
+Local deltas (re-apply after re-vendoring; A2AProtoParitySpec fails until they are):
+- `tenant` field on every request message (multi-tenant routing)
+- GetTaskRequest: `optional bool include_artifacts = 4` (lean status polls;
+  tag collides if upstream ever adds a field 4 — resolve at re-vendor time)
