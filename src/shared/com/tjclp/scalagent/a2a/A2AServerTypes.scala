@@ -464,14 +464,23 @@ object A2ATaskStore:
       val includeArtifacts = params.includeArtifacts.getOrElse(false)
       A2AResponse.ListTasksResult(
         tasks = page.map { task =>
-          val withHistory = applyHistoryLength(task, params.historyLength)
-          if includeArtifacts then withHistory else withHistory.copy(artifacts = Nil)
+          applyArtifactProjection(applyHistoryLength(task, params.historyLength), includeArtifacts)
         },
         nextPageToken = next,
         pageSize = pageSize,
         totalSize = filtered.length,
         includeArtifacts = includeArtifacts,
       )
+
+  /**
+   * Drop `task.artifacts` unless `includeArtifacts` asks for them. The
+   * caller states its default explicitly: GetTask includes on absent (the
+   * spec-shaped response), ListTasks excludes on absent (the spec's
+   * payload-size default). Public for the same reason as
+   * [[applyHistoryLength]].
+   */
+  def applyArtifactProjection(task: A2ATask, includeArtifacts: Boolean): A2ATask =
+    if includeArtifacts then task else task.copy(artifacts = Nil)
 
   /**
    * Truncate `task.history` to the requested length (matches the A2A

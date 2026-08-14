@@ -1040,7 +1040,7 @@ class A2ACodecSpec extends FunSuite:
 
   test("request and response model groups round-trip"):
     roundTrip(A2ARequest.MessageSend(message, Some(MessageSendConfiguration(taskPushNotificationConfig = Some(pushConfig), historyLength = Some(1)))))
-    roundTrip(A2ARequest.TasksGet(taskId, historyLength = Some(1), tenant = Some("tenant-codec")))
+    roundTrip(A2ARequest.TasksGet(taskId, historyLength = Some(1), includeArtifacts = Some(false), tenant = Some("tenant-codec")))
     roundTrip(A2ARequest.TasksList(contextId = Some(contextId), status = Some(TaskState.Completed), pageSize = Some(10), pageToken = Some("10")))
     roundTrip(A2ARequest.TasksCancel(taskId))
     roundTrip(A2ARequest.TasksResubscribe(taskId))
@@ -1055,6 +1055,7 @@ class A2ACodecSpec extends FunSuite:
     val bareMessage     = message.copy(metadata = None)
     val messageSendJson = A2ARequest.MessageSend(bareMessage).toJson
     val getJson         = A2ARequest.TasksGet(taskId).toJson
+    val getFalseJson    = A2ARequest.TasksGet(taskId, includeArtifacts = Some(false)).toJson
     val listEmptyJson   = A2ARequest.TasksList().toJson
     val listFalseJson   = A2ARequest.TasksList(includeArtifacts = Some(false)).toJson
     val extendedJson    = A2ARequest.GetAuthenticatedExtendedCard().toJson
@@ -1066,7 +1067,8 @@ class A2ACodecSpec extends FunSuite:
     assertEquals(listEmptyJson, "{}")
     assertEquals(extendedJson, "{}")
     assert(listFalseJson.contains(""""includeArtifacts":false"""))
-    assert(!List(messageSendJson, getJson, listEmptyJson, listFalseJson, extendedJson).exists(_.contains("null")))
+    assert(getFalseJson.contains(""""includeArtifacts":false"""))
+    assert(!List(messageSendJson, getJson, getFalseJson, listEmptyJson, listFalseJson, extendedJson).exists(_.contains("null")))
 
   test("ProtoJSON null optional fields decode as unset"):
     val cardJson =
@@ -1828,7 +1830,8 @@ class A2ACodecSpec extends FunSuite:
     val taskGet =
       """{
         |  "id": "task-snake",
-        |  "history_length": 3
+        |  "history_length": 3,
+        |  "include_artifacts": false
         |}""".stripMargin.fromJson[A2ARequest.TasksGet]
     val taskList =
       """{
@@ -1852,7 +1855,10 @@ class A2ACodecSpec extends FunSuite:
         |  "page_token": "next"
         |}""".stripMargin.fromJson[A2ARequest.PushNotificationConfigList]
 
-    assertEquals(taskGet.map(value => (value.id, value.historyLength)), Right((TaskId("task-snake"), Some(3))))
+    assertEquals(
+      taskGet.map(value => (value.id, value.historyLength, value.includeArtifacts)),
+      Right((TaskId("task-snake"), Some(3), Some(false))),
+    )
     assertEquals(
       taskList.map(value => (value.contextId, value.pageSize, value.historyLength, value.includeArtifacts)),
       Right((Some(ContextId("ctx-snake")), Some(25), Some(1), Some(true))),

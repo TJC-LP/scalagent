@@ -16,6 +16,10 @@ class A2AGrpcProtoCodecSpec extends FunSuite:
       .setTenant("tenant-a")
       .setId("task-1")
       .setHistoryLength(2)
+      // false is the value presence-tracking protects: without `optional` in
+      // the vendored proto, JsonPrinter drops the proto3 default and the
+      // lean poll silently becomes a full one.
+      .setIncludeArtifacts(false)
       .build()
 
     val decoded = A2AGrpcProtoCodec.decodeRequest(A2AOperation.TasksGet, proto.toByteArray)
@@ -25,6 +29,7 @@ class A2AGrpcProtoCodecSpec extends FunSuite:
         assertEquals(request.id, TaskId("task-1"))
         assertEquals(request.tenant, Some("tenant-a"))
         assertEquals(request.historyLength, Some(2))
+        assertEquals(request.includeArtifacts, Some(false))
       case other =>
         fail(s"expected decoded TasksGet request, got $other")
 

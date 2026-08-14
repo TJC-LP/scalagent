@@ -171,9 +171,10 @@ private[a2a] object A2APathRouting:
     tenant: Option[String],
   ): Either[A2AError, A2ARequest.TasksGet] =
     for
-      id            <- taskId(rawTaskId)
-      historyLength <- query.int("historyLength", "history_length")
-    yield A2ARequest.TasksGet(id, historyLength, tenant)
+      id               <- taskId(rawTaskId)
+      historyLength    <- query.int("historyLength", "history_length")
+      includeArtifacts <- query.bool("includeArtifacts", "include_artifacts")
+    yield A2ARequest.TasksGet(id, historyLength, includeArtifacts, tenant)
 
   def tasksCancel(
     rawTaskAction: String,

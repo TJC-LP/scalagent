@@ -669,6 +669,11 @@ message GetTaskRequest {
   // a request to not include any messages. The server MUST NOT return more
   // messages than the provided value, but MAY apply a lower limit.
   optional int32 history_length = 3;
+  // Whether to include artifacts in the returned task. Unset defaults to
+  // true, keeping the spec-shaped GetTask response; false trims the
+  // artifacts array for lean status polls. Local extension (the upstream
+  // spec defines this switch only on ListTasksRequest), like `tenant`.
+  optional bool include_artifacts = 4;
 }
 
 // Parameters for listing tasks with optional filtering criteria.

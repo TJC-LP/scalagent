@@ -127,11 +127,20 @@ private[a2a] final class A2ARequestHandler(
       }
     }
 
+  // GetTask includes artifacts unless the request says includeArtifacts=false
+  // (absent means include — the opposite of ListTasks, whose spec default is
+  // exclude; the spec defines no artifact switch for GetTask, so this field
+  // is a local extension and absent must keep the spec-conformant response).
   def getTask(params: A2ARequest.TasksGet, context: ServerCallContext): Task[A2ATask] =
     authorizeRequest(context) *> validateHistoryLength(params.historyLength) *>
       taskStore.load(params.id, context.tenant).flatMap {
         case Some(task) =>
-          reconcileOrphaned(task, context).map(A2ATaskStore.applyHistoryLength(_, params.historyLength))
+          reconcileOrphaned(task, context).map { reconciled =>
+            A2ATaskStore.applyArtifactProjection(
+              A2ATaskStore.applyHistoryLength(reconciled, params.historyLength),
+              includeArtifacts = params.includeArtifacts.getOrElse(true),
+            )
+          }
         case None => ZIO.fail(A2AError.taskNotFound(params.id))
       }
 

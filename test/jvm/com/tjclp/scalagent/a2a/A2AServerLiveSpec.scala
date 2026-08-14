@@ -600,6 +600,60 @@ class A2AServerLiveSpec extends FunSuite:
       assert(wrong.error.exists(_.message.contains("selected AgentInterface tenant")))
     }
 
+  test("JVM REST and JSON-RPC GetTask honor includeArtifacts=false"):
+    val program =
+      for
+        taskStore <- ZIO.succeed(A2ATaskStore.inMemory)
+        taskId    = TaskId("artifact-wire-task")
+        contextId = ContextId("artifact-wire-context")
+        task = A2ATask(
+          id = taskId,
+          contextId = contextId,
+          status = TaskStatus.completed(A2AMessage.agentText("done", Some(contextId))),
+          artifacts = List(Artifact("wire-artifact", parts = List(Part.Text("payload")))),
+        )
+        _ <- taskStore.save(task, None)
+        server <- testServer(
+          A2AServerLive.Config(
+            name = "GetTaskArtifactTrimJvmTest",
+            description = "GetTask includeArtifacts JVM test server",
+            taskStore = Some(taskStore),
+          )
+        )
+        fullResponse <- server.handleHttp(
+          Request
+            .get(URL.decode(s"/tasks/${taskId.value}").toOption.get)
+            .copy(headers = versionedJsonHeaders(A2AContentType.A2AJson))
+        )
+        fullBody <- fullResponse.body.asString
+        leanResponse <- server.handleHttp(
+          Request
+            .get(URL.decode(s"/tasks/${taskId.value}?include_artifacts=false").toOption.get)
+            .copy(headers = versionedJsonHeaders(A2AContentType.A2AJson))
+        )
+        leanBody <- leanResponse.body.asString
+        rpcResponse <- server.handleHttp(
+          Request
+            .post(
+              "/",
+              Body.fromString(
+                """{"jsonrpc":"2.0","id":91,"method":"GetTask","params":{"id":"artifact-wire-task","includeArtifacts":false}}"""
+              ),
+            )
+            .copy(headers = versionedJsonHeaders())
+        )
+        rpcBody <- rpcResponse.body.asString
+      yield (fullBody, leanBody, rpcBody)
+
+    runTask(program).map { case (fullBody, leanBody, rpcBody) =>
+      // Suppressed artifacts are omitted entirely, not emitted as [] — the
+      // lean body must not carry the key at all.
+      assert(fullBody.contains(""""artifacts""""))
+      assert(!leanBody.contains(""""artifacts""""))
+      assert(rpcBody.contains(""""result""""))
+      assert(!rpcBody.contains(""""artifacts""""))
+    }
+
   test("JVM JSON-RPC distinguishes malformed JSON from invalid request envelopes"):
     val invalidEnvelope =
       """{
